@@ -357,7 +357,12 @@ Supabase integration tests require GitHub repository secrets:
 2. Add these secrets:
    - `SUPABASE_URL` - Your Supabase project URL
    - `SUPABASE_ANON_KEY` - Your Supabase anon key
-   - `SUPABASE_DATABASE_URL` - Your database connection string
+   - `SUPABASE_DATABASE_URL` - Your pooled connection string (Transaction mode)
+   - `SUPABASE_DIRECT_URL` - Your direct connection string (Session mode)
+
+**Why two URLs?**
+- **DATABASE_URL** (pooled): Used for queries with connection pooling
+- **DIRECT_URL** (direct): Required for Prisma migrations
 
 See [.github/CONTRIBUTING.md](../.github/CONTRIBUTING.md) for detailed setup instructions.
 

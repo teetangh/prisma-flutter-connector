@@ -136,11 +136,18 @@ Supabase integration tests require credentials stored as GitHub repository secre
    - Navigate to Project Settings → API
    - Copy the "anon" key under "Project API keys"
 
-3. **Database URL**:
+3. **Database URL** (Session pooler):
    - Navigate to Project Settings → Database
    - Scroll to "Connection string" section
-   - Select "URI" mode
-   - Copy the connection string
+   - Select "Transaction" mode
+   - Copy the connection string (starts with `postgresql://postgres.your-project:...pooler.supabase.com:6543`)
+   - Replace `[YOUR-PASSWORD]` with your database password
+
+4. **Direct URL** (Direct connection):
+   - Navigate to Project Settings → Database
+   - Scroll to "Connection string" section
+   - Select "Session" mode or "Direct connection"
+   - Copy the connection string (starts with `postgresql://postgres:...@db.your-project.supabase.co:5432`)
    - Replace `[YOUR-PASSWORD]` with your database password
 
 #### Adding Secrets to GitHub
@@ -157,9 +164,12 @@ Supabase integration tests require credentials stored as GitHub repository secre
      - **Value**: Your Supabase anon key
 
    - **Name**: `SUPABASE_DATABASE_URL`
-     - **Value**: Your Supabase database connection string
+     - **Value**: Your Supabase pooled connection string (Transaction mode)
 
-5. Once all three secrets are added, the Supabase integration tests will run automatically
+   - **Name**: `SUPABASE_DIRECT_URL`
+     - **Value**: Your Supabase direct connection string (Session mode)
+
+5. Once all four secrets are added, the Supabase integration tests will run automatically
 
 ### Manual Workflow Triggers
 

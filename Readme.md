@@ -508,8 +508,9 @@ model Task {
 
 ```prisma
 datasource db {
-  provider = "postgresql"
-  url      = env("SUPABASE_DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("SUPABASE_DATABASE_URL")
+  directUrl = env("SUPABASE_DIRECT_URL")
 }
 
 model Profile {
@@ -520,12 +521,20 @@ model Profile {
 }
 ```
 
-**Connection String:**
+**Connection Strings:**
 ```env
-SUPABASE_DATABASE_URL="postgresql://postgres:[YOUR-PASSWORD]@db.yourproject.supabase.co:5432/postgres"
+# Session pooler (Transaction mode) - for queries
+SUPABASE_DATABASE_URL="postgresql://postgres.your-project:[YOUR-PASSWORD]@aws-0-us-east-1.pooler.supabase.com:6543/postgres"
+
+# Direct connection (Session mode) - required for migrations
+SUPABASE_DIRECT_URL="postgresql://postgres:[YOUR-PASSWORD]@db.your-project.supabase.co:5432/postgres"
 ```
 
-Get your connection string from Supabase project settings.
+**Why two URLs?**
+- **DATABASE_URL** (pooled): Connection pooling for efficient queries
+- **DIRECT_URL** (direct): Required for Prisma migrations (bypasses pooler)
+
+Get connection strings from Supabase project settings → Database → Connection string.
 
 ### Running Migrations
 

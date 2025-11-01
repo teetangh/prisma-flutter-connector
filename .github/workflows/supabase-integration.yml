@@ -14,15 +14,44 @@ on:
         required: false
       SUPABASE_DATABASE_URL:
         required: false
+      SUPABASE_DIRECT_URL:
+        required: false
 
 jobs:
   supabase-tests:
     name: Supabase Integration
     runs-on: ubuntu-latest
-    # Only run if Supabase secrets are configured
-    if: github.event_name == 'workflow_dispatch' || (secrets.SUPABASE_URL && secrets.SUPABASE_ANON_KEY && secrets.SUPABASE_DATABASE_URL)
 
     steps:
+      - name: Check if Supabase secrets are configured
+        run: |
+          if [[ -z "${{ secrets.SUPABASE_URL }}" ]] || \
+             [[ -z "${{ secrets.SUPABASE_ANON_KEY }}" ]] || \
+             [[ -z "${{ secrets.SUPABASE_DATABASE_URL }}" ]] || \
+             [[ -z "${{ secrets.SUPABASE_DIRECT_URL }}" ]]; then
+            echo "⚠️  Supabase secrets not configured"
+            echo ""
+            echo "To run Supabase tests, configure these repository secrets:"
+            echo "  - SUPABASE_URL"
+            echo "  - SUPABASE_ANON_KEY"
+            echo "  - SUPABASE_DATABASE_URL"
+            echo "  - SUPABASE_DIRECT_URL"
+            echo ""
+            echo "See .github/CONTRIBUTING.md for setup instructions"
+
+            # Fail if manually triggered, skip if called from CI
+            if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+              echo ""
+              echo "❌ Failing because workflow was manually triggered"
+              exit 1
+            else
+              echo ""
+              echo "ℹ️  Skipping Supabase tests (optional in CI)"
+              exit 0
+            fi
+          fi
+          echo "✓ All Supabase secrets found - proceeding with tests"
+
       - name: Checkout code
         uses: actions/checkout@v4
         with:
@@ -49,6 +78,7 @@ jobs:
           SUPABASE_URL="${{ secrets.SUPABASE_URL }}"
           SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
           SUPABASE_DATABASE_URL="${{ secrets.SUPABASE_DATABASE_URL }}"
+          SUPABASE_DIRECT_URL="${{ secrets.SUPABASE_DIRECT_URL }}"
           GRAPHQL_ENDPOINT="http://localhost:4003/graphql"
           EOF
 
@@ -56,13 +86,15 @@ jobs:
         working-directory: test/integration/supabase
         run: prisma migrate deploy
         env:
-          DATABASE_URL: ${{ secrets.SUPABASE_DATABASE_URL }}
+          SUPABASE_DATABASE_URL: ${{ secrets.SUPABASE_DATABASE_URL }}
+          SUPABASE_DIRECT_URL: ${{ secrets.SUPABASE_DIRECT_URL }}
 
       - name: Generate Prisma Client
         working-directory: test/integration/supabase
         run: prisma generate
         env:
-          DATABASE_URL: ${{ secrets.SUPABASE_DATABASE_URL }}
+          SUPABASE_DATABASE_URL: ${{ secrets.SUPABASE_DATABASE_URL }}
+          SUPABASE_DIRECT_URL: ${{ secrets.SUPABASE_DIRECT_URL }}
 
       - name: Get Flutter dependencies
         run: flutter pub get
