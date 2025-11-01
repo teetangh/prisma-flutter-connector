@@ -99,3 +99,18 @@ lib/generated_plugin_registrant.dart
 !**/ios/**/default.pbxuser
 !**/ios/**/default.perspectivev3
 
+# Generated files (Freezed, Ferry, JSON)
+*.g.dart
+*.freezed.dart
+*.graphql.dart
+*.req.gql.dart
+*.var.gql.dart
+*.data.gql.dart
+
+# Backend example
+backend_example/node_modules/
+backend_example/dist/
+backend_example/.env
+backend_example/prisma/dev.db
+backend_example/prisma/dev.db-journal
+backend_example/prisma/migrations/
