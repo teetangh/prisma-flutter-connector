@@ -1,0 +1,67 @@
+name: CI - All Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+jobs:
+  # Code quality checks
+  lint:
+    name: Code Quality
+    uses: ./.github/workflows/lint.yml
+
+  # Unit tests
+  unit:
+    name: Unit Tests
+    uses: ./.github/workflows/unit-tests.yml
+
+  # Integration tests - run in parallel
+  postgres:
+    name: PostgreSQL
+    uses: ./.github/workflows/postgres-integration.yml
+    needs: [lint, unit]
+
+  mysql:
+    name: MySQL
+    uses: ./.github/workflows/mysql-integration.yml
+    needs: [lint, unit]
+
+  mongodb:
+    name: MongoDB
+    uses: ./.github/workflows/mongodb-integration.yml
+    needs: [lint, unit]
+
+  sqlite:
+    name: SQLite
+    uses: ./.github/workflows/sqlite-integration.yml
+    needs: [lint, unit]
+
+  supabase:
+    name: Supabase
+    uses: ./.github/workflows/supabase-integration.yml
+    needs: [lint, unit]
+    secrets: inherit
+    # This will be skipped if secrets aren't configured
+
+  # Summary job
+  all-tests-passed:
+    name: All Tests Passed
+    runs-on: ubuntu-latest
+    needs: [lint, unit, postgres, mysql, mongodb, sqlite]
+    if: always()
+    steps:
+      - name: Check all jobs
+        run: |
+          if [[ "${{ needs.lint.result }}" != "success" ]] || \
+             [[ "${{ needs.unit.result }}" != "success" ]] || \
+             [[ "${{ needs.postgres.result }}" != "success" ]] || \
+             [[ "${{ needs.mysql.result }}" != "success" ]] || \
+             [[ "${{ needs.mongodb.result }}" != "success" ]] || \
+             [[ "${{ needs.sqlite.result }}" != "success" ]]; then
+            echo "One or more required tests failed"
+            exit 1
+          fi
+          echo "All required tests passed!"

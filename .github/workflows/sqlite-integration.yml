@@ -1,0 +1,67 @@
+name: SQLite Integration Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  sqlite-tests:
+    name: SQLite Integration
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+
+      - name: Install Prisma CLI
+        run: npm install -g prisma
+
+      - name: Setup environment variables
+        working-directory: test/integration/sqlite
+        run: cp .env.example .env
+
+      - name: Run database migrations
+        working-directory: test/integration/sqlite
+        run: prisma migrate deploy
+        env:
+          DATABASE_URL: file:./test.db
+
+      - name: Generate Prisma Client
+        working-directory: test/integration/sqlite
+        run: prisma generate
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+
+      - name: Generate Dart code from Prisma schema
+        run: |
+          dart run prisma_flutter_connector:generate \
+            --schema test/integration/sqlite/schema.prisma \
+            --output test/integration/sqlite/generated/
+
+      - name: Run integration tests
+        run: flutter test test/integration/sqlite/sqlite_test.dart --coverage
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        if: success()
+        with:
+          files: ./coverage/lcov.info
+          flags: sqlite-integration

@@ -1,0 +1,84 @@
+name: Supabase Integration Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+  workflow_call:
+    secrets:
+      SUPABASE_URL:
+        required: false
+      SUPABASE_ANON_KEY:
+        required: false
+      SUPABASE_DATABASE_URL:
+        required: false
+
+jobs:
+  supabase-tests:
+    name: Supabase Integration
+    runs-on: ubuntu-latest
+    # Only run if Supabase secrets are configured
+    if: github.event_name == 'workflow_dispatch' || (secrets.SUPABASE_URL && secrets.SUPABASE_ANON_KEY && secrets.SUPABASE_DATABASE_URL)
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+
+      - name: Install Prisma CLI
+        run: npm install -g prisma
+
+      - name: Setup environment variables
+        working-directory: test/integration/supabase
+        run: |
+          cat > .env << EOF
+          SUPABASE_URL="${{ secrets.SUPABASE_URL }}"
+          SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
+          SUPABASE_DATABASE_URL="${{ secrets.SUPABASE_DATABASE_URL }}"
+          GRAPHQL_ENDPOINT="http://localhost:4003/graphql"
+          EOF
+
+      - name: Run database migrations
+        working-directory: test/integration/supabase
+        run: prisma migrate deploy
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DATABASE_URL }}
+
+      - name: Generate Prisma Client
+        working-directory: test/integration/supabase
+        run: prisma generate
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DATABASE_URL }}
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+
+      - name: Generate Dart code from Prisma schema
+        run: |
+          dart run prisma_flutter_connector:generate \
+            --schema test/integration/supabase/schema.prisma \
+            --output test/integration/supabase/generated/
+
+      - name: Run Supabase integration tests
+        run: flutter test test/integration/supabase/supabase_test.dart --coverage
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        if: success()
+        with:
+          files: ./coverage/lcov.info
+          flags: supabase-integration
