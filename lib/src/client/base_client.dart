@@ -1,41 +1,20 @@
 import 'package:graphql_flutter/graphql_flutter.dart';
-import 'package:prisma_flutter_connector/src/api/order_api.dart';
-import 'package:prisma_flutter_connector/src/api/product_api.dart';
-import 'package:prisma_flutter_connector/src/api/user_api.dart';
 import 'package:prisma_flutter_connector/src/client/prisma_config.dart';
 
-/// Main client for Prisma Flutter Connector
+/// Base client for Prisma Flutter Connector
 ///
-/// Usage:
-/// ```dart
-/// final client = PrismaClient(
-///   config: PrismaConfig(
-///     graphqlEndpoint: 'https://api.example.com/graphql',
-///   ),
-/// );
+/// This is a generic client that works with any Prisma schema.
+/// Model-specific clients are generated from your Prisma schema.
 ///
-/// // Query products
-/// final products = await client.products.list();
-///
-/// // Create order
-/// final order = await client.orders.create(
-///   input: CreateOrderInput(...),
-/// );
-/// ```
-class PrismaClient {
+/// Do not use this directly - use the generated `PrismaClient` from your schema.
+class BasePrismaClient {
   final PrismaConfig config;
-  late final GraphQLClient _graphQLClient;
+  late final GraphQLClient graphQLClient;
 
-  // API interfaces
-  late final ProductAPI products;
-  late final UserAPI users;
-  late final OrderAPI orders;
-
-  PrismaClient({
+  BasePrismaClient({
     required this.config,
   }) {
     _initializeGraphQLClient();
-    _initializeAPIs();
   }
 
   void _initializeGraphQLClient() {
@@ -63,7 +42,7 @@ class PrismaClient {
           )
         : httpLink;
 
-    _graphQLClient = GraphQLClient(
+    graphQLClient = GraphQLClient(
       link: link,
       cache: GraphQLCache(),
       defaultPolicies: DefaultPolicies(
@@ -80,15 +59,9 @@ class PrismaClient {
     );
   }
 
-  void _initializeAPIs() {
-    products = ProductAPI(_graphQLClient, config);
-    users = UserAPI(_graphQLClient, config);
-    orders = OrderAPI(_graphQLClient, config);
-  }
-
   /// Execute a raw GraphQL query
   Future<QueryResult> query(String query, {Map<String, dynamic>? variables}) {
-    return _graphQLClient.query(
+    return graphQLClient.query(
       QueryOptions(
         document: gql(query),
         variables: variables ?? {},
@@ -99,7 +72,7 @@ class PrismaClient {
   /// Execute a raw GraphQL mutation
   Future<QueryResult> mutate(String mutation,
       {Map<String, dynamic>? variables}) {
-    return _graphQLClient.mutate(
+    return graphQLClient.mutate(
       MutationOptions(
         document: gql(mutation),
         variables: variables ?? {},
@@ -110,7 +83,7 @@ class PrismaClient {
   /// Subscribe to a GraphQL subscription
   Stream<QueryResult> subscribe(String subscription,
       {Map<String, dynamic>? variables}) {
-    return _graphQLClient.subscribe(
+    return graphQLClient.subscribe(
       SubscriptionOptions(
         document: gql(subscription),
         variables: variables ?? {},

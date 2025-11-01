@@ -14,19 +14,15 @@ dependencies:
   graphql_flutter: ^5.1.0
   gql: ^1.0.0
 
-  # Ferry for type-safe GraphQL code generation
-  ferry: ^0.15.0
-  ferry_flutter: ^0.9.0
-
-  # Model generation
+  # Model generation (used by generated code)
   freezed_annotation: ^2.4.1
   json_annotation: ^4.9.0
 
   # WebSocket for subscriptions
   web_socket_channel: ^2.4.0
 
-  # HTTP client
-  http: ^1.1.0
+  # CLI argument parsing
+  args: ^2.4.2
 
 dev_dependencies:
   flutter_test:
@@ -37,8 +33,8 @@ dev_dependencies:
   freezed: ^2.5.8
   json_serializable: ^6.8.0
 
-  # Ferry code generation
-  ferry_generator: ^0.10.0
-
   # Linting
   flutter_lints: ^3.0.0
+
+executables:
+  generate:

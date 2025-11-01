@@ -1,0 +1,31 @@
+name: ecommerce_example
+description: E-commerce example demonstrating Prisma Flutter Connector
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Use the connector from parent directory
+  prisma_flutter_connector:
+    path: ../../
+
+  # Code generation dependencies
+  freezed_annotation: ^2.4.1
+  json_annotation: ^4.9.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  build_runner: ^2.4.6
+  freezed: ^2.5.8
+  json_serializable: ^6.8.0
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
