@@ -1,0 +1,44 @@
+name: prisma_flutter_connector
+description: A type-safe Flutter connector for Prisma backends using GraphQL. Provides seamless integration between Flutter apps and Prisma ORM with automatic code generation.
+version: 0.1.0
+homepage: https://github.com/yourusername/prisma-flutter-connector
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # GraphQL client
+  graphql_flutter: ^5.1.0
+  gql: ^1.0.0
+
+  # Ferry for type-safe GraphQL code generation
+  ferry: ^0.15.0
+  ferry_flutter: ^0.9.0
+
+  # Model generation
+  freezed_annotation: ^2.4.1
+  json_annotation: ^4.9.0
+
+  # WebSocket for subscriptions
+  web_socket_channel: ^2.4.0
+
+  # HTTP client
+  http: ^1.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # Code generation
+  build_runner: ^2.4.6
+  freezed: ^2.5.8
+  json_serializable: ^6.8.0
+
+  # Ferry code generation
+  ferry_generator: ^0.10.0
+
+  # Linting
+  flutter_lints: ^3.0.0

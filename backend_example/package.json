@@ -1,0 +1,36 @@
+{
+  "name": "prisma-flutter-backend-example",
+  "version": "1.0.0",
+  "description": "Example backend for Prisma Flutter Connector using Pothos + Apollo Server",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio",
+    "prisma:seed": "ts-node src/seed.ts"
+  },
+  "dependencies": {
+    "@apollo/server": "^4.10.0",
+    "@pothos/core": "^3.41.0",
+    "@pothos/plugin-prisma": "^3.64.0",
+    "@prisma/client": "^5.8.0",
+    "cors": "^2.8.5",
+    "graphql": "^16.8.1",
+    "graphql-scalars": "^1.22.4",
+    "graphql-subscriptions": "^2.0.0",
+    "graphql-ws": "^5.14.3",
+    "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/node": "^20.11.0",
+    "@types/ws": "^8.5.10",
+    "prisma": "^5.8.0",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.3.3"
+  }
+}
