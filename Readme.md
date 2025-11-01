@@ -601,7 +601,23 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed architecture.
 
 ## Testing
 
-The connector includes comprehensive tests across multiple databases.
+The connector includes comprehensive tests across multiple databases with easy-to-use Makefile commands and test scripts.
+
+### Quick Start
+
+```bash
+# Run all tests (recommended)
+make test-all
+
+# Run unit tests only
+make test-unit
+
+# Run specific database tests
+make test-postgres
+make test-mysql
+make test-mongodb
+make test-sqlite
+```
 
 ### Test Structure
 
@@ -617,73 +633,79 @@ test/
 └── e2e/               # End-to-end tests
 ```
 
-### Running Tests Locally
-
-#### Unit Tests
+### Using Makefile (Recommended)
 
 ```bash
-flutter test test/unit/
+# Testing
+make test-all          # Run all tests (lint + unit + integration)
+make test-unit         # Run unit tests
+make test-integration  # Run all integration tests
+make test-postgres     # PostgreSQL integration tests
+make test-mysql        # MySQL integration tests
+make test-mongodb      # MongoDB integration tests
+make test-sqlite       # SQLite integration tests
+make test-supabase     # Supabase integration tests (requires .env)
+
+# Database Setup
+make setup-postgres    # Start PostgreSQL container
+make setup-mysql       # Start MySQL container
+make setup-mongodb     # Start MongoDB container
+
+# Cleanup
+make cleanup-all       # Stop all containers
+
+# Code Quality
+make lint              # Format and analyze code
+make format            # Format Dart code
+make analyze           # Run Dart analyzer
 ```
 
-#### Integration Tests
+### Using Test Scripts
 
-Each database has its own test suite with Docker setup:
-
-**PostgreSQL:**
 ```bash
-cd test/integration/postgres
-docker-compose up -d
-prisma migrate dev
-flutter test postgres_test.dart
+# Run entire test suite
+./scripts/test-runner.sh
+
+# Run only unit tests
+./scripts/test-runner.sh --only-unit
+
+# Run only integration tests
+./scripts/test-runner.sh --only-integration
+
+# Test specific database
+./scripts/test-database.sh postgres
+./scripts/test-database.sh mysql
+./scripts/test-database.sh mongodb
+./scripts/test-database.sh sqlite
 ```
 
-**MySQL:**
-```bash
-cd test/integration/mysql
-docker-compose up -d
-prisma migrate dev
-flutter test mysql_test.dart
-```
-
-**MongoDB:**
-```bash
-cd test/integration/mongodb
-docker-compose up -d
-prisma db push
-flutter test mongodb_test.dart
-```
-
-**SQLite (no Docker needed):**
-```bash
-cd test/integration/sqlite
-prisma migrate dev
-flutter test sqlite_test.dart
-```
-
-**Supabase (requires credentials):**
-```bash
-cd test/integration/supabase
-cp .env.example .env
-# Fill in your Supabase credentials
-prisma migrate dev
-flutter test supabase_test.dart
-```
-
-See [test/README.md](test/README.md) for detailed testing instructions.
+See [test/README.md](test/README.md) for detailed testing instructions and manual setup.
 
 ### GitHub Actions CI/CD
 
-All tests run automatically on push and pull requests:
+The project uses **modular workflows** for better maintainability:
 
-- Unit Tests - Fast, no dependencies
-- PostgreSQL Tests - GitHub Actions service
-- MySQL Tests - GitHub Actions service
-- MongoDB Tests - Docker Compose
-- SQLite Tests - File-based, no setup needed
-- Supabase Tests - Requires GitHub secrets
-- Code Quality - Formatting, linting, analysis
+**Workflows:**
+- `.github/workflows/ci.yml` - Master workflow (runs all tests)
+- `.github/workflows/unit-tests.yml` - Unit tests
+- `.github/workflows/lint.yml` - Code quality
+- `.github/workflows/*-integration.yml` - Individual database tests
 
-View workflow: [.github/workflows/test.yml](.github/workflows/test.yml)
+**Test Execution:**
+1. Code quality checks (formatting, linting)
+2. Unit tests
+3. Integration tests (run in parallel):
+   - PostgreSQL (GitHub Actions service)
+   - MySQL (GitHub Actions service)
+   - MongoDB (Docker Compose)
+   - SQLite (file-based)
+   - Supabase (requires secrets)
+
+**Triggering Workflows:**
+- Automatically on push/PR to `main` or `develop`
+- Manually from GitHub Actions tab (any workflow)
+
+View workflows in [.github/workflows/](.github/workflows/)
 
 ### Contributing Tests
 
@@ -691,8 +713,9 @@ When adding features:
 
 1. Add unit tests for new components
 2. Add integration tests for database-specific features
-3. Ensure all CI checks pass
-4. Update test documentation
+3. Run `make test-all` before submitting PR
+4. Ensure all CI checks pass
+5. Update test documentation if needed
 
 See [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md) for contribution guidelines.
 

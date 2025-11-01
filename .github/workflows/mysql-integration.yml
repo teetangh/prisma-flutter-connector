@@ -1,0 +1,84 @@
+name: MySQL Integration Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  mysql-tests:
+    name: MySQL Integration
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root_password
+          MYSQL_DATABASE: test_db
+          MYSQL_USER: test_user
+          MYSQL_PASSWORD: test_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      DATABASE_URL: mysql://test_user:test_password@localhost:3306/test_db
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+
+      - name: Install Prisma CLI
+        run: npm install -g prisma
+
+      - name: Setup environment variables
+        working-directory: test/integration/mysql
+        run: cp .env.example .env
+
+      - name: Run database migrations
+        working-directory: test/integration/mysql
+        run: prisma migrate deploy
+
+      - name: Generate Prisma Client
+        working-directory: test/integration/mysql
+        run: prisma generate
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+
+      - name: Generate Dart code from Prisma schema
+        run: |
+          dart run prisma_flutter_connector:generate \
+            --schema test/integration/mysql/schema.prisma \
+            --output test/integration/mysql/generated/
+
+      - name: Run integration tests
+        run: flutter test test/integration/mysql/mysql_test.dart --coverage
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        if: success()
+        with:
+          files: ./coverage/lcov.info
+          flags: mysql-integration

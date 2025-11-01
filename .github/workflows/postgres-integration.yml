@@ -1,0 +1,83 @@
+name: PostgreSQL Integration Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  postgres-tests:
+    name: PostgreSQL Integration
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db?schema=public
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+
+      - name: Install Prisma CLI
+        run: npm install -g prisma
+
+      - name: Setup environment variables
+        working-directory: test/integration/postgres
+        run: cp .env.example .env
+
+      - name: Run database migrations
+        working-directory: test/integration/postgres
+        run: prisma migrate deploy
+
+      - name: Generate Prisma Client
+        working-directory: test/integration/postgres
+        run: prisma generate
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+
+      - name: Generate Dart code from Prisma schema
+        run: |
+          dart run prisma_flutter_connector:generate \
+            --schema test/integration/postgres/schema.prisma \
+            --output test/integration/postgres/generated/
+
+      - name: Run integration tests
+        run: flutter test test/integration/postgres/postgres_test.dart --coverage
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        if: success()
+        with:
+          files: ./coverage/lcov.info
+          flags: postgres-integration

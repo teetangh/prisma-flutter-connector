@@ -42,57 +42,79 @@ flutter analyze
 
 ## Running Tests
 
-### Unit Tests
+### Quick Start
+
+The easiest way to run tests is using the **Makefile**:
 
 ```bash
-flutter test test/unit/
+# Run all tests (recommended before submitting PR)
+make test-all
+
+# Run unit tests only
+make test-unit
+
+# Run all integration tests
+make test-integration
+
+# Run specific database test
+make test-postgres
+make test-mysql
+make test-mongodb
+make test-sqlite
 ```
 
-### Integration Tests
+### Using Test Scripts
 
-See the [test README](../test/README.md) for detailed instructions on running integration tests.
-
-Quick start:
+Alternatively, use the test runner scripts:
 
 ```bash
-# PostgreSQL
-cd test/integration/postgres
-docker-compose up -d
-prisma migrate dev
-flutter test test/integration/postgres/postgres_test.dart
+# Run entire test suite
+./scripts/test-runner.sh
 
-# MySQL
-cd test/integration/mysql
-docker-compose up -d
-prisma migrate dev
-flutter test test/integration/mysql/mysql_test.dart
+# Run only unit tests
+./scripts/test-runner.sh --only-unit
 
-# MongoDB
-cd test/integration/mongodb
-docker-compose up -d
-prisma db push
-flutter test test/integration/mongodb/mongodb_test.dart
+# Run only integration tests
+./scripts/test-runner.sh --only-integration
 
-# SQLite (no Docker needed)
-cd test/integration/sqlite
-prisma migrate dev
-flutter test test/integration/sqlite/sqlite_test.dart
+# Test specific database
+./scripts/test-database.sh postgres
+./scripts/test-database.sh mysql
+./scripts/test-database.sh mongodb
+./scripts/test-database.sh sqlite
 ```
+
+### Manual Testing
+
+See the [test README](../test/README.md) for detailed instructions on manual testing setup.
 
 ## GitHub Actions CI/CD
 
 ### Workflow Overview
 
-The project uses GitHub Actions for continuous integration. The workflow runs:
+The project uses **modular GitHub Actions workflows** for better maintainability and easier debugging. Each workflow can be triggered independently or as part of the complete CI pipeline.
 
-1. **Unit Tests** - Fast tests without external dependencies
-2. **Integration Tests** - Tests against real databases:
+#### Workflow Files
+
+- **`.github/workflows/ci.yml`** - Master workflow that orchestrates all tests
+- **`.github/workflows/unit-tests.yml`** - Unit tests
+- **`.github/workflows/lint.yml`** - Code quality (formatting + analyzer)
+- **`.github/workflows/postgres-integration.yml`** - PostgreSQL integration tests
+- **`.github/workflows/mysql-integration.yml`** - MySQL integration tests
+- **`.github/workflows/mongodb-integration.yml`** - MongoDB integration tests
+- **`.github/workflows/sqlite-integration.yml`** - SQLite integration tests
+- **`.github/workflows/supabase-integration.yml`** - Supabase integration tests
+
+#### Execution Flow
+
+1. **Lint** - Code formatting and analyzer checks
+2. **Unit Tests** - Fast tests without external dependencies
+3. **Integration Tests** (run in parallel after unit tests pass):
    - PostgreSQL (GitHub Actions service container)
    - MySQL (GitHub Actions service container)
    - MongoDB (Docker Compose)
    - SQLite (file-based, no service needed)
-   - Supabase (requires GitHub secrets)
-3. **Code Quality Checks** - Linting, formatting, analysis
+   - Supabase (requires GitHub secrets, conditional)
 
 ### Setting Up GitHub Secrets for Supabase Tests
 
@@ -139,18 +161,24 @@ Supabase integration tests require credentials stored as GitHub repository secre
 
 5. Once all three secrets are added, the Supabase integration tests will run automatically
 
-### Workflow Files
+### Manual Workflow Triggers
 
-- `.github/workflows/test.yml` - Main test workflow
-
-### Manual Workflow Trigger
-
-You can manually trigger the test workflow:
+You can manually trigger workflows from the GitHub Actions tab:
 
 1. Go to the "Actions" tab in your GitHub repository
-2. Select "Tests" from the workflows list
+2. Select the workflow you want to run:
+   - **CI - All Tests** - Run the complete test suite
+   - **Unit Tests** - Run only unit tests
+   - **PostgreSQL Integration Tests** - Run only PostgreSQL tests
+   - **MySQL Integration Tests** - Run only MySQL tests
+   - **MongoDB Integration Tests** - Run only MongoDB tests
+   - **SQLite Integration Tests** - Run only SQLite tests
+   - **Supabase Integration Tests** - Run only Supabase tests
+   - **Code Quality** - Run linting and analysis
 3. Click "Run workflow"
 4. Select the branch and click "Run workflow"
+
+**Tip**: Run specific database workflows to debug integration test failures faster!
 
 ## Code Style
 
