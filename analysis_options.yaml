@@ -8,8 +8,11 @@ analyzer:
     - "**/*.req.gql.dart"
     - "**/*.var.gql.dart"
     - "**/*.data.gql.dart"
+    - "prisma-submodule/**"
+    - "examples/**/generated/**"
   errors:
     invalid_annotation_target: ignore
+    avoid_print: ignore  # Allow print in CLI tools
 
 linter:
   rules:
