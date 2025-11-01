@@ -2,26 +2,40 @@
 
 [![pub package](https://img.shields.io/pub/v/prisma_flutter_connector.svg)](https://pub.dev/packages/prisma_flutter_connector)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Tests](https://github.com/yourusername/prisma-flutter-connector/workflows/Tests/badge.svg)](https://github.com/yourusername/prisma-flutter-connector/actions)
 
-A type-safe, GraphQL-based Flutter connector for Prisma backends. Build Flutter apps with seamless Prisma ORM integration, automatic code generation, and real-time subscriptions.
+A type-safe, database-agnostic Flutter connector that generates type-safe Dart clients from your Prisma schema. Build Flutter apps with seamless Prisma ORM integration, automatic code generation, and support for multiple databases.
 
 ## Features
 
-✅ **Type-Safe** - End-to-end type safety from database to UI
-✅ **GraphQL API** - Efficient queries with Pothos + Apollo Server
-✅ **Code Generation** - Freezed models with JSON serialization
-✅ **Real-time** - WebSocket subscriptions for live updates
-✅ **Error Handling** - Typed exceptions for better debugging
-✅ **Developer-Friendly** - Intuitive API inspired by Prisma Client
-✅ **Production Ready** - Used in real-world applications
+- **Database Agnostic** - PostgreSQL, MySQL, MongoDB, SQLite, Supabase
+- **Type-Safe** - End-to-end type safety from database to UI
+- **Code Generation** - Auto-generate Dart models and APIs from Prisma schema
+- **GraphQL-Based** - Efficient queries with Pothos + Apollo Server
+- **Freezed Models** - Immutable models with JSON serialization
+- **Real-time** - WebSocket subscriptions for live updates
+- **Error Handling** - Typed exceptions for better debugging
+- **Developer-Friendly** - Intuitive API inspired by Prisma Client
+- **CI/CD Ready** - GitHub Actions workflows included
+
+## Supported Databases
+
+- **PostgreSQL** - Full support with UUID, JSON, arrays
+- **MySQL** - Full support with auto-increment, decimals
+- **MongoDB** - Full support with ObjectId, embedded documents
+- **SQLite** - Full support with file-based storage
+- **Supabase** - Full support with PostgreSQL + Auth integration
 
 ## Table of Contents
 
 - [Installation](#installation)
 - [Quick Start](#quick-start)
+- [Code Generation](#code-generation)
 - [Usage](#usage)
 - [Backend Setup](#backend-setup)
+- [Database Setup](#database-setup)
 - [Architecture](#architecture)
+- [Testing](#testing)
 - [Documentation](#documentation)
 - [Roadmap](#roadmap)
 
@@ -42,10 +56,49 @@ flutter pub get
 
 ## Quick Start
 
-### 1. Initialize the Client
+### 1. Create Your Prisma Schema
+
+```prisma
+// schema.prisma
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  name        String
+  description String
+  price       Float
+  stock       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+```
+
+### 2. Generate Dart Code
+
+```bash
+# Generate type-safe Dart models and API clients
+dart run prisma_flutter_connector:generate \
+  --schema prisma/schema.prisma \
+  --output lib/generated/
+```
+
+This creates:
+- `lib/generated/models/` - Freezed models (Product, CreateProductInput, etc.)
+- `lib/generated/api/` - Type-safe API clients (ProductsAPI)
+- `lib/generated/client.dart` - PrismaClient with all APIs
+
+### 3. Initialize the Client
 
 ```dart
 import 'package:prisma_flutter_connector/prisma_flutter_connector.dart';
+import 'generated/client.dart';
 
 final client = PrismaClient(
   config: PrismaConfig(
@@ -55,7 +108,7 @@ final client = PrismaClient(
 );
 ```
 
-### 2. Query Data
+### 4. Use Type-Safe APIs
 
 ```dart
 // List all products
@@ -66,13 +119,6 @@ final cheapProducts = await client.products.list(
   filter: ProductFilter(priceUnder: 100),
 );
 
-// Get single product
-final product = await client.products.findUnique(id: 'product-id');
-```
-
-### 3. Create & Update
-
-```dart
 // Create product
 final newProduct = await client.products.create(
   input: CreateProductInput(
@@ -85,20 +131,136 @@ final newProduct = await client.products.create(
 
 // Update product
 final updated = await client.products.update(
-  id: product.id,
+  id: newProduct.id,
   input: UpdateProductInput(stock: 5),
 );
 ```
 
-### 4. Real-time Subscriptions
+## Code Generation
 
-```dart
-// Subscribe to new orders
-final subscription = client.orders.subscribeToOrderCreated();
+The connector works by generating type-safe Dart code from your Prisma schema. This ensures complete type safety from your database to your Flutter UI.
 
-subscription.listen((order) {
-  print('New order: ${order.id} - Total: \$${order.total}');
-});
+### Generator CLI
+
+```bash
+dart run prisma_flutter_connector:generate [options]
+```
+
+**Options:**
+- `--schema` - Path to your Prisma schema file (required)
+- `--output` - Output directory for generated code (required)
+
+**Example:**
+```bash
+dart run prisma_flutter_connector:generate \
+  --schema prisma/schema.prisma \
+  --output lib/generated/
+```
+
+### What Gets Generated
+
+For each model in your Prisma schema, the generator creates:
+
+1. **Freezed Model** (`models/product.dart`)
+   ```dart
+   @freezed
+   class Product with _$Product {
+     const factory Product({
+       required String id,
+       required String name,
+       required String description,
+       required double price,
+       required int stock,
+       required DateTime createdAt,
+       required DateTime updatedAt,
+     }) = _Product;
+
+     factory Product.fromJson(Map<String, dynamic> json) => _$ProductFromJson(json);
+   }
+   ```
+
+2. **Input Types** (`models/product_input.dart`)
+   ```dart
+   @freezed
+   class CreateProductInput with _$CreateProductInput {
+     const factory CreateProductInput({
+       required String name,
+       required String description,
+       required double price,
+       int? stock,
+     }) = _CreateProductInput;
+   }
+
+   @freezed
+   class UpdateProductInput with _$UpdateProductInput {
+     const factory UpdateProductInput({
+       String? name,
+       String? description,
+       double? price,
+       int? stock,
+     }) = _UpdateProductInput;
+   }
+   ```
+
+3. **Filter Types** (`models/product_filter.dart`)
+   ```dart
+   @freezed
+   class ProductFilter with _$ProductFilter {
+     const factory ProductFilter({
+       String? nameContains,
+       double? priceUnder,
+       double? priceOver,
+       bool? inStock,
+     }) = _ProductFilter;
+   }
+   ```
+
+4. **API Client** (`api/products_api.dart`)
+   ```dart
+   class ProductsAPI extends BaseAPI<Product> {
+     Future<Product?> findUnique({required String id});
+     Future<List<Product>> list({ProductFilter? filter, ProductOrderBy? orderBy});
+     Future<Product> create({required CreateProductInput input});
+     Future<Product> update({required String id, required UpdateProductInput input});
+     Future<Product> delete({required String id});
+   }
+   ```
+
+5. **PrismaClient** (`client.dart`)
+   ```dart
+   class PrismaClient extends BasePrismaClient {
+     late final ProductsAPI products;
+     // ... other model APIs
+   }
+   ```
+
+### Running Build Runner
+
+After code generation, run build_runner to generate Freezed and JSON serialization code:
+
+```bash
+flutter pub run build_runner build --delete-conflicting-outputs
+```
+
+### Workflow
+
+```bash
+# 1. Define your Prisma schema
+vim prisma/schema.prisma
+
+# 2. Generate Prisma Client (Node.js)
+npx prisma generate
+
+# 3. Generate Dart code
+dart run prisma_flutter_connector:generate \
+  --schema prisma/schema.prisma \
+  --output lib/generated/
+
+# 4. Generate Freezed code
+flutter pub run build_runner build --delete-conflicting-outputs
+
+# 5. Use in your app
+# Import generated client and start querying!
 ```
 
 ## Usage
@@ -231,64 +393,395 @@ model Product {
 
 See [backend_example/prisma/schema.prisma](backend_example/prisma/schema.prisma) for the complete E-commerce schema.
 
+## Database Setup
+
+The connector supports multiple databases. Choose the one that fits your needs:
+
+### PostgreSQL
+
+```prisma
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String
+  posts     Post[]
+  createdAt DateTime @default(now())
+}
+```
+
+**Connection String:**
+```env
+DATABASE_URL="postgresql://user:password@localhost:5432/mydb"
+```
+
+**Docker:**
+```bash
+docker run -d \
+  -e POSTGRES_PASSWORD=password \
+  -p 5432:5432 \
+  postgres:16-alpine
+```
+
+### MySQL
+
+```prisma
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Product {
+  id       Int      @id @default(autoincrement())
+  name     String
+  price    Decimal  @db.Decimal(10, 2)
+  category Category @relation(fields: [categoryId], references: [id])
+}
+```
+
+**Connection String:**
+```env
+DATABASE_URL="mysql://user:password@localhost:3306/mydb"
+```
+
+**Docker:**
+```bash
+docker run -d \
+  -e MYSQL_ROOT_PASSWORD=password \
+  -e MYSQL_DATABASE=mydb \
+  -p 3306:3306 \
+  mysql:8.0
+```
+
+### MongoDB
+
+```prisma
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model Blog {
+  id       String   @id @default(auto()) @map("_id") @db.ObjectId
+  title    String
+  content  String
+  tags     String[]
+  metadata Json?
+}
+```
+
+**Connection String:**
+```env
+DATABASE_URL="mongodb://localhost:27017/mydb"
+```
+
+**Docker:**
+```bash
+docker run -d \
+  -p 27017:27017 \
+  mongo:7.0
+```
+
+### SQLite
+
+```prisma
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Task {
+  id          String   @id @default(cuid())
+  title       String
+  completed   Boolean  @default(false)
+  priority    Int      @default(0)
+}
+```
+
+**No installation needed** - SQLite is file-based!
+
+### Supabase
+
+```prisma
+datasource db {
+  provider = "postgresql"
+  url      = env("SUPABASE_DATABASE_URL")
+}
+
+model Profile {
+  id        String   @id @default(uuid())
+  userId    String   @unique  // Supabase Auth user ID
+  username  String   @unique
+  avatarUrl String?
+}
+```
+
+**Connection String:**
+```env
+SUPABASE_DATABASE_URL="postgresql://postgres:[YOUR-PASSWORD]@db.yourproject.supabase.co:5432/postgres"
+```
+
+Get your connection string from Supabase project settings.
+
+### Running Migrations
+
+```bash
+# Create a migration
+npx prisma migrate dev --name init
+
+# Apply migrations (production)
+npx prisma migrate deploy
+
+# MongoDB: use db push instead
+npx prisma db push
+```
+
 ## Architecture
 
+### High-Level Overview
+
 ```
-Flutter App → PrismaClient → GraphQL → Apollo Server → Pothos Schema → Prisma ORM → Database
+Prisma Schema (.prisma)
+    ↓
+Code Generator (bin/generate.dart)
+    ↓
+├── Dart Models (Freezed)
+├── API Clients (type-safe)
+└── PrismaClient
+    ↓
+GraphQL Client (graphql_flutter)
+    ↓
+Backend (Apollo Server + Pothos)
+    ↓
+Prisma ORM
+    ↓
+Database (PostgreSQL/MySQL/MongoDB/SQLite/Supabase)
 ```
 
-The connector uses:
-- **GraphQL** - Chosen over REST for mobile efficiency (see [docs/API_DECISION.md](docs/API_DECISION.md))
-- **Pothos** - Auto-generates GraphQL schema from Prisma
-- **Freezed** - Type-safe immutable models
-- **graphql_flutter** - GraphQL client with subscription support
+### Components
+
+#### 1. Code Generator (`lib/src/generator/`)
+- **PrismaParser**: Parses `.prisma` schema files
+- **ModelGenerator**: Generates Freezed models and input types
+- **APIGenerator**: Generates type-safe API clients
+- **CLI Tool**: `bin/generate.dart` - Command-line interface
+
+#### 2. Runtime (`lib/src/`)
+- **BasePrismaClient**: Generic client that works with any schema
+- **BaseAPI**: Base class for generated API clients
+- **PrismaConfig**: Configuration (endpoints, auth, caching)
+- **Exceptions**: Typed error handling
+
+#### 3. Generated Code
+- **Models**: Freezed classes with JSON serialization
+- **Input Types**: CreateInput, UpdateInput for mutations
+- **Filter Types**: Type-safe query filters
+- **API Clients**: One per model (ProductsAPI, UsersAPI, etc.)
+- **PrismaClient**: Main entry point with all APIs
+
+#### 4. Backend Stack
+- **GraphQL** - Chosen over REST for mobile efficiency
+- **Pothos GraphQL** - Auto-generates schema from Prisma
+- **Apollo Server** - GraphQL server with subscriptions
+- **Prisma ORM** - Database ORM with migrations
+
+### Why Code Generation?
+
+1. **Database Agnostic**: Works with any Prisma-supported database
+2. **Zero Hardcoding**: No model-specific code in the library
+3. **Type Safety**: Full type safety from database to UI
+4. **Developer Experience**: One command to generate entire client
+5. **Maintainability**: Schema changes automatically propagate
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed architecture.
 
+## Testing
+
+The connector includes comprehensive tests across multiple databases.
+
+### Test Structure
+
+```
+test/
+├── unit/               # Unit tests for components
+├── integration/        # Integration tests with real databases
+│   ├── postgres/      # PostgreSQL tests
+│   ├── mysql/         # MySQL tests
+│   ├── mongodb/       # MongoDB tests
+│   ├── sqlite/        # SQLite tests
+│   └── supabase/      # Supabase tests
+└── e2e/               # End-to-end tests
+```
+
+### Running Tests Locally
+
+#### Unit Tests
+
+```bash
+flutter test test/unit/
+```
+
+#### Integration Tests
+
+Each database has its own test suite with Docker setup:
+
+**PostgreSQL:**
+```bash
+cd test/integration/postgres
+docker-compose up -d
+prisma migrate dev
+flutter test postgres_test.dart
+```
+
+**MySQL:**
+```bash
+cd test/integration/mysql
+docker-compose up -d
+prisma migrate dev
+flutter test mysql_test.dart
+```
+
+**MongoDB:**
+```bash
+cd test/integration/mongodb
+docker-compose up -d
+prisma db push
+flutter test mongodb_test.dart
+```
+
+**SQLite (no Docker needed):**
+```bash
+cd test/integration/sqlite
+prisma migrate dev
+flutter test sqlite_test.dart
+```
+
+**Supabase (requires credentials):**
+```bash
+cd test/integration/supabase
+cp .env.example .env
+# Fill in your Supabase credentials
+prisma migrate dev
+flutter test supabase_test.dart
+```
+
+See [test/README.md](test/README.md) for detailed testing instructions.
+
+### GitHub Actions CI/CD
+
+All tests run automatically on push and pull requests:
+
+- Unit Tests - Fast, no dependencies
+- PostgreSQL Tests - GitHub Actions service
+- MySQL Tests - GitHub Actions service
+- MongoDB Tests - Docker Compose
+- SQLite Tests - File-based, no setup needed
+- Supabase Tests - Requires GitHub secrets
+- Code Quality - Formatting, linting, analysis
+
+View workflow: [.github/workflows/test.yml](.github/workflows/test.yml)
+
+### Contributing Tests
+
+When adding features:
+
+1. Add unit tests for new components
+2. Add integration tests for database-specific features
+3. Ensure all CI checks pass
+4. Update test documentation
+
+See [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md) for contribution guidelines.
+
 ## Documentation
+
+### Core Documentation
 
 - [Architecture](docs/ARCHITECTURE.md) - System design and components
 - [API Decision](docs/API_DECISION.md) - Why GraphQL over REST
 - [Design Blueprint](docs/DESIGN_BLUEPRINT.md) - Original design document
-- [Backend README](backend_example/README.md) - Backend setup guide
+
+### Testing & Contributing
+
+- [Test README](test/README.md) - Testing guide for all databases
+- [Contributing Guide](.github/CONTRIBUTING.md) - How to contribute
+- [GitHub Actions](.github/workflows/test.yml) - CI/CD configuration
+
+### Examples
+
+- [E-commerce Example](examples/ecommerce/) - Full-featured example app
+- [Backend Example](backend_example/) - GraphQL backend setup
+
+### Additional Resources
+
 - [Changelog](CHANGELOG.md) - Version history
+- [License](LICENSE) - MIT License
 
 ## Roadmap
 
-### v0.1.0 (Current) ✅
+### v0.1.0 (Current)
+
+- Code generation from Prisma schema
+- Multi-database support (PostgreSQL, MySQL, MongoDB, SQLite, Supabase)
+- Type-safe Freezed models
+- GraphQL-based API clients
 - Basic CRUD operations
-- Type-safe models with Freezed
-- GraphQL queries and mutations
 - Real-time subscriptions
 - Error handling
-- E-commerce example
+- Comprehensive test suite
+- CI/CD with GitHub Actions
 
 ### v0.2.0 (Planned)
+
 - Offline support with Drift
 - Cache-first queries
 - Optimistic UI updates
 - Pagination (cursor-based)
+- Aggregations (count, sum, avg)
+- Relations loading (include/select)
 
 ### v0.3.0 (Future)
+
 - Batch operations
 - File uploads
-- Advanced filters
-- Aggregations
+- Advanced filters (full-text search)
+- Transaction support
+- Query builder API
+- Middleware support
 
 ### v1.0.0 (Future)
+
 - Production stability
 - Performance optimizations
-- Comprehensive tests
+- Comprehensive documentation
 - Migration guides
+- VS Code extension
+- CLI improvements
 
 ## Contributing
 
-Contributions welcome! Please:
+Contributions are welcome! Please read our [Contributing Guide](.github/CONTRIBUTING.md) for details on:
+
+- Development setup
+- Running tests
+- Code style guidelines
+- Pull request process
+- Setting up GitHub secrets for CI/CD
+
+Quick start:
 
 1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push and open a Pull Request
+2. Clone and initialize submodules: `git clone --recurse-submodules`
+3. Install dependencies: `flutter pub get`
+4. Create a feature branch: `git checkout -b feature/my-feature`
+5. Make your changes and add tests
+6. Run tests: `flutter test`
+7. Run analyzer: `flutter analyze`
+8. Commit and push
+9. Open a Pull Request
 
 ## License
 
@@ -299,6 +792,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 Created with ❤️ for the Flutter and Prisma communities.
 
 Special thanks to:
+
 - [Prisma](https://www.prisma.io/) - Next-generation ORM
 - [Pothos GraphQL](https://pothos-graphql.dev/) - Type-safe schema builder
 - [Freezed](https://pub.dev/packages/freezed) - Immutable code generation
