@@ -1,5 +1,7 @@
 # Environment files with secrets
 .env
+.env.local
+.env.*.local
 
 # Node modules
 backend/node_modules/
@@ -18,8 +20,8 @@ flutter_app/.flutter-plugins-dependencies
 flutter_app/.packages
 flutter_app/pubspec.lock
 
-# Generated code
-flutter_app/lib/generated/
+# Generated code - Prisma client and models
+lib/generated/
 **/*.g.dart
 **/*.freezed.dart
 

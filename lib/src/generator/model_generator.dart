@@ -37,17 +37,54 @@ class ModelGenerator {
 
     // Fields
     for (final field in model.fields) {
-      if (field.isRequired && !field.isList) {
-        buffer.writeln('    required ${field.dartType} ${field.name},');
-      } else {
-        buffer.writeln('    ${field.dartType} ${field.name},');
+      // Handle relation fields - exclude from JSON serialization
+      if (field.isRelation) {
+        buffer.writeln('    @JsonKey(includeFromJson: false, includeToJson: false)');
+        // Relation fields are always optional
+        final relationType = field.isList ? 'List<${field.type}>' : field.type;
+        buffer.writeln('    $relationType? ${field.name},');
+        continue;
       }
-    }
 
-    // Relations (optional)
-    for (final relation in model.relations) {
-      final relationType = relation.targetModel;
-      buffer.writeln('    $relationType? ${relation.name},');
+      // Handle list fields with empty default
+      if (field.hasEmptyListDefault && field.isList) {
+        final elementType = field.type;
+        buffer.writeln('    @Default(<$elementType>[])');
+        buffer.writeln('    List<$elementType>? ${field.name},');
+        continue;
+      }
+
+      // Handle enum defaults
+      if (field.defaultValue != null && _isEnumType(field.type)) {
+        final enumValue = _toCamelCase(field.defaultValue!);
+        buffer.writeln('    @Default(${field.type}.$enumValue)');
+        if (field.isRequired && !field.isList) {
+          buffer.writeln('    required ${field.dartType} ${field.name},');
+        } else {
+          buffer.writeln('    ${field.dartType} ${field.name},');
+        }
+        continue;
+      }
+
+      // Handle scalar defaults
+      if (field.defaultValue != null && !field.isRelation) {
+        buffer.writeln('    @Default(${field.defaultValue})');
+      }
+
+      // Regular fields - use correct required/optional logic
+      if (field.isRequired && !field.isList) {
+        // Required non-list fields
+        buffer.writeln('    required ${field.type} ${field.name},');
+      } else if (!field.isRequired && !field.isList) {
+        // Optional non-list fields
+        buffer.writeln('    ${field.type}? ${field.name},');
+      } else if (field.isList && field.isRequired) {
+        // Required list fields
+        buffer.writeln('    required List<${field.type}> ${field.name},');
+      } else {
+        // Optional list fields
+        buffer.writeln('    List<${field.type}>? ${field.name},');
+      }
     }
 
     buffer.writeln('  }) = _${model.name};');
@@ -69,6 +106,11 @@ class ModelGenerator {
     return buffer.toString();
   }
 
+  /// Check if a type is an enum (defined in the schema)
+  bool _isEnumType(String typeName) {
+    return schema.enums.any((e) => e.name == typeName);
+  }
+
   /// Generate Create input type
   String _generateInputTypes(PrismaModel model) {
     final buffer = StringBuffer();
@@ -80,17 +122,51 @@ class ModelGenerator {
     buffer.writeln('  const factory Create${model.name}Input({');
 
     for (final field in model.fields) {
-      // Skip auto-generated fields
-      if (field.isId || field.isCreatedAt || field.isUpdatedAt) {
+      // Skip auto-generated fields and relations
+      if (field.isId || field.isCreatedAt || field.isUpdatedAt || field.isRelation) {
         continue;
       }
 
-      if (field.isRequired) {
-        buffer.writeln('    required ${field.dartType} ${field.name},');
+      // Handle list fields with empty default
+      if (field.hasEmptyListDefault && field.isList) {
+        final elementType = field.type;
+        buffer.writeln('    @Default(<$elementType>[])');
+        buffer.writeln('    List<$elementType>? ${field.name},');
+        continue;
+      }
+
+      // Handle enum defaults
+      if (field.defaultValue != null && _isEnumType(field.type)) {
+        final enumValue = _toCamelCase(field.defaultValue!);
+        buffer.writeln('    @Default(${field.type}.$enumValue)');
+        if (field.isRequired) {
+          buffer.writeln('    required ${field.type} ${field.name},');
+        } else {
+          buffer.writeln('    ${field.type}? ${field.name},');
+        }
+        continue;
+      }
+
+      // Handle other defaults
+      if (field.isRequired && field.defaultValue == null) {
+        if (field.isList) {
+          buffer.writeln('    required List<${field.type}> ${field.name},');
+        } else {
+          buffer.writeln('    required ${field.type} ${field.name},');
+        }
       } else if (field.defaultValue != null) {
-        buffer.writeln('    @Default(${field.defaultValue}) ${field.dartType} ${field.name},');
+        buffer.writeln('    @Default(${field.defaultValue})');
+        if (field.isList) {
+          buffer.writeln('    List<${field.type}>? ${field.name},');
+        } else {
+          buffer.writeln('    ${field.type}? ${field.name},');
+        }
       } else {
-        buffer.writeln('    ${field.dartType} ${field.name},');
+        if (field.isList) {
+          buffer.writeln('    List<${field.type}>? ${field.name},');
+        } else {
+          buffer.writeln('    ${field.type}? ${field.name},');
+        }
       }
     }
 
@@ -108,17 +184,17 @@ class ModelGenerator {
     buffer.writeln('  const factory Update${model.name}Input({');
 
     for (final field in model.fields) {
-      // Skip auto-generated and ID fields
-      if (field.isId || field.isCreatedAt || field.isUpdatedAt) {
+      // Skip auto-generated, ID fields, and relations
+      if (field.isId || field.isCreatedAt || field.isUpdatedAt || field.isRelation) {
         continue;
       }
 
-      // Make all fields optional for updates
-      var dartType = field.dartType;
-      if (!dartType.endsWith('?')) {
-        dartType = '$dartType?';
+      // All update fields are optional
+      if (field.isList) {
+        buffer.writeln('    List<${field.type}>? ${field.name},');
+      } else {
+        buffer.writeln('    ${field.type}? ${field.name},');
       }
-      buffer.writeln('    $dartType ${field.name},');
     }
 
     buffer.writeln('  }) = _Update${model.name}Input;');
@@ -142,9 +218,7 @@ class ModelGenerator {
 
     for (final field in model.fields) {
       // Skip relations
-      if (field.type[0].toUpperCase() == field.type[0] &&
-          field.type != 'String' &&
-          field.type != 'DateTime') {
+      if (field.isRelation) {
         continue;
       }
 
