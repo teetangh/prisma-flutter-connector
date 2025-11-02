@@ -59,16 +59,62 @@ var, void, while, with, yield
 #### Common Issues in This Schema
 
 The current `schema.prisma` contains reserved keywords:
-- **Model name:** `Class` → Should be renamed to `Lesson`, `Course`, or `ClassModel`
-- **Field names:** `class` → Should be renamed to `lesson`, `course`, or `classRef`
+- **Model name:** `Class` (Dart reserved keyword)
+- **Field names:** `class` (Dart reserved keyword)
 
-#### To Fix the Schema
+#### How to Fix Reserved Keywords
 
-```bash
-# Edit schema.prisma and rename:
-# model Class → model Lesson
-# field class → field lesson
+**Option 1: Rename in Schema (Recommended)**
+
+```prisma
+// Before:
+model Class {
+  id String @id
+}
+
+model Waitlist {
+  class Class @relation(...)
+  classId String
+}
+
+// After:
+model Lesson {
+  id String @id
+}
+
+model Waitlist {
+  lesson Lesson @relation(...)
+  lessonId String
+}
 ```
+
+**Option 2: Use @map to Keep Original Database Names**
+
+```prisma
+// Rename in Dart, keep DB name with @map
+model Lesson {
+  id String @id
+
+  @@map("Class")  // Table is still named "Class" in database
+}
+
+model Waitlist {
+  lesson Lesson @relation(fields: [lessonId], references: [id])
+  lessonId String @map("classId")  // Column is still "classId" in DB
+
+  @@map("waitlist")
+}
+```
+
+**Why @map?**
+- ✅ No database migration needed
+- ✅ Generated Dart code uses valid identifiers
+- ✅ Schema matches your actual database structure
+
+**Why Rename?**
+- ✅ Cleaner, more consistent
+- ✅ Better for new projects
+- ✅ Follows Dart naming conventions
 
 #### Generate Client
 
@@ -109,10 +155,41 @@ dart run lib/example.dart
 
 ```
 ❌ Generator Error: Reserved Dart keyword "Class" cannot be used as model name
-Suggestion: Rename to: "ClassModel", "Class_", or choose a different name
+
+Suggestion: Prisma follows strict naming rules to ensure generated code compiles.
+
+Option 1 (Recommended): Rename the model in your schema
+  → model Lesson { ... }
+  → model Course { ... }
+  → model ClassModel { ... }
+
+Option 2: Use @map to keep the original database table name
+  → model Lesson {
+      ...
+      @@map("Class")  // Maps to "Class" table in database
+    }
+
+Learn more: https://pris.ly/d/naming-models
 ```
 
-**Solution:** Rename the model/field in your Prisma schema to a non-reserved word.
+**Why is Dart stricter than TypeScript?**
+
+Unlike JavaScript/TypeScript, Dart does **not** allow reserved keywords as identifiers in any context:
+
+```javascript
+// ✅ Valid in JavaScript/TypeScript
+const obj = { class: "foo" };
+console.log(obj.class);
+```
+
+```dart
+// ❌ Invalid in Dart - compilation error
+class MyClass {
+  String class;  // Error: 'class' is reserved
+}
+```
+
+This is why we follow Prisma's strict validation approach - to ensure your generated code compiles.
 
 ### Flutter Dependency Error
 

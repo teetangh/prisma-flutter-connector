@@ -221,11 +221,95 @@ class PrismaParser {
   /// Validate that name is not a reserved Dart keyword
   void _validateIdentifier(String name, String type) {
     if (dartReservedKeywords.contains(name.toLowerCase())) {
+      final suggestions = _getSuggestionForReservedKeyword(name, type);
       throw GeneratorError(
         'Reserved Dart keyword "$name" cannot be used as $type name',
-        suggestion: 'Rename to: "${name}Model", "${name}_", or choose a different name',
+        suggestion: suggestions,
       );
     }
+  }
+
+  /// Get context-specific suggestions for reserved keyword violations
+  String _getSuggestionForReservedKeyword(String name, String type) {
+    if (type == 'model') {
+      // Common model name alternatives
+      final alternatives = _getModelAlternatives(name);
+      return '''
+Prisma follows strict naming rules to ensure generated code compiles.
+
+Option 1 (Recommended): Rename the model in your schema
+  ${alternatives.map((alt) => '→ model $alt { ... }').join('\n  ')}
+
+Option 2: Use @map to keep the original database table name
+  → model ${alternatives.first} {
+      ...
+      @@map("$name")  // Maps to "$name" table in database
+    }
+
+Learn more: https://pris.ly/d/naming-models''';
+    } else {
+      // Field name alternatives
+      final alternatives = _getFieldAlternatives(name);
+      return '''
+Prisma follows strict naming rules to ensure generated code compiles.
+
+Option 1 (Recommended): Rename the field in your schema
+  ${alternatives.map((alt) => '→ $alt: Type').join('\n  ')}
+
+Option 2: Use @map to keep the original database column name
+  → ${alternatives.first} Type @map("$name")  // Maps to "$name" column
+
+Note: Unlike TypeScript, Dart does not allow reserved keywords as identifiers.''';
+    }
+  }
+
+  /// Get alternative model names for a reserved keyword
+  List<String> _getModelAlternatives(String name) {
+    final capitalized = name[0].toUpperCase() + name.substring(1);
+
+    // Common patterns based on the keyword
+    final commonAlternatives = <String, List<String>>{
+      'class': ['Lesson', 'Course', 'ClassModel'],
+      'enum': ['Enumeration', 'EnumType', 'EnumModel'],
+      'interface': ['Contract', 'InterfaceType', 'InterfaceModel'],
+      'default': ['DefaultValue', 'DefaultConfig', 'DefaultModel'],
+      'void': ['Empty', 'VoidType', 'VoidModel'],
+      'static': ['StaticData', 'StaticConfig', 'StaticModel'],
+      'final': ['FinalData', 'FinalValue', 'FinalModel'],
+      'const': ['Constant', 'ConstValue', 'ConstModel'],
+    };
+
+    if (commonAlternatives.containsKey(name.toLowerCase())) {
+      return commonAlternatives[name.toLowerCase()]!;
+    }
+
+    // Generic alternatives
+    return ['${capitalized}Model', '${capitalized}Entity', '${capitalized}Data'];
+  }
+
+  /// Get alternative field names for a reserved keyword
+  List<String> _getFieldAlternatives(String name) {
+    // Common patterns based on the keyword
+    final commonAlternatives = <String, List<String>>{
+      'class': ['lesson', 'course', 'classRef'],
+      'enum': ['enumeration', 'enumType', 'enumValue'],
+      'type': ['dataType', 'kind', 'category'],
+      'default': ['defaultValue', 'defaultConfig', 'isDefault'],
+      'static': ['isStatic', 'staticValue', 'staticData'],
+      'final': ['isFinal', 'finalValue', 'finalData'],
+      'const': ['constant', 'constValue', 'isConst'],
+      'void': ['isEmpty', 'voidValue', 'voidType'],
+      'return': ['returnValue', 'result', 'output'],
+      'continue': ['shouldContinue', 'continueFlag', 'nextStep'],
+      'break': ['shouldBreak', 'breakPoint', 'stop'],
+    };
+
+    if (commonAlternatives.containsKey(name.toLowerCase())) {
+      return commonAlternatives[name.toLowerCase()]!;
+    }
+
+    // Generic alternatives
+    return ['${name}Value', '${name}Data', '${name}Field'];
   }
 
   /// Parse schema content from a string
