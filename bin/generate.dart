@@ -10,12 +10,14 @@
 ///   --schema prisma/schema.prisma \
 ///   --output lib/generated/
 /// ```
+library;
 
 import 'dart:io';
 import 'package:args/args.dart';
 import 'package:prisma_flutter_connector/src/generator/prisma_parser.dart';
 import 'package:prisma_flutter_connector/src/generator/model_generator.dart';
-import 'package:prisma_flutter_connector/src/generator/api_generator.dart';
+import 'package:prisma_flutter_connector/src/generator/delegate_generator.dart';
+import 'package:prisma_flutter_connector/src/generator/client_generator.dart';
 
 void main(List<String> arguments) async {
   final parser = ArgParser()
@@ -84,25 +86,26 @@ void main(List<String> arguments) async {
     print('  ✓ Generated ${entry.key}');
   }
 
-  // Generate APIs
-  print('🔌 Generating API clients...');
-  final apiGenerator = APIGenerator(schema);
-  final apiFiles = apiGenerator.generateAll();
+  // Generate Delegates (adapter-based)
+  print('🔌 Generating model delegates...');
+  final delegateGenerator = DelegateGenerator(schema);
+  final delegateFiles = delegateGenerator.generateAll();
 
-  final apiDir = Directory('$outputPath/api');
-  if (!apiDir.existsSync()) {
-    apiDir.createSync(recursive: true);
+  final delegatesDir = Directory('$outputPath/delegates');
+  if (!delegatesDir.existsSync()) {
+    delegatesDir.createSync(recursive: true);
   }
 
-  for (final entry in apiFiles.entries) {
-    final file = File('${apiDir.path}/${entry.key}');
+  for (final entry in delegateFiles.entries) {
+    final file = File('${delegatesDir.path}/${entry.key}');
     await file.writeAsString(entry.value);
     print('  ✓ Generated ${entry.key}');
   }
 
-  // Generate main client file
+  // Generate main client file (adapter-based)
   print('🎯 Generating PrismaClient...');
-  final clientCode = _generatePrismaClient(schema);
+  final clientGenerator = ClientGenerator(schema);
+  final clientCode = clientGenerator.generate();
   final clientFile = File('$outputPath/prisma_client.dart');
   await clientFile.writeAsString(clientCode);
   print('  ✓ Generated prisma_client.dart');
@@ -110,49 +113,12 @@ void main(List<String> arguments) async {
   print('\n✨ Code generation complete!');
   print('\n📝 Next steps:');
   print('  1. Run: dart run build_runner build --delete-conflicting-outputs');
-  print('  2. Import: import \'package:your_app/generated/prisma_client.dart\';');
-  print('  3. Use: final client = PrismaClient(config: ...);');
-}
-
-String _generatePrismaClient(PrismaSchema schema) {
-  final buffer = StringBuffer();
-
-  // Imports
-  buffer.writeln("import 'package:prisma_flutter_connector/prisma_flutter_connector.dart';");
-  buffer.writeln("import 'package:graphql_flutter/graphql_flutter.dart';");
-
-  for (final model in schema.models) {
-    final snakeName = _toSnakeCase(model.name);
-    buffer.writeln("import 'api/${snakeName}_api.dart';");
-  }
-
-  buffer.writeln();
-
-  // PrismaClient class
-  buffer.writeln('/// Generated Prisma client for your schema');
-  buffer.writeln('class PrismaClient extends BasePrismaClient {');
-  buffer.writeln('  PrismaClient({required super.config});');
-  buffer.writeln();
-
-  // Generate API getters
-  for (final model in schema.models) {
-    final camelName = _toLowerCamelCase(model.name);
-    buffer.writeln('  late final ${model.name}API $camelName = ${model.name}API(graphQLClient, config);');
-  }
-
-  buffer.writeln('}');
-
-  return buffer.toString();
-}
-
-String _toSnakeCase(String input) {
-  return input.replaceAllMapped(
-    RegExp(r'[A-Z]'),
-    (match) => '_${match.group(0)!.toLowerCase()}',
-  ).substring(1);
-}
-
-String _toLowerCamelCase(String input) {
-  if (input.isEmpty) return input;
-  return input[0].toLowerCase() + input.substring(1);
+  print('  2. Import the generated client:');
+  print('     import \'package:your_app/generated/prisma_client.dart\';');
+  print('  3. Create a database adapter:');
+  print('     final adapter = PostgresAdapter(connection);');
+  print('     // or SupabaseAdapter, SQLiteAdapter, etc.');
+  print('  4. Use the client:');
+  print('     final prisma = PrismaClient(adapter: adapter);');
+  print('     final users = await prisma.user.findMany();');
 }

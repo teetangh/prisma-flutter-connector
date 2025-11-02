@@ -108,6 +108,12 @@ lib/generated_plugin_registrant.dart
 *.var.gql.dart
 *.data.gql.dart
 
+# Prisma generated client code
+**/lib/generated/
+**/generated/prisma_client.dart
+**/generated/models/
+**/generated/delegates/
+
 # Backend example
 backend_example/node_modules/
 backend_example/dist/

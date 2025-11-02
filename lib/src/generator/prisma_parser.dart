@@ -1,7 +1,39 @@
 /// Prisma schema parser
 ///
 /// Parses `.prisma` schema files and extracts models, fields, relations, and enums.
+/// Validates schema against Dart reserved keywords and naming conventions.
 library;
+
+/// Dart reserved keywords that cannot be used as identifiers
+/// Must match Dart language specification
+const dartReservedKeywords = {
+  'abstract', 'as', 'assert', 'async', 'await', 'break', 'case',
+  'catch', 'class', 'const', 'continue', 'covariant', 'default',
+  'deferred', 'do', 'dynamic', 'else', 'enum', 'export', 'extends',
+  'extension', 'external', 'factory', 'false', 'final', 'finally',
+  'for', 'Function', 'get', 'hide', 'if', 'implements', 'import',
+  'in', 'interface', 'is', 'late', 'library', 'mixin', 'new', 'null',
+  'on', 'operator', 'part', 'rethrow', 'return', 'set', 'show',
+  'static', 'super', 'switch', 'sync', 'this', 'throw', 'true',
+  'try', 'typedef', 'var', 'void', 'while', 'with', 'yield',
+};
+
+/// Generator error for schema validation failures
+class GeneratorError implements Exception {
+  final String message;
+  final String? suggestion;
+  final int? line;
+
+  GeneratorError(this.message, {this.suggestion, this.line});
+
+  @override
+  String toString() {
+    final buffer = StringBuffer('❌ Generator Error: $message');
+    if (line != null) buffer.write('\n   Location: line $line');
+    if (suggestion != null) buffer.write('\n   Suggestion: $suggestion');
+    return buffer.toString();
+  }
+}
 
 class PrismaSchema {
   final List<PrismaModel> models;
@@ -37,6 +69,12 @@ class PrismaField {
   final String? defaultValue;
   final bool isUpdatedAt;
   final bool isCreatedAt;
+  final bool isRelation;
+  final String? dbName;
+  final bool hasEmptyListDefault;
+  final String? relationName;
+  final List<String>? relationFromFields;
+  final List<String>? relationToFields;
 
   const PrismaField({
     required this.name,
@@ -48,6 +86,12 @@ class PrismaField {
     this.defaultValue,
     this.isUpdatedAt = false,
     this.isCreatedAt = false,
+    this.isRelation = false,
+    this.dbName,
+    this.hasEmptyListDefault = false,
+    this.relationName,
+    this.relationFromFields,
+    this.relationToFields,
   });
 
   /// Get the Dart type for this field
@@ -161,6 +205,29 @@ class PrismaEnum {
 
 /// Parse a Prisma schema file
 class PrismaParser {
+  /// Normalize field name to Dart camelCase convention
+  /// If field starts with uppercase, convert to camelCase and return dbName
+  String _normalizeFieldName(String fieldName) {
+    if (fieldName.isEmpty) return fieldName;
+    // Check if first character is uppercase
+    if (fieldName[0] == fieldName[0].toUpperCase() &&
+        fieldName[0] != fieldName[0].toLowerCase()) {
+      // PascalCase → camelCase
+      return fieldName[0].toLowerCase() + fieldName.substring(1);
+    }
+    return fieldName;
+  }
+
+  /// Validate that name is not a reserved Dart keyword
+  void _validateIdentifier(String name, String type) {
+    if (dartReservedKeywords.contains(name.toLowerCase())) {
+      throw GeneratorError(
+        'Reserved Dart keyword "$name" cannot be used as $type name',
+        suggestion: 'Rename to: "${name}Model", "${name}_", or choose a different name',
+      );
+    }
+  }
+
   /// Parse schema content from a string
   PrismaSchema parse(String schemaContent) {
     final models = <PrismaModel>[];
@@ -194,6 +261,9 @@ class PrismaParser {
       final modelName = match.group(1)!;
       final modelBody = match.group(2)!;
 
+      // Validate model name
+      _validateIdentifier(modelName, 'model');
+
       final fields = <PrismaField>[];
       final relations = <PrismaRelation>[];
 
@@ -205,17 +275,22 @@ class PrismaParser {
         }
 
         // Parse field
-        final fieldMatch = RegExp(r'^(\w+)\s+([\w\[\]]+)(.*)$').firstMatch(trimmed);
+        final fieldMatch = RegExp(r'^(\w+)\s+([\w\[\]?]+)(.*)$').firstMatch(trimmed);
         if (fieldMatch != null) {
-          final fieldName = fieldMatch.group(1)!;
+          final originalFieldName = fieldMatch.group(1)!;
           var fieldType = fieldMatch.group(2)!;
           final attributes = fieldMatch.group(3) ?? '';
 
-          final isList = fieldType.endsWith('[]');
+          // Validate field name against reserved keywords
+          _validateIdentifier(originalFieldName, 'field');
+
+          // Detect list type
+          final isList = fieldType.contains('[]');
           if (isList) {
-            fieldType = fieldType.substring(0, fieldType.length - 2);
+            fieldType = fieldType.replaceAll('[]', '');
           }
 
+          // Detect optional type
           final isRequired = !fieldType.endsWith('?');
           if (fieldType.endsWith('?')) {
             fieldType = fieldType.substring(0, fieldType.length - 1);
@@ -228,39 +303,88 @@ class PrismaParser {
 
           // Extract default value
           String? defaultValue;
+          bool hasEmptyListDefault = false;
           final defaultMatch = RegExp(r'@default\(([^)]+)\)').firstMatch(attributes);
           if (defaultMatch != null) {
-            defaultValue = defaultMatch.group(1);
+            final defaultStr = defaultMatch.group(1)!;
+            if (defaultStr == '[]') {
+              hasEmptyListDefault = true;
+            } else {
+              defaultValue = defaultStr;
+            }
           }
 
           // Check if it's a relation
-          if (attributes.contains('@relation')) {
-            // Parse relation
-            final relationMatch = RegExp(r'@relation\([^)]*\)').firstMatch(attributes);
+          final isRelation = attributes.contains('@relation');
+          String? relationName;
+          List<String>? relationFromFields;
+          List<String>? relationToFields;
+
+          if (isRelation) {
+            // Parse relation metadata
+            final relationMatch = RegExp(r'@relation\(([^)]*)\)').firstMatch(attributes);
             if (relationMatch != null) {
-              // This is a relation field
+              final relationContent = relationMatch.group(1)!;
+
+              // Extract relation name (first unnamed string in quotes)
+              final nameMatch = RegExp(r'^"([^"]+)"').firstMatch(relationContent.trim());
+              if (nameMatch != null) {
+                relationName = nameMatch.group(1);
+              }
+
+              // Extract fields: [field1, field2]
+              final fieldsMatch = RegExp(r'fields:\s*\[([^\]]*)\]').firstMatch(relationContent);
+              if (fieldsMatch != null) {
+                relationFromFields = fieldsMatch.group(1)!
+                    .split(',')
+                    .map((f) => f.trim().replaceAll(RegExp(r'["\[\]]'), ''))
+                    .where((f) => f.isNotEmpty)
+                    .toList();
+              }
+
+              // Extract references: [field1, field2]
+              final referencesMatch = RegExp(r'references:\s*\[([^\]]*)\]').firstMatch(relationContent);
+              if (referencesMatch != null) {
+                relationToFields = referencesMatch.group(1)!
+                    .split(',')
+                    .map((f) => f.trim().replaceAll(RegExp(r'["\[\]]'), ''))
+                    .where((f) => f.isNotEmpty)
+                    .toList();
+              }
+
+              // Add to relations list (for backward compatibility)
               relations.add(PrismaRelation(
-                name: fieldName,
+                name: originalFieldName,
                 targetModel: fieldType,
-                relationName: '', // Extract from @relation if needed
-                fields: [],
-                references: [],
+                relationName: relationName ?? '',
+                fields: relationFromFields ?? [],
+                references: relationToFields ?? [],
               ));
             }
-          } else {
-            // Regular field
-            fields.add(PrismaField(
-              name: fieldName,
-              type: fieldType,
-              isRequired: isRequired,
-              isList: isList,
-              isId: isId,
-              isUnique: isUnique,
-              defaultValue: defaultValue,
-              isUpdatedAt: isUpdatedAt,
-              isCreatedAt: isCreatedAt,
-            ));
           }
+
+          // Normalize field name (PascalCase → camelCase)
+          final normalizedName = _normalizeFieldName(originalFieldName);
+          final dbName = (normalizedName != originalFieldName) ? originalFieldName : null;
+
+          // Add field (including relation fields for generator access)
+          fields.add(PrismaField(
+            name: normalizedName,
+            type: fieldType,
+            isRequired: isRequired,
+            isList: isList,
+            isId: isId,
+            isUnique: isUnique,
+            defaultValue: defaultValue,
+            isUpdatedAt: isUpdatedAt,
+            isCreatedAt: isCreatedAt,
+            isRelation: isRelation,
+            dbName: dbName,
+            hasEmptyListDefault: hasEmptyListDefault,
+            relationName: relationName,
+            relationFromFields: relationFromFields,
+            relationToFields: relationToFields,
+          ));
         }
       }
 
