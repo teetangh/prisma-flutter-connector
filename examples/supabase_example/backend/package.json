@@ -1,0 +1,29 @@
+{
+  "name": "supabase-example-backend",
+  "version": "1.0.0",
+  "description": "GraphQL backend for Prisma Flutter Connector - Supabase Example",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "generate": "prisma generate"
+  },
+  "keywords": ["graphql", "prisma", "pothos", "supabase"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@pothos/core": "^4.3.0",
+    "@pothos/plugin-prisma": "^4.2.0",
+    "@prisma/client": "^6.1.0",
+    "dotenv": "^16.4.5",
+    "graphql": "^16.9.0",
+    "graphql-yoga": "^5.10.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "prisma": "^6.1.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

@@ -24,6 +24,12 @@ dependencies:
   # CLI argument parsing
   args: ^2.4.2
 
+  # Database drivers for adapters
+  postgres: ^3.0.0
+  supabase_flutter: ^2.5.0
+  sqflite: ^2.3.0
+  mysql1: ^0.20.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
