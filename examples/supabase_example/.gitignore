@@ -1,0 +1,29 @@
+# Environment files with secrets
+.env
+
+# Node modules
+backend/node_modules/
+backend/dist/
+
+# Prisma
+backend/prisma/migrations/
+*.db
+*.db-journal
+
+# Flutter/Dart
+flutter_app/.dart_tool/
+flutter_app/build/
+flutter_app/.flutter-plugins
+flutter_app/.flutter-plugins-dependencies
+flutter_app/.packages
+flutter_app/pubspec.lock
+
+# Generated code
+flutter_app/lib/generated/
+**/*.g.dart
+**/*.freezed.dart
+
+# IDE
+.vscode/
+.idea/
+*.iml
