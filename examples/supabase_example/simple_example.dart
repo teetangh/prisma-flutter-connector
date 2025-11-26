@@ -2,6 +2,11 @@
 ///
 /// This demonstrates the adapter-based ORM working with Supabase.
 /// Uses the runtime library directly (no code generation needed for this demo).
+///
+/// ⚠️ NOTE: This example uses the low-level runtime API (JsonQueryBuilder)
+/// for demonstration purposes. In production, use the type-safe generated client!
+///
+/// See type_safe_example.dart for the recommended type-safe approach.
 
 import 'dart:io';
 import 'dart:math';

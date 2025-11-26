@@ -17,11 +17,24 @@ class ModelGenerator {
     buffer.writeln("import 'package:freezed_annotation/freezed_annotation.dart';");
     buffer.writeln();
 
+    // Import filter types for WhereInput
+    buffer.writeln("import '../filters.dart';");
+    buffer.writeln();
+
     // Add imports for related models
     for (final relation in model.relations) {
       buffer.writeln("import '${_toSnakeCase(relation.targetModel)}.dart';");
     }
     if (model.relations.isNotEmpty) {
+      buffer.writeln();
+    }
+
+    // Add imports for enums
+    final enumFields = model.fields.where((f) => _isEnumType(f.type));
+    for (final field in enumFields) {
+      buffer.writeln("import '${_toSnakeCase(field.type)}.dart';");
+    }
+    if (enumFields.isNotEmpty) {
       buffer.writeln();
     }
 
@@ -97,11 +110,12 @@ class ModelGenerator {
     // Input types
     buffer.write(_generateInputTypes(model));
 
-    // Filter types
-    buffer.write(_generateFilterType(model));
+    // Where input types
+    buffer.write(_generateWhereUniqueInput(model));
+    buffer.write(_generateWhereInput(model));
 
-    // OrderBy enum
-    buffer.write(_generateOrderByEnum(model));
+    // OrderBy input
+    buffer.write(_generateOrderByInput(model));
 
     return buffer.toString();
   }
@@ -207,72 +221,149 @@ class ModelGenerator {
     return buffer.toString();
   }
 
-  /// Generate Filter type
-  String _generateFilterType(PrismaModel model) {
+  /// Generate WhereUniqueInput type for unique lookups
+  String _generateWhereUniqueInput(PrismaModel model) {
     final buffer = StringBuffer();
 
-    buffer.writeln('/// Filter options for querying ${model.name}');
+    // Find unique fields (id or @unique)
+    final uniqueFields = model.fields.where((f) =>
+        (f.isId || f.isUnique) && !f.isRelation).toList();
+
+    if (uniqueFields.isEmpty) {
+      return ''; // No unique fields, skip generation
+    }
+
+    buffer.writeln('/// Unique where input for ${model.name}');
+    buffer.writeln('/// At least one field must be provided');
     buffer.writeln('@freezed');
-    buffer.writeln('class ${model.name}Filter with _\$${model.name}Filter {');
-    buffer.writeln('  const factory ${model.name}Filter({');
+    buffer.writeln('class ${model.name}WhereUniqueInput with _\$${model.name}WhereUniqueInput {');
+    buffer.writeln('  const factory ${model.name}WhereUniqueInput({');
 
-    for (final field in model.fields) {
-      // Skip relations
-      if (field.isRelation) {
-        continue;
-      }
-
-      // Add common filter operations
-      if (field.type == 'String') {
-        buffer.writeln('    String? ${field.name}Contains,');
-        buffer.writeln('    String? ${field.name}Equals,');
-      } else if (field.type == 'Int' || field.type == 'Float' || field.type == 'Decimal') {
-        buffer.writeln('    ${field.dartType} ${field.name}Equals,');
-        buffer.writeln('    ${field.dartType} ${field.name}Gt,');
-        buffer.writeln('    ${field.dartType} ${field.name}Lt,');
-      } else if (field.type == 'DateTime') {
-        buffer.writeln('    DateTime? ${field.name}After,');
-        buffer.writeln('    DateTime? ${field.name}Before,');
-      } else if (field.type == 'Boolean') {
-        buffer.writeln('    bool? ${field.name},');
+    // All unique fields are optional (but at least one required at runtime)
+    for (final field in uniqueFields) {
+      if (field.isList) {
+        buffer.writeln('    List<${field.type}>? ${field.name},');
+      } else {
+        buffer.writeln('    ${field.type}? ${field.name},');
       }
     }
 
-    buffer.writeln('  }) = _${model.name}Filter;');
+    buffer.writeln('  }) = _${model.name}WhereUniqueInput;');
     buffer.writeln();
-    buffer.writeln('  factory ${model.name}Filter.fromJson(Map<String, dynamic> json) =>');
-    buffer.writeln('      _\$${model.name}FilterFromJson(json);');
+    buffer.writeln('  factory ${model.name}WhereUniqueInput.fromJson(Map<String, dynamic> json) =>');
+    buffer.writeln('      _\$${model.name}WhereUniqueInputFromJson(json);');
     buffer.writeln('}');
     buffer.writeln();
 
     return buffer.toString();
   }
 
-  /// Generate OrderBy enum
-  String _generateOrderByEnum(PrismaModel model) {
+  /// Generate WhereInput type for filtering
+  String _generateWhereInput(PrismaModel model) {
     final buffer = StringBuffer();
 
-    buffer.writeln('/// Sort options for ${model.name}');
-    buffer.writeln('enum ${model.name}OrderBy {');
+    buffer.writeln('/// Where input for filtering ${model.name} records');
+    buffer.writeln('@freezed');
+    buffer.writeln('class ${model.name}WhereInput with _\$${model.name}WhereInput {');
+    buffer.writeln('  const factory ${model.name}WhereInput({');
 
-    final sortableFields = model.fields.where((f) =>
-        f.type == 'String' ||
-        f.type == 'Int' ||
-        f.type == 'Float' ||
-        f.type == 'DateTime' ||
-        f.isCreatedAt ||
-        f.isUpdatedAt);
+    // Add field filters (using field-level filter types)
+    for (final field in model.fields) {
+      // Skip relations for now
+      if (field.isRelation) continue;
 
-    for (final field in sortableFields) {
-      buffer.writeln("  @JsonValue('${field.name}_ASC')");
-      buffer.writeln('  ${field.name}Asc,');
-      buffer.writeln("  @JsonValue('${field.name}_DESC')");
-      buffer.writeln('  ${field.name}Desc,');
+      final filterType = _getFilterTypeForField(field);
+      if (filterType != null) {
+        buffer.writeln('    $filterType? ${field.name},');
+      }
     }
 
+    // Add logical operators
+    buffer.writeln('    List<${model.name}WhereInput>? AND,');
+    buffer.writeln('    List<${model.name}WhereInput>? OR,');
+    buffer.writeln('    ${model.name}WhereInput? NOT,');
+
+    buffer.writeln('  }) = _${model.name}WhereInput;');
+    buffer.writeln();
+    buffer.writeln('  factory ${model.name}WhereInput.fromJson(Map<String, dynamic> json) =>');
+    buffer.writeln('      _\$${model.name}WhereInputFromJson(json);');
     buffer.writeln('}');
+    buffer.writeln();
 
     return buffer.toString();
+  }
+
+  /// Generate OrderByInput type for sorting
+  String _generateOrderByInput(PrismaModel model) {
+    final buffer = StringBuffer();
+
+    buffer.writeln('/// Order by input for sorting ${model.name} records');
+    buffer.writeln('@freezed');
+    buffer.writeln('class ${model.name}OrderByInput with _\$${model.name}OrderByInput {');
+    buffer.writeln('  const factory ${model.name}OrderByInput({');
+
+    // Include sortable fields
+    final sortableFields = model.fields.where((f) =>
+        !f.isRelation &&
+        (f.type == 'String' ||
+            f.type == 'Int' ||
+            f.type == 'Float' ||
+            f.type == 'DateTime' ||
+            f.type == 'Boolean' ||
+            f.isCreatedAt ||
+            f.isUpdatedAt));
+
+    for (final field in sortableFields) {
+      buffer.writeln('    SortOrder? ${field.name},');
+    }
+
+    buffer.writeln('  }) = _${model.name}OrderByInput;');
+    buffer.writeln();
+    buffer.writeln('  factory ${model.name}OrderByInput.fromJson(Map<String, dynamic> json) =>');
+    buffer.writeln('      _\$${model.name}OrderByInputFromJson(json);');
+    buffer.writeln('}');
+    buffer.writeln();
+
+    // Generate SortOrder enum (only once, could be shared)
+    buffer.writeln('/// Sort order for ordering results');
+    buffer.writeln('enum SortOrder {');
+    buffer.writeln("  @JsonValue('asc')");
+    buffer.writeln('  asc,');
+    buffer.writeln("  @JsonValue('desc')");
+    buffer.writeln('  desc,');
+    buffer.writeln('}');
+    buffer.writeln();
+
+    return buffer.toString();
+  }
+
+  /// Get the filter type for a field based on its Prisma type
+  String? _getFilterTypeForField(PrismaField field) {
+    if (field.isList) {
+      // List fields use special list filters
+      return '${field.type}ListFilter';
+    }
+
+    switch (field.type) {
+      case 'String':
+        return 'StringFilter';
+      case 'Int':
+        return 'IntFilter';
+      case 'Float':
+      case 'Decimal':
+        return 'FloatFilter';
+      case 'Boolean':
+        return 'BooleanFilter';
+      case 'DateTime':
+        return 'DateTimeFilter';
+      default:
+        // Check if it's an enum
+        if (_isEnumType(field.type)) {
+          return '${field.type}Filter';
+        }
+        // Unknown type, skip filter
+        return null;
+    }
   }
 
   /// Generate enum class
