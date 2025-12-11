@@ -228,6 +228,73 @@ class PrismaParser {
   /// Warnings generated during parsing (e.g., reserved keyword renames)
   final List<String> warnings = [];
 
+  /// Field name mappings for reserved keywords (static const for performance)
+  static const Map<String, String> _fieldMappings = {
+    'class': 'classRef',
+    'enum': 'enumValue',
+    'type': 'typeValue',
+    'default': 'defaultValue',
+    'static': 'staticValue',
+    'final': 'finalValue',
+    'const': 'constValue',
+    'void': 'voidValue',
+    'return': 'returnValue',
+    'continue': 'continueFlag',
+    'break': 'breakFlag',
+    'switch': 'switchValue',
+    'case': 'caseValue',
+    'new': 'newValue',
+    'null': 'nullValue',
+    'true': 'trueValue',
+    'false': 'falseValue',
+    'is': 'isValue',
+    'in': 'inValue',
+    'as': 'asValue',
+    'if': 'ifValue',
+    'else': 'elseValue',
+    'for': 'forValue',
+    'do': 'doValue',
+    'while': 'whileValue',
+    'try': 'tryValue',
+    'catch': 'catchValue',
+    'throw': 'throwValue',
+    'this': 'thisRef',
+    'super': 'superRef',
+    'with': 'withValue',
+    'get': 'getValue',
+    'set': 'setValue',
+    'var': 'varValue',
+    'late': 'lateValue',
+    'import': 'importValue',
+    'export': 'exportValue',
+    'part': 'partValue',
+    'library': 'libraryValue',
+    'abstract': 'abstractValue',
+    'extends': 'extendsValue',
+    'implements': 'implementsValue',
+    'mixin': 'mixinValue',
+    'interface': 'interfaceValue',
+    'factory': 'factoryValue',
+    'operator': 'operatorValue',
+    'typedef': 'typedefValue',
+    'dynamic': 'dynamicValue',
+    'covariant': 'covariantValue',
+    'function': 'functionValue',
+    'async': 'asyncValue',
+    'await': 'awaitValue',
+    'sync': 'syncValue',
+    'yield': 'yieldValue',
+    'assert': 'assertValue',
+    'rethrow': 'rethrowValue',
+    'required': 'requiredValue',
+    'on': 'onValue',
+    'show': 'showValue',
+    'hide': 'hideValue',
+    'deferred': 'deferredValue',
+    'external': 'externalValue',
+    'extension': 'extensionValue',
+  };
+
   /// Normalize field name to Dart camelCase convention
   /// If field starts with uppercase, convert to camelCase and return dbName
   String _normalizeFieldName(String fieldName) {
@@ -279,75 +346,8 @@ class PrismaParser {
   String _getAutoRenamedField(String name) {
     final lowerName = name.toLowerCase();
 
-    // Common field name mappings
-    final fieldMappings = <String, String>{
-      'class': 'classRef',
-      'enum': 'enumValue',
-      'type': 'typeValue',
-      'default': 'defaultValue',
-      'static': 'staticValue',
-      'final': 'finalValue',
-      'const': 'constValue',
-      'void': 'voidValue',
-      'return': 'returnValue',
-      'continue': 'continueFlag',
-      'break': 'breakFlag',
-      'switch': 'switchValue',
-      'case': 'caseValue',
-      'new': 'newValue',
-      'null': 'nullValue',
-      'true': 'trueValue',
-      'false': 'falseValue',
-      'is': 'isValue',
-      'in': 'inValue',
-      'as': 'asValue',
-      'if': 'ifValue',
-      'else': 'elseValue',
-      'for': 'forValue',
-      'do': 'doValue',
-      'while': 'whileValue',
-      'try': 'tryValue',
-      'catch': 'catchValue',
-      'throw': 'throwValue',
-      'this': 'thisRef',
-      'super': 'superRef',
-      'with': 'withValue',
-      'get': 'getValue',
-      'set': 'setValue',
-      'var': 'varValue',
-      'late': 'lateValue',
-      'import': 'importValue',
-      'export': 'exportValue',
-      'part': 'partValue',
-      'library': 'libraryValue',
-      'abstract': 'abstractValue',
-      'extends': 'extendsValue',
-      'implements': 'implementsValue',
-      'mixin': 'mixinValue',
-      'interface': 'interfaceValue',
-      'factory': 'factoryValue',
-      'operator': 'operatorValue',
-      'typedef': 'typedefValue',
-      'dynamic': 'dynamicValue',
-      'covariant': 'covariantValue',
-      'Function': 'functionValue',
-      'async': 'asyncValue',
-      'await': 'awaitValue',
-      'sync': 'syncValue',
-      'yield': 'yieldValue',
-      'assert': 'assertValue',
-      'rethrow': 'rethrowValue',
-      'required': 'requiredValue',
-      'on': 'onValue',
-      'show': 'showValue',
-      'hide': 'hideValue',
-      'deferred': 'deferredValue',
-      'external': 'externalValue',
-      'extension': 'extensionValue',
-    };
-
-    if (fieldMappings.containsKey(lowerName)) {
-      return fieldMappings[lowerName]!;
+    if (_fieldMappings.containsKey(lowerName)) {
+      return _fieldMappings[lowerName]!;
     }
 
     // Generic fallback: append "Value"
@@ -425,7 +425,7 @@ class PrismaParser {
 
           // Handle reserved keywords - auto-rename if needed
           final fieldResult = _handleReservedKeyword(schemaFieldName, 'field');
-          final originalFieldName = fieldResult.dartName;
+          final dartFieldName = fieldResult.dartName;
           final fieldDbName = fieldResult.dbName;
 
           if (fieldResult.warning != null) {
@@ -505,7 +505,7 @@ class PrismaParser {
 
               // Add to relations list (for backward compatibility)
               relations.add(PrismaRelation(
-                name: originalFieldName,
+                name: dartFieldName,
                 targetModel: resolvedTargetModel,
                 relationName: relationName ?? '',
                 fields: relationFromFields ?? [],
@@ -518,14 +518,14 @@ class PrismaParser {
           final resolvedFieldType = modelNameMap[fieldType] ?? fieldType;
 
           // Normalize field name (PascalCase → camelCase)
-          final normalizedName = _normalizeFieldName(originalFieldName);
+          final normalizedName = _normalizeFieldName(dartFieldName);
 
           // Determine dbName: prioritize reserved keyword rename, then PascalCase normalization
           String? dbName;
           if (fieldDbName != null) {
             // Field was renamed due to reserved keyword
             dbName = fieldDbName;
-          } else if (normalizedName != originalFieldName) {
+          } else if (normalizedName != dartFieldName) {
             // Field was normalized from PascalCase
             dbName = schemaFieldName;
           }
