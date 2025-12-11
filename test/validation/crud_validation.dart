@@ -2,11 +2,11 @@
 ///
 /// Tests the adapter-based ORM with real Supabase database operations.
 /// This validates that the connector works end-to-end before continuing development.
+library;
 
 import 'dart:math';
 import 'package:postgres/postgres.dart' as pg;
 // Import only what we need to avoid Flutter dependencies
-import 'package:prisma_flutter_connector/src/runtime/adapters/types.dart';
 import 'package:prisma_flutter_connector/src/runtime/adapters/postgres_adapter.dart';
 import 'package:prisma_flutter_connector/src/runtime/query/json_protocol.dart';
 import 'package:prisma_flutter_connector/src/runtime/query/query_executor.dart';
@@ -58,7 +58,7 @@ void main() async {
         username: supabaseConfig['username'] as String,
         password: supabaseConfig['password'] as String,
       ),
-      settings: pg.ConnectionSettings(
+      settings: const pg.ConnectionSettings(
         sslMode: pg.SslMode.require,
       ),
     );

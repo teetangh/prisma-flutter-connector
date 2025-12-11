@@ -9,38 +9,24 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-
-  # GraphQL client
-  graphql_flutter: ^5.1.0
-  gql: ^1.0.0
-
-  # Model generation (used by generated code)
-  freezed_annotation: ^2.4.1
-  json_annotation: ^4.9.0
-
-  # WebSocket for subscriptions
-  web_socket_channel: ^2.4.0
-
-  # CLI argument parsing
   args: ^2.4.2
-
-  # Database drivers for adapters
-  postgres: ^3.0.0
-  supabase_flutter: ^2.5.0
-  sqflite: ^2.3.0
+  freezed_annotation: ^2.4.1
+  gql: ^1.0.0
+  graphql_flutter: ^5.1.0
+  json_annotation: ^4.9.0
   mysql1: ^0.20.0
+  postgres: ^3.0.0
+  sqflite: ^2.3.0
+  supabase_flutter: ^2.5.0
+  web_socket_channel: ^2.4.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-
-  # Code generation
   build_runner: ^2.4.6
+  flutter_lints: ^3.0.0
   freezed: ^2.5.8
   json_serializable: ^6.8.0
-
-  # Linting
-  flutter_lints: ^3.0.0
 
 executables:
   generate:

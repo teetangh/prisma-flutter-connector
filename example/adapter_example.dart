@@ -4,6 +4,7 @@
 /// connections, similar to how Prisma works in TypeScript/Next.js.
 ///
 /// No GraphQL backend required!
+library;
 
 import 'package:postgres/postgres.dart' as pg;
 import 'package:prisma_flutter_connector/src/runtime/adapters/adapters.dart';

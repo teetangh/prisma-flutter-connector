@@ -7,6 +7,7 @@
 /// for demonstration purposes. In production, use the type-safe generated client!
 ///
 /// See type_safe_example.dart for the recommended type-safe approach.
+library;
 
 import 'dart:io';
 import 'dart:math';

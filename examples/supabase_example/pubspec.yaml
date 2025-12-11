@@ -14,7 +14,8 @@ dependencies:
   json_annotation: ^4.9.0
   postgres: ^3.0.0
   prisma_flutter_connector:
-    path: ../../
+    path: ../..
+
 
 dev_dependencies:
   build_runner: ^2.4.6

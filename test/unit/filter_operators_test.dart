@@ -414,7 +414,7 @@ void main() {
 
   group('JsonQuery', () {
     test('toJson produces correct structure', () {
-      final query = JsonQuery(
+      const query = JsonQuery(
         modelName: 'User',
         action: 'findMany',
         args: JsonQueryArgs(
@@ -430,10 +430,10 @@ void main() {
     });
 
     test('toString produces JSON string', () {
-      final query = JsonQuery(
+      const query = JsonQuery(
         modelName: 'User',
         action: 'findMany',
-        args: const JsonQueryArgs(),
+        args: JsonQueryArgs(),
       );
 
       final str = query.toString();
@@ -445,7 +445,7 @@ void main() {
 
   group('JsonQueryArgs', () {
     test('toJson with arguments only', () {
-      final args = JsonQueryArgs(
+      const args = JsonQueryArgs(
         arguments: {'where': {'id': '123'}},
       );
 
@@ -456,7 +456,7 @@ void main() {
     });
 
     test('toJson with selection only', () {
-      final args = JsonQueryArgs(
+      const args = JsonQueryArgs(
         selection: JsonSelection(scalars: true),
       );
 
@@ -466,7 +466,7 @@ void main() {
     });
 
     test('toJson with both arguments and selection', () {
-      final args = JsonQueryArgs(
+      const args = JsonQueryArgs(
         arguments: {'take': 10},
         selection: JsonSelection(scalars: true),
       );
@@ -480,7 +480,7 @@ void main() {
 
   group('JsonSelection', () {
     test('toJson with scalars', () {
-      final selection = JsonSelection(scalars: true);
+      const selection = JsonSelection(scalars: true);
 
       final json = selection.toJson();
 
@@ -488,7 +488,7 @@ void main() {
     });
 
     test('toJson with composites', () {
-      final selection = JsonSelection(composites: true);
+      const selection = JsonSelection(composites: true);
 
       final json = selection.toJson();
 
@@ -496,10 +496,10 @@ void main() {
     });
 
     test('toJson with fields', () {
-      final selection = JsonSelection(
+      const selection = JsonSelection(
         fields: {
-          'id': const JsonFieldSelection(),
-          'email': const JsonFieldSelection(),
+          'id': JsonFieldSelection(),
+          'email': JsonFieldSelection(),
         },
       );
 
@@ -520,7 +520,7 @@ void main() {
     });
 
     test('toJson with arguments', () {
-      final fieldSelection = JsonFieldSelection(
+      const fieldSelection = JsonFieldSelection(
         arguments: {'take': 5},
       );
 
@@ -530,7 +530,7 @@ void main() {
     });
 
     test('toJson with nested selection', () {
-      final fieldSelection = JsonFieldSelection(
+      const fieldSelection = JsonFieldSelection(
         selection: JsonSelection(scalars: true),
       );
 

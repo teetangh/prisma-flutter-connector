@@ -2,19 +2,22 @@
 /// This file contains intentional errors to test compile-time type safety
 /// 
 /// Expected: All errors should be caught by dart analyze BEFORE runtime
+library;
 
 import 'package:prisma_flutter_connector/src/runtime/query/json_protocol.dart';
 import 'package:prisma_flutter_connector/src/runtime/query/query_executor.dart';
 
 void main() async {
   // Mock executor for testing
+  // ignore: unused_local_variable
   late QueryExecutor executor;
 
   // ============================================================================
   // TEST 1: Invalid field name in where clause
   // ============================================================================
   print('Test 1: Invalid field name');
-  
+
+  // ignore: unused_local_variable
   final query1 = JsonQueryBuilder()
       .model('Domain')
       .action(QueryAction.findUnique)
@@ -27,7 +30,8 @@ void main() async {
   // TEST 2: Wrong type in where clause
   // ============================================================================
   print('Test 2: Wrong type in where');
-  
+
+  // ignore: unused_local_variable
   final query2 = JsonQueryBuilder()
       .model('Domain')
       .action(QueryAction.findMany)
@@ -40,7 +44,8 @@ void main() async {
   // TEST 3: Invalid model name
   // ============================================================================
   print('Test 3: Invalid model name');
-  
+
+  // ignore: unused_local_variable
   final query3 = JsonQueryBuilder()
       .model('NonExistentModel')  // ❌ Should error: model doesn't exist
       .action(QueryAction.findMany)
@@ -50,7 +55,8 @@ void main() async {
   // TEST 4: Invalid action for model
   // ============================================================================
   print('Test 4: Invalid orderBy field');
-  
+
+  // ignore: unused_local_variable
   final query4 = JsonQueryBuilder()
       .model('Domain')
       .action(QueryAction.findMany)
@@ -61,7 +67,8 @@ void main() async {
   // TEST 5: Wrong data type in create
   // ============================================================================
   print('Test 5: Wrong type in create');
-  
+
+  // ignore: unused_local_variable
   final query5 = JsonQueryBuilder()
       .model('Domain')
       .action(QueryAction.create)
@@ -76,7 +83,8 @@ void main() async {
   // TEST 6: Missing required fields
   // ============================================================================
   print('Test 6: Missing required field');
-  
+
+  // ignore: unused_local_variable
   final query6 = JsonQueryBuilder()
       .model('Domain')
       .action(QueryAction.create)
@@ -90,7 +98,8 @@ void main() async {
   // TEST 7: Invalid filter operator for type
   // ============================================================================
   print('Test 7: Invalid operator for type');
-  
+
+  // ignore: unused_local_variable
   final query7 = JsonQueryBuilder()
       .model('Domain')
       .action(QueryAction.findMany)

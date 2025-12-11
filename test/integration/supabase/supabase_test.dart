@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:prisma_flutter_connector/prisma_flutter_connector.dart';
 
 /// Integration tests for Supabase (PostgreSQL)
 ///
@@ -17,6 +16,7 @@ import 'package:prisma_flutter_connector/prisma_flutter_connector.dart';
 
 void main() {
   group('Supabase Integration Tests', () {
+    // ignore: unused_local_variable
     late dynamic client; // Will be PrismaClient after generation
 
     setUpAll(() async {
