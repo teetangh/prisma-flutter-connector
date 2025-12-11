@@ -82,7 +82,8 @@ class SqlCompiler {
     final skip = args['skip'] as int?;
 
     // Construct SQL
-    final sql = StringBuffer('SELECT $selectClause FROM ${_quoteIdentifier(tableName)}');
+    final sql = StringBuffer(
+        'SELECT $selectClause FROM ${_quoteIdentifier(tableName)}');
 
     if (whereClause.isNotEmpty) {
       sql.write(' WHERE $whereClause');
@@ -138,7 +139,8 @@ class SqlCompiler {
         'VALUES (${placeholders.join(', ')})';
 
     // Add RETURNING clause for PostgreSQL
-    final sqlWithReturning = provider == 'postgresql' ? '$sql RETURNING *' : sql;
+    final sqlWithReturning =
+        provider == 'postgresql' ? '$sql RETURNING *' : sql;
 
     return SqlQuery(
       sql: sqlWithReturning,
@@ -210,13 +212,15 @@ class SqlCompiler {
 
     for (final entry in data.entries) {
       // Use field name as-is (don't convert to snake_case)
-      setClauses.add('${_quoteIdentifier(entry.key)} = ${_placeholder(paramIndex++)}');
+      setClauses.add(
+          '${_quoteIdentifier(entry.key)} = ${_placeholder(paramIndex++)}');
       values.add(entry.value);
       types.add(_inferArgType(entry.value));
     }
 
     // Build WHERE clause
-    final (whereClause, whereArgs, whereTypes) = _buildWhereClause(where, startIndex: paramIndex);
+    final (whereClause, whereArgs, whereTypes) =
+        _buildWhereClause(where, startIndex: paramIndex);
     values.addAll(whereArgs);
     types.addAll(whereTypes);
 
@@ -280,7 +284,8 @@ class SqlCompiler {
 
   /// Build SELECT fields from selection.
   List<String> _buildSelectFields(JsonSelection? selection) {
-    if (selection == null || selection.scalars == true && selection.fields == null) {
+    if (selection == null ||
+        selection.scalars == true && selection.fields == null) {
       return []; // SELECT *
     }
 
@@ -379,14 +384,16 @@ class SqlCompiler {
               break;
             case 'in':
               final list = op.value as List;
-              final placeholders = List.generate(list.length, (_) => _placeholder(paramIndex++));
+              final placeholders =
+                  List.generate(list.length, (_) => _placeholder(paramIndex++));
               conditions.add('$columnName IN (${placeholders.join(', ')})');
               values.addAll(list);
               types.addAll(list.map(_inferArgType));
               break;
             case 'notIn':
               final list = op.value as List;
-              final placeholders = List.generate(list.length, (_) => _placeholder(paramIndex++));
+              final placeholders =
+                  List.generate(list.length, (_) => _placeholder(paramIndex++));
               conditions.add('$columnName NOT IN (${placeholders.join(', ')})');
               values.addAll(list);
               types.addAll(list.map(_inferArgType));

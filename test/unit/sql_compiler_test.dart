@@ -30,8 +30,7 @@ void main() {
           final query = JsonQueryBuilder()
               .model('User')
               .action(QueryAction.findMany)
-              .where({'email': 'test@example.com'})
-              .build();
+              .where({'email': 'test@example.com'}).build();
 
           final result = compiler.compile(query);
 
@@ -44,8 +43,7 @@ void main() {
           final query = JsonQueryBuilder()
               .model('User')
               .action(QueryAction.findMany)
-              .orderBy({'createdAt': 'desc'})
-              .build();
+              .orderBy({'createdAt': 'desc'}).build();
 
           final result = compiler.compile(query);
 
@@ -56,8 +54,7 @@ void main() {
           final query = JsonQueryBuilder()
               .model('User')
               .action(QueryAction.findMany)
-              .orderBy({'name': 'asc'})
-              .build();
+              .orderBy({'name': 'asc'}).build();
 
           final result = compiler.compile(query);
 
@@ -106,10 +103,9 @@ void main() {
               .model('User')
               .action(QueryAction.findMany)
               .where({
-                'email': 'test@example.com',
-                'name': 'John',
-              })
-              .build();
+            'email': 'test@example.com',
+            'name': 'John',
+          }).build();
 
           final result = compiler.compile(query);
 
@@ -142,8 +138,7 @@ void main() {
           final query = JsonQueryBuilder()
               .model('User')
               .action(QueryAction.findUnique)
-              .where({'id': '123'})
-              .build();
+              .where({'id': '123'}).build();
 
           final result = compiler.compile(query);
 
@@ -157,8 +152,9 @@ void main() {
           final query = JsonQueryBuilder()
               .model('User')
               .action(QueryAction.findFirst)
-              .where({'email': {'contains': '@example.com'}})
-              .build();
+              .where({
+            'email': {'contains': '@example.com'}
+          }).build();
 
           final result = compiler.compile(query);
 
@@ -230,7 +226,8 @@ void main() {
               result.sql,
               'INSERT INTO "User" ("id", "email") '
               'VALUES (\$1, \$2), (\$3, \$4), (\$5, \$6)');
-          expect(result.args, ['1', 'a@test.com', '2', 'b@test.com', '3', 'c@test.com']);
+          expect(result.args,
+              ['1', 'a@test.com', '2', 'b@test.com', '3', 'c@test.com']);
         });
 
         test('throws error when data is empty', () {
@@ -290,7 +287,9 @@ void main() {
           const query = JsonQuery(
             modelName: 'User',
             action: 'update',
-            args: JsonQueryArgs(arguments: {'where': {'id': '123'}}),
+            args: JsonQueryArgs(arguments: {
+              'where': {'id': '123'}
+            }),
           );
 
           expect(
@@ -378,8 +377,8 @@ void main() {
 
           final result = compiler.compile(query);
 
-          expect(result.sql,
-              'SELECT COUNT(*) FROM "User" WHERE "status" = \$1');
+          expect(
+              result.sql, 'SELECT COUNT(*) FROM "User" WHERE "status" = \$1');
           expect(result.args, ['active']);
         });
       });
@@ -389,8 +388,9 @@ void main() {
           final query = JsonQueryBuilder()
               .model('User')
               .action(QueryAction.findMany)
-              .where({'email': FilterOperators.equals('test@example.com')})
-              .build();
+              .where({
+            'email': FilterOperators.equals('test@example.com')
+          }).build();
 
           final result = compiler.compile(query);
 
@@ -402,8 +402,7 @@ void main() {
           final query = JsonQueryBuilder()
               .model('User')
               .action(QueryAction.findMany)
-              .where({'status': FilterOperators.not('inactive')})
-              .build();
+              .where({'status': FilterOperators.not('inactive')}).build();
 
           final result = compiler.compile(query);
 
@@ -415,13 +414,14 @@ void main() {
           final query = JsonQueryBuilder()
               .model('User')
               .action(QueryAction.findMany)
-              .where({'status': FilterOperators.in_(['active', 'pending'])})
-              .build();
+              .where({
+            'status': FilterOperators.in_(['active', 'pending'])
+          }).build();
 
           final result = compiler.compile(query);
 
-          expect(result.sql,
-              'SELECT * FROM "User" WHERE "status" IN (\$1, \$2)');
+          expect(
+              result.sql, 'SELECT * FROM "User" WHERE "status" IN (\$1, \$2)');
           expect(result.args, ['active', 'pending']);
         });
 
@@ -429,8 +429,9 @@ void main() {
           final query = JsonQueryBuilder()
               .model('User')
               .action(QueryAction.findMany)
-              .where({'status': FilterOperators.notIn(['banned', 'deleted'])})
-              .build();
+              .where({
+            'status': FilterOperators.notIn(['banned', 'deleted'])
+          }).build();
 
           final result = compiler.compile(query);
 
@@ -443,8 +444,7 @@ void main() {
           final query = JsonQueryBuilder()
               .model('Product')
               .action(QueryAction.findMany)
-              .where({'price': FilterOperators.lt(100)})
-              .build();
+              .where({'price': FilterOperators.lt(100)}).build();
 
           final result = compiler.compile(query);
 
@@ -456,8 +456,7 @@ void main() {
           final query = JsonQueryBuilder()
               .model('Product')
               .action(QueryAction.findMany)
-              .where({'price': FilterOperators.lte(100)})
-              .build();
+              .where({'price': FilterOperators.lte(100)}).build();
 
           final result = compiler.compile(query);
 
@@ -468,8 +467,7 @@ void main() {
           final query = JsonQueryBuilder()
               .model('Product')
               .action(QueryAction.findMany)
-              .where({'price': FilterOperators.gt(50)})
-              .build();
+              .where({'price': FilterOperators.gt(50)}).build();
 
           final result = compiler.compile(query);
 
@@ -480,8 +478,7 @@ void main() {
           final query = JsonQueryBuilder()
               .model('Product')
               .action(QueryAction.findMany)
-              .where({'price': FilterOperators.gte(50)})
-              .build();
+              .where({'price': FilterOperators.gte(50)}).build();
 
           final result = compiler.compile(query);
 
@@ -492,8 +489,8 @@ void main() {
           final query = JsonQueryBuilder()
               .model('User')
               .action(QueryAction.findMany)
-              .where({'email': FilterOperators.contains('@example.com')})
-              .build();
+              .where(
+                  {'email': FilterOperators.contains('@example.com')}).build();
 
           final result = compiler.compile(query);
 
@@ -505,8 +502,7 @@ void main() {
           final query = JsonQueryBuilder()
               .model('User')
               .action(QueryAction.findMany)
-              .where({'name': FilterOperators.startsWith('John')})
-              .build();
+              .where({'name': FilterOperators.startsWith('John')}).build();
 
           final result = compiler.compile(query);
 
@@ -518,8 +514,7 @@ void main() {
           final query = JsonQueryBuilder()
               .model('User')
               .action(QueryAction.findMany)
-              .where({'email': FilterOperators.endsWith('.com')})
-              .build();
+              .where({'email': FilterOperators.endsWith('.com')}).build();
 
           final result = compiler.compile(query);
 
@@ -534,12 +529,11 @@ void main() {
               .model('User')
               .action(QueryAction.findMany)
               .where({
-                'AND': [
-                  {'status': 'active'},
-                  {'role': 'admin'},
-                ]
-              })
-              .build();
+            'AND': [
+              {'status': 'active'},
+              {'role': 'admin'},
+            ]
+          }).build();
 
           final result = compiler.compile(query);
 
@@ -555,12 +549,11 @@ void main() {
               .model('User')
               .action(QueryAction.findMany)
               .where({
-                'OR': [
-                  {'role': 'admin'},
-                  {'role': 'moderator'},
-                ]
-              })
-              .build();
+            'OR': [
+              {'role': 'admin'},
+              {'role': 'moderator'},
+            ]
+          }).build();
 
           final result = compiler.compile(query);
 
@@ -576,14 +569,12 @@ void main() {
               .model('User')
               .action(QueryAction.findMany)
               .where({
-                'NOT': {'status': 'banned'},
-              })
-              .build();
+            'NOT': {'status': 'banned'},
+          }).build();
 
           final result = compiler.compile(query);
 
-          expect(result.sql,
-              'SELECT * FROM "User" WHERE NOT ("status" = \$1)');
+          expect(result.sql, 'SELECT * FROM "User" WHERE NOT ("status" = \$1)');
           expect(result.args, ['banned']);
         });
 
@@ -592,17 +583,16 @@ void main() {
               .model('User')
               .action(QueryAction.findMany)
               .where({
-                'AND': [
-                  {'status': 'active'},
-                  {
-                    'OR': [
-                      {'role': 'admin'},
-                      {'role': 'moderator'},
-                    ]
-                  },
+            'AND': [
+              {'status': 'active'},
+              {
+                'OR': [
+                  {'role': 'admin'},
+                  {'role': 'moderator'},
                 ]
-              })
-              .build();
+              },
+            ]
+          }).build();
 
           final result = compiler.compile(query);
 
@@ -619,8 +609,7 @@ void main() {
           final query = JsonQueryBuilder()
               .model('User')
               .action(QueryAction.findMany)
-              .where({'age': 25})
-              .build();
+              .where({'age': 25}).build();
 
           final result = compiler.compile(query);
           expect(result.argTypes, [ArgType.int64]);
@@ -630,8 +619,7 @@ void main() {
           final query = JsonQueryBuilder()
               .model('Product')
               .action(QueryAction.findMany)
-              .where({'price': 99.99})
-              .build();
+              .where({'price': 99.99}).build();
 
           final result = compiler.compile(query);
           expect(result.argTypes, [ArgType.double]);
@@ -641,8 +629,7 @@ void main() {
           final query = JsonQueryBuilder()
               .model('User')
               .action(QueryAction.findMany)
-              .where({'isActive': true})
-              .build();
+              .where({'isActive': true}).build();
 
           final result = compiler.compile(query);
           expect(result.argTypes, [ArgType.boolean]);
@@ -652,8 +639,7 @@ void main() {
           final query = JsonQueryBuilder()
               .model('User')
               .action(QueryAction.findMany)
-              .where({'name': 'John'})
-              .build();
+              .where({'name': 'John'}).build();
 
           final result = compiler.compile(query);
           expect(result.argTypes, [ArgType.string]);
@@ -663,8 +649,7 @@ void main() {
           final query = JsonQueryBuilder()
               .model('User')
               .action(QueryAction.findMany)
-              .where({'createdAt': '2024-01-01T00:00:00.000Z'})
-              .build();
+              .where({'createdAt': '2024-01-01T00:00:00.000Z'}).build();
 
           final result = compiler.compile(query);
           expect(result.argTypes, [ArgType.dateTime]);
@@ -709,8 +694,7 @@ void main() {
         final query = JsonQueryBuilder()
             .model('User')
             .action(QueryAction.findMany)
-            .where({'email': 'test@example.com'})
-            .build();
+            .where({'email': 'test@example.com'}).build();
 
         final result = compiler.compile(query);
 
@@ -757,8 +741,7 @@ void main() {
         final query = JsonQueryBuilder()
             .model('User')
             .action(QueryAction.findMany)
-            .where({'email': 'test@example.com'})
-            .build();
+            .where({'email': 'test@example.com'}).build();
 
         final result = compiler.compile(query);
 
@@ -794,8 +777,7 @@ void main() {
         final query = JsonQueryBuilder()
             .model('User')
             .action(QueryAction.findMany)
-            .where({'email': 'test@example.com'})
-            .build();
+            .where({'email': 'test@example.com'}).build();
 
         final result = compiler.compile(query);
 
@@ -833,8 +815,7 @@ void main() {
         final query = JsonQueryBuilder()
             .model('User')
             .action(QueryAction.findMany)
-            .where({})
-            .build();
+            .where({}).build();
 
         final result = compiler.compile(query);
 
@@ -869,12 +850,11 @@ void main() {
             .model('Product')
             .action(QueryAction.findMany)
             .where({
-              'price': {
-                'gte': 10,
-                'lte': 100,
-              }
-            })
-            .build();
+          'price': {
+            'gte': 10,
+            'lte': 100,
+          }
+        }).build();
 
         final result = compiler.compile(query);
 
@@ -889,8 +869,7 @@ void main() {
         final query = JsonQueryBuilder()
             .model('User')
             .action(QueryAction.findMany)
-            .where({'deletedAt': null})
-            .build();
+            .where({'deletedAt': null}).build();
 
         final result = compiler.compile(query);
 

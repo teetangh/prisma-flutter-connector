@@ -70,15 +70,12 @@ Future<void> main() async {
   final supabaseExecutor = QueryExecutor(adapter: supabaseAdapter);
 
   // Create a new domain
-  final createQuery = JsonQueryBuilder()
-      .model('Domain')
-      .action(QueryAction.create)
-      .data({
-        'name': 'Technology',
-        'createdAt': DateTime.now().toIso8601String(),
-        'updatedAt': DateTime.now().toIso8601String(),
-      })
-      .build();
+  final createQuery =
+      JsonQueryBuilder().model('Domain').action(QueryAction.create).data({
+    'name': 'Technology',
+    'createdAt': DateTime.now().toIso8601String(),
+    'updatedAt': DateTime.now().toIso8601String(),
+  }).build();
 
   try {
     await supabaseExecutor.executeMutation(createQuery);
@@ -88,8 +85,7 @@ Future<void> main() async {
     final domainsQuery = JsonQueryBuilder()
         .model('Domain')
         .action(QueryAction.findMany)
-        .orderBy({'createdAt': 'desc'})
-        .build();
+        .orderBy({'createdAt': 'desc'}).build();
 
     final domains = await supabaseExecutor.executeQueryAsMaps(domainsQuery);
     print('Found ${domains.length} domains');
@@ -113,25 +109,19 @@ Future<void> main() async {
   try {
     await txExecutor.executeInTransaction((tx) async {
       // Create a user
-      final createUser = JsonQueryBuilder()
-          .model('User')
-          .action(QueryAction.create)
-          .data({
-            'email': 'newuser@example.com',
-            'name': 'New User',
-          })
-          .build();
+      final createUser =
+          JsonQueryBuilder().model('User').action(QueryAction.create).data({
+        'email': 'newuser@example.com',
+        'name': 'New User',
+      }).build();
 
       await tx.executeMutation(createUser);
 
       // Create a profile for the user
-      final createProfile = JsonQueryBuilder()
-          .model('Profile')
-          .action(QueryAction.create)
-          .data({
-            'bio': 'Hello world',
-          })
-          .build();
+      final createProfile =
+          JsonQueryBuilder().model('Profile').action(QueryAction.create).data({
+        'bio': 'Hello world',
+      }).build();
 
       await tx.executeMutation(createProfile);
 

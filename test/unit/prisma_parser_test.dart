@@ -607,7 +607,8 @@ model Category {
         final postModel = result.models[0];
         final categoryField = postModel.fields[3];
 
-        expect(categoryField.relationFromFields, ['categoryId', 'subcategoryId']);
+        expect(
+            categoryField.relationFromFields, ['categoryId', 'subcategoryId']);
         expect(categoryField.relationToFields, ['id', 'subId']);
       });
 
@@ -1060,8 +1061,11 @@ model Profile {
 
         // Check User model
         final userModel = result.models.firstWhere((m) => m.name == 'User');
-        expect(userModel.fields.any((f) => f.name == 'email' && f.isUnique), true);
-        expect(userModel.fields.any((f) => f.name == 'role' && f.type == 'Role'), true);
+        expect(
+            userModel.fields.any((f) => f.name == 'email' && f.isUnique), true);
+        expect(
+            userModel.fields.any((f) => f.name == 'role' && f.type == 'Role'),
+            true);
 
         // Check Post model
         final postModel = result.models.firstWhere((m) => m.name == 'Post');
@@ -1080,7 +1084,8 @@ model Profile {
     });
 
     test('toString formats with line number', () {
-      final error = GeneratorError('Test error', suggestion: 'Fix it', line: 10);
+      final error =
+          GeneratorError('Test error', suggestion: 'Fix it', line: 10);
 
       expect(error.toString(), contains('Test error'));
       expect(error.toString(), contains('line 10'));

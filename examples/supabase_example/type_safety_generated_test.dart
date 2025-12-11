@@ -8,7 +8,7 @@ library;
 
 void main() async {
   // This would test the generated client:
-  
+
   // ❌ TEST 1: Invalid field name - Should get compile error
   // final domain = await prisma.domain.findUnique(
   //   where: DomainWhereUniqueInput(
@@ -16,7 +16,7 @@ void main() async {
   //   ),
   // );
 
-  // ❌ TEST 2: Wrong type - Should get compile error  
+  // ❌ TEST 2: Wrong type - Should get compile error
   // final domain2 = await prisma.domain.create(
   //   data: CreateDomainInput(
   //     id: 123,  // Should error: expects String, got int

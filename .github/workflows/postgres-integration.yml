@@ -49,7 +49,7 @@ jobs:
           channel: 'stable'
 
       - name: Install Prisma CLI
-        run: npm install -g prisma
+        run: npm install -g prisma@5
 
       - name: Setup environment variables
         working-directory: test/integration/postgres

@@ -305,10 +305,8 @@ void main() {
 
   group('JsonQueryBuilder', () {
     test('builds basic findMany query', () {
-      final query = JsonQueryBuilder()
-          .model('User')
-          .action(QueryAction.findMany)
-          .build();
+      final query =
+          JsonQueryBuilder().model('User').action(QueryAction.findMany).build();
 
       expect(query.modelName, 'User');
       expect(query.action, 'findMany');
@@ -318,8 +316,7 @@ void main() {
       final query = JsonQueryBuilder()
           .model('User')
           .action(QueryAction.findMany)
-          .where({'email': 'test@example.com'})
-          .build();
+          .where({'email': 'test@example.com'}).build();
 
       expect(query.args.arguments?['where'], {'email': 'test@example.com'});
     });
@@ -328,8 +325,7 @@ void main() {
       final query = JsonQueryBuilder()
           .model('User')
           .action(QueryAction.create)
-          .data({'email': 'test@example.com', 'name': 'Test'})
-          .build();
+          .data({'email': 'test@example.com', 'name': 'Test'}).build();
 
       expect(query.args.arguments?['data'], {
         'email': 'test@example.com',
@@ -341,8 +337,7 @@ void main() {
       final query = JsonQueryBuilder()
           .model('User')
           .action(QueryAction.findMany)
-          .orderBy({'createdAt': 'desc'})
-          .build();
+          .orderBy({'createdAt': 'desc'}).build();
 
       expect(query.args.arguments?['orderBy'], {'createdAt': 'desc'});
     });
@@ -364,10 +359,9 @@ void main() {
           .model('Product')
           .action(QueryAction.findMany)
           .where({
-            'price': FilterOperators.gte(100),
-            'name': FilterOperators.contains('phone'),
-          })
-          .build();
+        'price': FilterOperators.gte(100),
+        'name': FilterOperators.contains('phone'),
+      }).build();
 
       expect(query.args.arguments?['where'], {
         'price': {'gte': 100},
@@ -379,8 +373,7 @@ void main() {
       final query = JsonQueryBuilder()
           .model('User')
           .action(QueryAction.findMany)
-          .select({'id': true, 'email': true})
-          .build();
+          .select({'id': true, 'email': true}).build();
 
       expect(query.args.selection, isNotNull);
       expect(query.args.selection!.fields, isNotNull);
@@ -390,8 +383,7 @@ void main() {
       final query = JsonQueryBuilder()
           .model('User')
           .action(QueryAction.findMany)
-          .include({'posts': true})
-          .build();
+          .include({'posts': true}).build();
 
       expect(query.args.selection, isNotNull);
       expect(query.args.selection!.fields, isNotNull);
@@ -418,7 +410,9 @@ void main() {
         modelName: 'User',
         action: 'findMany',
         args: JsonQueryArgs(
-          arguments: {'where': {'email': 'test@example.com'}},
+          arguments: {
+            'where': {'email': 'test@example.com'}
+          },
         ),
       );
 
@@ -446,12 +440,16 @@ void main() {
   group('JsonQueryArgs', () {
     test('toJson with arguments only', () {
       const args = JsonQueryArgs(
-        arguments: {'where': {'id': '123'}},
+        arguments: {
+          'where': {'id': '123'}
+        },
       );
 
       final json = args.toJson();
 
-      expect(json['arguments'], {'where': {'id': '123'}});
+      expect(json['arguments'], {
+        'where': {'id': '123'}
+      });
       expect(json.containsKey('selection'), false);
     });
 

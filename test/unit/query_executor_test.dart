@@ -177,8 +177,7 @@ void main() {
         final query = JsonQueryBuilder()
             .model('User')
             .action(QueryAction.findMany)
-            .where({'email': 'test@example.com'})
-            .build();
+            .where({'email': 'test@example.com'}).build();
 
         await executor.executeQuery(query);
 
@@ -283,7 +282,11 @@ void main() {
 
         mockAdapter.setNextQueryResult(const SqlResultSet(
           columnNames: ['id', 'name', 'email'],
-          columnTypes: [ColumnType.string, ColumnType.string, ColumnType.string],
+          columnTypes: [
+            ColumnType.string,
+            ColumnType.string,
+            ColumnType.string
+          ],
           rows: [
             ['1', 'John', 'john@example.com'],
             ['2', 'Jane', 'jane@example.com'],
@@ -434,7 +437,11 @@ void main() {
 
         mockAdapter.setNextQueryResult(const SqlResultSet(
           columnNames: ['id', 'name', 'bio'],
-          columnTypes: [ColumnType.string, ColumnType.string, ColumnType.string],
+          columnTypes: [
+            ColumnType.string,
+            ColumnType.string,
+            ColumnType.string
+          ],
           rows: [
             ['1', 'John', null],
           ],
@@ -451,8 +458,7 @@ void main() {
         final query = JsonQueryBuilder()
             .model('User')
             .action(QueryAction.findUnique)
-            .where({'id': '1'})
-            .build();
+            .where({'id': '1'}).build();
 
         mockAdapter.setNextQueryResult(const SqlResultSet(
           columnNames: ['id', 'name'],
@@ -473,8 +479,7 @@ void main() {
         final query = JsonQueryBuilder()
             .model('User')
             .action(QueryAction.findUnique)
-            .where({'id': 'nonexistent'})
-            .build();
+            .where({'id': 'nonexistent'}).build();
 
         mockAdapter.setNextQueryResult(const SqlResultSet(
           columnNames: ['id'],
@@ -692,8 +697,7 @@ void main() {
           final query = JsonQueryBuilder()
               .model('User')
               .action(QueryAction.findUnique)
-              .where({'id': '1'})
-              .build();
+              .where({'id': '1'}).build();
           result = await tx.executeQueryAsSingleMap(query);
           return null;
         });
@@ -717,8 +721,7 @@ void main() {
           final query = JsonQueryBuilder()
               .model('User')
               .action(QueryAction.findUnique)
-              .where({'id': 'nonexistent'})
-              .build();
+              .where({'id': 'nonexistent'}).build();
           result = await tx.executeQueryAsSingleMap(query);
           return null;
         });
@@ -811,10 +814,8 @@ void main() {
         ],
       ));
 
-      final query = JsonQueryBuilder()
-          .model('User')
-          .action(QueryAction.findMany)
-          .build();
+      final query =
+          JsonQueryBuilder().model('User').action(QueryAction.findMany).build();
 
       final result = await executor.executeQueryAsMaps(query);
 
@@ -832,10 +833,8 @@ void main() {
         ],
       ));
 
-      final query = JsonQueryBuilder()
-          .model('User')
-          .action(QueryAction.findMany)
-          .build();
+      final query =
+          JsonQueryBuilder().model('User').action(QueryAction.findMany).build();
 
       final result = await executor.executeQueryAsMaps(query);
 
@@ -851,10 +850,8 @@ void main() {
         ],
       ));
 
-      final query = JsonQueryBuilder()
-          .model('User')
-          .action(QueryAction.findMany)
-          .build();
+      final query =
+          JsonQueryBuilder().model('User').action(QueryAction.findMany).build();
 
       final result = await executor.executeQueryAsMaps(query);
 
@@ -871,10 +868,8 @@ void main() {
         ],
       ));
 
-      final query = JsonQueryBuilder()
-          .model('User')
-          .action(QueryAction.findMany)
-          .build();
+      final query =
+          JsonQueryBuilder().model('User').action(QueryAction.findMany).build();
 
       final result = await executor.executeQueryAsMaps(query);
 

@@ -7,15 +7,68 @@ library;
 /// Dart reserved keywords that cannot be used as identifiers
 /// Must match Dart language specification
 const dartReservedKeywords = {
-  'abstract', 'as', 'assert', 'async', 'await', 'break', 'case',
-  'catch', 'class', 'const', 'continue', 'covariant', 'default',
-  'deferred', 'do', 'dynamic', 'else', 'enum', 'export', 'extends',
-  'extension', 'external', 'factory', 'false', 'final', 'finally',
-  'for', 'Function', 'get', 'hide', 'if', 'implements', 'import',
-  'in', 'interface', 'is', 'late', 'library', 'mixin', 'new', 'null',
-  'on', 'operator', 'part', 'rethrow', 'return', 'set', 'show',
-  'static', 'super', 'switch', 'sync', 'this', 'throw', 'true',
-  'try', 'typedef', 'var', 'void', 'while', 'with', 'yield',
+  'abstract',
+  'as',
+  'assert',
+  'async',
+  'await',
+  'break',
+  'case',
+  'catch',
+  'class',
+  'const',
+  'continue',
+  'covariant',
+  'default',
+  'deferred',
+  'do',
+  'dynamic',
+  'else',
+  'enum',
+  'export',
+  'extends',
+  'extension',
+  'external',
+  'factory',
+  'false',
+  'final',
+  'finally',
+  'for',
+  'Function',
+  'get',
+  'hide',
+  'if',
+  'implements',
+  'import',
+  'in',
+  'interface',
+  'is',
+  'late',
+  'library',
+  'mixin',
+  'new',
+  'null',
+  'on',
+  'operator',
+  'part',
+  'rethrow',
+  'return',
+  'set',
+  'show',
+  'static',
+  'super',
+  'switch',
+  'sync',
+  'this',
+  'throw',
+  'true',
+  'try',
+  'typedef',
+  'var',
+  'void',
+  'while',
+  'with',
+  'yield',
 };
 
 /// Generator error for schema validation failures
@@ -49,7 +102,8 @@ class PrismaSchema {
 
 class PrismaModel {
   final String name;
-  final String? dbName; // Original table name if renamed due to reserved keyword
+  final String?
+      dbName; // Original table name if renamed due to reserved keyword
   final List<PrismaField> fields;
   final List<PrismaRelation> relations;
 
@@ -361,8 +415,9 @@ class PrismaParser {
     String datasourceProvider = 'postgresql'; // default
 
     // Extract datasource provider
-    final datasourceMatch = RegExp(r'datasource\s+\w+\s*\{[^}]*provider\s*=\s*"([^"]+)"')
-        .firstMatch(schemaContent);
+    final datasourceMatch =
+        RegExp(r'datasource\s+\w+\s*\{[^}]*provider\s*=\s*"([^"]+)"')
+            .firstMatch(schemaContent);
     if (datasourceMatch != null) {
       datasourceProvider = datasourceMatch.group(1)!;
     }
@@ -385,7 +440,8 @@ class PrismaParser {
     final modelNameMap = <String, String>{}; // originalName -> dartName
 
     // First pass: collect all model name mappings
-    final modelPattern = RegExp(r'model\s+(\w+)\s*\{([^}]+)\}', multiLine: true);
+    final modelPattern =
+        RegExp(r'model\s+(\w+)\s*\{([^}]+)\}', multiLine: true);
     for (final match in modelPattern.allMatches(schemaContent)) {
       final originalModelName = match.group(1)!;
       final modelResult = _handleReservedKeyword(originalModelName, 'model');
@@ -412,12 +468,15 @@ class PrismaParser {
       // Parse each line in the model
       for (final line in modelBody.split('\n')) {
         final trimmed = line.trim();
-        if (trimmed.isEmpty || trimmed.startsWith('//') || trimmed.startsWith('@@')) {
+        if (trimmed.isEmpty ||
+            trimmed.startsWith('//') ||
+            trimmed.startsWith('@@')) {
           continue;
         }
 
         // Parse field
-        final fieldMatch = RegExp(r'^(\w+)\s+([\w\[\]?]+)(.*)$').firstMatch(trimmed);
+        final fieldMatch =
+            RegExp(r'^(\w+)\s+([\w\[\]?]+)(.*)$').firstMatch(trimmed);
         if (fieldMatch != null) {
           final schemaFieldName = fieldMatch.group(1)!;
           var fieldType = fieldMatch.group(2)!;
@@ -452,7 +511,8 @@ class PrismaParser {
           // Extract default value
           String? defaultValue;
           bool hasEmptyListDefault = false;
-          final defaultMatch = RegExp(r'@default\(([^)]+)\)').firstMatch(attributes);
+          final defaultMatch =
+              RegExp(r'@default\(([^)]+)\)').firstMatch(attributes);
           if (defaultMatch != null) {
             final defaultStr = defaultMatch.group(1)!;
             if (defaultStr == '[]') {
@@ -470,20 +530,24 @@ class PrismaParser {
 
           if (isRelation) {
             // Parse relation metadata
-            final relationMatch = RegExp(r'@relation\(([^)]*)\)').firstMatch(attributes);
+            final relationMatch =
+                RegExp(r'@relation\(([^)]*)\)').firstMatch(attributes);
             if (relationMatch != null) {
               final relationContent = relationMatch.group(1)!;
 
               // Extract relation name (first unnamed string in quotes)
-              final nameMatch = RegExp(r'^"([^"]+)"').firstMatch(relationContent.trim());
+              final nameMatch =
+                  RegExp(r'^"([^"]+)"').firstMatch(relationContent.trim());
               if (nameMatch != null) {
                 relationName = nameMatch.group(1);
               }
 
               // Extract fields: [field1, field2]
-              final fieldsMatch = RegExp(r'fields:\s*\[([^\]]*)\]').firstMatch(relationContent);
+              final fieldsMatch =
+                  RegExp(r'fields:\s*\[([^\]]*)\]').firstMatch(relationContent);
               if (fieldsMatch != null) {
-                relationFromFields = fieldsMatch.group(1)!
+                relationFromFields = fieldsMatch
+                    .group(1)!
                     .split(',')
                     .map((f) => f.trim().replaceAll(RegExp(r'["\[\]]'), ''))
                     .where((f) => f.isNotEmpty)
@@ -491,9 +555,11 @@ class PrismaParser {
               }
 
               // Extract references: [field1, field2]
-              final referencesMatch = RegExp(r'references:\s*\[([^\]]*)\]').firstMatch(relationContent);
+              final referencesMatch = RegExp(r'references:\s*\[([^\]]*)\]')
+                  .firstMatch(relationContent);
               if (referencesMatch != null) {
-                relationToFields = referencesMatch.group(1)!
+                relationToFields = referencesMatch
+                    .group(1)!
                     .split(',')
                     .map((f) => f.trim().replaceAll(RegExp(r'["\[\]]'), ''))
                     .where((f) => f.isNotEmpty)

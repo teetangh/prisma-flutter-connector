@@ -26,7 +26,8 @@ class DelegateGenerator {
 
     // Delegate class
     buffer.writeln('/// Delegate for $modelName operations');
-    buffer.writeln('/// Provides type-safe CRUD operations using database adapters');
+    buffer.writeln(
+        '/// Provides type-safe CRUD operations using database adapters');
     buffer.writeln('class ${modelName}Delegate {');
     buffer.writeln('  final QueryExecutor _executor;');
     buffer.writeln();
@@ -44,8 +45,10 @@ class DelegateGenerator {
     buffer.writeln('        .where(_whereUniqueToJson(where))');
     buffer.writeln('        .build();');
     buffer.writeln();
-    buffer.writeln('    final result = await _executor.executeQueryAsSingleMap(query);');
-    buffer.writeln('    return result != null ? $modelName.fromJson(result) : null;');
+    buffer.writeln(
+        '    final result = await _executor.executeQueryAsSingleMap(query);');
+    buffer.writeln(
+        '    return result != null ? $modelName.fromJson(result) : null;');
     buffer.writeln('  }');
     buffer.writeln();
 
@@ -72,11 +75,15 @@ class DelegateGenerator {
     buffer.writeln('        .model(\'$tableName\')');
     buffer.writeln('        .action(QueryAction.findFirst);');
     buffer.writeln();
-    buffer.writeln('    if (where != null) queryBuilder.where(_whereToJson(where));');
-    buffer.writeln('    if (orderBy != null) queryBuilder.orderBy(_orderByToJson(orderBy));');
+    buffer.writeln(
+        '    if (where != null) queryBuilder.where(_whereToJson(where));');
+    buffer.writeln(
+        '    if (orderBy != null) queryBuilder.orderBy(_orderByToJson(orderBy));');
     buffer.writeln();
-    buffer.writeln('    final result = await _executor.executeQueryAsSingleMap(queryBuilder.build());');
-    buffer.writeln('    return result != null ? $modelName.fromJson(result) : null;');
+    buffer.writeln(
+        '    final result = await _executor.executeQueryAsSingleMap(queryBuilder.build());');
+    buffer.writeln(
+        '    return result != null ? $modelName.fromJson(result) : null;');
     buffer.writeln('  }');
     buffer.writeln();
 
@@ -92,13 +99,17 @@ class DelegateGenerator {
     buffer.writeln('        .model(\'$tableName\')');
     buffer.writeln('        .action(QueryAction.findMany);');
     buffer.writeln();
-    buffer.writeln('    if (where != null) queryBuilder.where(_whereToJson(where));');
-    buffer.writeln('    if (orderBy != null) queryBuilder.orderBy(_orderByToJson(orderBy));');
+    buffer.writeln(
+        '    if (where != null) queryBuilder.where(_whereToJson(where));');
+    buffer.writeln(
+        '    if (orderBy != null) queryBuilder.orderBy(_orderByToJson(orderBy));');
     buffer.writeln('    if (take != null) queryBuilder.take(take);');
     buffer.writeln('    if (skip != null) queryBuilder.skip(skip);');
     buffer.writeln();
-    buffer.writeln('    final results = await _executor.executeQueryAsMaps(queryBuilder.build());');
-    buffer.writeln('    return results.map((json) => $modelName.fromJson(json)).toList();');
+    buffer.writeln(
+        '    final results = await _executor.executeQueryAsMaps(queryBuilder.build());');
+    buffer.writeln(
+        '    return results.map((json) => $modelName.fromJson(json)).toList();');
     buffer.writeln('  }');
     buffer.writeln();
 
@@ -113,7 +124,8 @@ class DelegateGenerator {
     buffer.writeln('        .data(data.toJson())');
     buffer.writeln('        .build();');
     buffer.writeln();
-    buffer.writeln('    final result = await _executor.executeQueryAsSingleMap(query);');
+    buffer.writeln(
+        '    final result = await _executor.executeQueryAsSingleMap(query);');
     buffer.writeln('    if (result == null) {');
     buffer.writeln('      throw Exception(\'Failed to create $modelName\');');
     buffer.writeln('    }');
@@ -129,7 +141,8 @@ class DelegateGenerator {
     buffer.writeln('    final query = JsonQueryBuilder()');
     buffer.writeln('        .model(\'$tableName\')');
     buffer.writeln('        .action(QueryAction.createMany)');
-    buffer.writeln('        .data({\'data\': data.map((d) => d.toJson()).toList()})');
+    buffer.writeln(
+        '        .data({\'data\': data.map((d) => d.toJson()).toList()})');
     buffer.writeln('        .build();');
     buffer.writeln();
     buffer.writeln('    return await _executor.executeMutation(query);');
@@ -179,7 +192,8 @@ class DelegateGenerator {
     buffer.writeln('    required ${modelName}WhereUniqueInput where,');
     buffer.writeln('  }) async {');
     buffer.writeln('    // Fetch before deleting');
-    buffer.writeln('    final existing = await findUniqueOrThrow(where: where);');
+    buffer
+        .writeln('    final existing = await findUniqueOrThrow(where: where);');
     buffer.writeln();
     buffer.writeln('    final query = JsonQueryBuilder()');
     buffer.writeln('        .model(\'$tableName\')');
@@ -216,25 +230,32 @@ class DelegateGenerator {
     buffer.writeln('        .model(\'$tableName\')');
     buffer.writeln('        .action(QueryAction.count);');
     buffer.writeln();
-    buffer.writeln('    if (where != null) queryBuilder.where(_whereToJson(where));');
+    buffer.writeln(
+        '    if (where != null) queryBuilder.where(_whereToJson(where));');
     buffer.writeln();
-    buffer.writeln('    return await _executor.executeCount(queryBuilder.build());');
+    buffer.writeln(
+        '    return await _executor.executeCount(queryBuilder.build());');
     buffer.writeln('  }');
     buffer.writeln();
 
     // Helper methods for converting typed inputs to JSON
-    buffer.writeln('  /// Convert WhereUniqueInput to JSON for JsonQueryBuilder');
-    buffer.writeln('  Map<String, dynamic> _whereUniqueToJson(${modelName}WhereUniqueInput where) {');
-    buffer.writeln('    return where.toJson()..removeWhere((key, value) => value == null);');
+    buffer
+        .writeln('  /// Convert WhereUniqueInput to JSON for JsonQueryBuilder');
+    buffer.writeln(
+        '  Map<String, dynamic> _whereUniqueToJson(${modelName}WhereUniqueInput where) {');
+    buffer.writeln(
+        '    return where.toJson()..removeWhere((key, value) => value == null);');
     buffer.writeln('  }');
     buffer.writeln();
 
     buffer.writeln('  /// Convert WhereInput to JSON for JsonQueryBuilder');
-    buffer.writeln('  Map<String, dynamic> _whereToJson(${modelName}WhereInput where) {');
+    buffer.writeln(
+        '  Map<String, dynamic> _whereToJson(${modelName}WhereInput where) {');
     buffer.writeln('    final json = where.toJson();');
     buffer.writeln('    final result = <String, dynamic>{};');
     buffer.writeln();
-    buffer.writeln('    // Convert filter objects to their JSON representation');
+    buffer
+        .writeln('    // Convert filter objects to their JSON representation');
     buffer.writeln('    for (final entry in json.entries) {');
     buffer.writeln('      if (entry.value == null) continue;');
     buffer.writeln();
@@ -244,7 +265,8 @@ class DelegateGenerator {
     buffer.writeln('        if (list != null && list.isNotEmpty) {');
     buffer.writeln('          result[entry.key] = list.map((item) {');
     buffer.writeln('            if (item is Map) return item;');
-    buffer.writeln('            return (item as ${modelName}WhereInput).toJson();');
+    buffer.writeln(
+        '            return (item as ${modelName}WhereInput).toJson();');
     buffer.writeln('          }).toList();');
     buffer.writeln('        }');
     buffer.writeln('      } else if (entry.key == \'NOT\') {');
@@ -255,13 +277,15 @@ class DelegateGenerator {
     buffer.writeln('          result[entry.key] = not.toJson();');
     buffer.writeln('        }');
     buffer.writeln('      } else {');
-    buffer.writeln('        // Handle filter objects (StringFilter, IntFilter, etc.)');
+    buffer.writeln(
+        '        // Handle filter objects (StringFilter, IntFilter, etc.)');
     buffer.writeln('        if (entry.value is Map) {');
     buffer.writeln('          final filterMap = entry.value as Map;');
     buffer.writeln('          final cleanedFilter = <String, dynamic>{};');
     buffer.writeln('          for (final filterEntry in filterMap.entries) {');
     buffer.writeln('            if (filterEntry.value != null) {');
-    buffer.writeln('              cleanedFilter[filterEntry.key.toString()] = filterEntry.value;');
+    buffer.writeln(
+        '              cleanedFilter[filterEntry.key.toString()] = filterEntry.value;');
     buffer.writeln('            }');
     buffer.writeln('          }');
     buffer.writeln('          if (cleanedFilter.isNotEmpty) {');
@@ -278,14 +302,16 @@ class DelegateGenerator {
     buffer.writeln();
 
     buffer.writeln('  /// Convert OrderByInput to JSON for JsonQueryBuilder');
-    buffer.writeln('  Map<String, dynamic> _orderByToJson(${modelName}OrderByInput orderBy) {');
+    buffer.writeln(
+        '  Map<String, dynamic> _orderByToJson(${modelName}OrderByInput orderBy) {');
     buffer.writeln('    final json = orderBy.toJson();');
     buffer.writeln('    final result = <String, dynamic>{};');
     buffer.writeln();
     buffer.writeln('    for (final entry in json.entries) {');
     buffer.writeln('      if (entry.value != null) {');
     buffer.writeln('        // Convert SortOrder enum to string');
-    buffer.writeln('        result[entry.key] = entry.value.toString().split(\'.\').last;');
+    buffer.writeln(
+        '        result[entry.key] = entry.value.toString().split(\'.\').last;');
     buffer.writeln('      }');
     buffer.writeln('    }');
     buffer.writeln();
@@ -310,9 +336,11 @@ class DelegateGenerator {
   }
 
   String _toSnakeCase(String input) {
-    return input.replaceAllMapped(
-      RegExp(r'[A-Z]'),
-      (match) => '_${match.group(0)!.toLowerCase()}',
-    ).replaceFirst(RegExp(r'^_'), '');
+    return input
+        .replaceAllMapped(
+          RegExp(r'[A-Z]'),
+          (match) => '_${match.group(0)!.toLowerCase()}',
+        )
+        .replaceFirst(RegExp(r'^_'), '');
   }
 }
