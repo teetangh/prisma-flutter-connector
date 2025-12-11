@@ -508,13 +508,11 @@ class PrismaParser {
           final isUpdatedAt = attributes.contains('@updatedAt');
           final isCreatedAt = attributes.contains('@default(now())');
 
-          // Extract default value
+          // Extract default value using balanced parentheses parser
           String? defaultValue;
           bool hasEmptyListDefault = false;
-          final defaultMatch =
-              RegExp(r'@default\(([^)]+)\)').firstMatch(attributes);
-          if (defaultMatch != null) {
-            final defaultStr = defaultMatch.group(1)!;
+          final defaultStr = _extractDefaultValue(attributes);
+          if (defaultStr != null) {
             if (defaultStr == '[]') {
               hasEmptyListDefault = true;
             } else {
@@ -630,5 +628,38 @@ class PrismaParser {
       enums: enums,
       datasourceProvider: datasourceProvider,
     );
+  }
+
+  /// Extracts content inside @default(...) handling nested parentheses.
+  ///
+  /// For example:
+  /// - `@default(now())` returns `now()`
+  /// - `@default(uuid())` returns `uuid()`
+  /// - `@default(dbgenerated("gen_random_uuid()"))` returns `dbgenerated("gen_random_uuid()")`
+  /// - `@default(true)` returns `true`
+  static String? _extractDefaultValue(String attributes) {
+    const prefix = '@default(';
+    final startIndex = attributes.indexOf(prefix);
+    if (startIndex == -1) return null;
+
+    final contentStart = startIndex + prefix.length;
+    var depth = 1;
+    var i = contentStart;
+
+    while (i < attributes.length && depth > 0) {
+      final char = attributes[i];
+      if (char == '(') {
+        depth++;
+      } else if (char == ')') {
+        depth--;
+      }
+      i++;
+    }
+
+    if (depth != 0) return null; // Unbalanced parentheses
+
+    // i now points to the character after the closing paren
+    // Content is from contentStart to i-1 (excluding closing paren)
+    return attributes.substring(contentStart, i - 1);
   }
 }

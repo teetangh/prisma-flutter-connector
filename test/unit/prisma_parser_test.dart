@@ -202,9 +202,7 @@ model User {
         final result = parser.parse(schema);
         final idField = result.models[0].fields[0];
 
-        // Note: Current parser regex captures 'uuid(' due to nested parentheses limitation
-        // The regex @default\(([^)]+)\) stops at the first )
-        expect(idField.defaultValue, 'uuid(');
+        expect(idField.defaultValue, 'uuid()');
       });
 
       test('parses @default with cuid()', () {
@@ -217,8 +215,7 @@ model User {
         final result = parser.parse(schema);
         final idField = result.models[0].fields[0];
 
-        // Note: Current parser regex captures 'cuid(' due to nested parentheses limitation
-        expect(idField.defaultValue, 'cuid(');
+        expect(idField.defaultValue, 'cuid()');
       });
 
       test('parses @default with autoincrement()', () {
@@ -231,8 +228,7 @@ model User {
         final result = parser.parse(schema);
         final idField = result.models[0].fields[0];
 
-        // Note: Current parser regex captures 'autoincrement(' due to nested parentheses limitation
-        expect(idField.defaultValue, 'autoincrement(');
+        expect(idField.defaultValue, 'autoincrement()');
       });
 
       test('parses @default with now() as createdAt', () {
@@ -248,8 +244,7 @@ model User {
 
         expect(createdAtField.name, 'createdAt');
         expect(createdAtField.isCreatedAt, true);
-        // Note: Current parser regex captures 'now(' due to nested parentheses limitation
-        expect(createdAtField.defaultValue, 'now(');
+        expect(createdAtField.defaultValue, 'now()');
       });
 
       test('parses @updatedAt attribute', () {
