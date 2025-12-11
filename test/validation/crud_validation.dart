@@ -34,7 +34,10 @@ String generateUuid() {
     bytes.sublist(4, 6).map((b) => b.toRadixString(16).padLeft(2, '0')).join(),
     bytes.sublist(6, 8).map((b) => b.toRadixString(16).padLeft(2, '0')).join(),
     bytes.sublist(8, 10).map((b) => b.toRadixString(16).padLeft(2, '0')).join(),
-    bytes.sublist(10, 16).map((b) => b.toRadixString(16).padLeft(2, '0')).join(),
+    bytes
+        .sublist(10, 16)
+        .map((b) => b.toRadixString(16).padLeft(2, '0'))
+        .join(),
   ].join('-');
 }
 
@@ -83,7 +86,8 @@ void main() async {
         .take(5)
         .build();
 
-    print('Executing: SELECT * FROM "domain" ORDER BY "created_at" DESC LIMIT 5\n');
+    print(
+        'Executing: SELECT * FROM "domain" ORDER BY "created_at" DESC LIMIT 5\n');
 
     final existingDomains = await executor.executeQueryAsMaps(findManyQuery);
 
@@ -104,16 +108,13 @@ void main() async {
     final testDomainId = generateUuid();
     final now = DateTime.now().toUtc().toIso8601String();
 
-    final createQuery = JsonQueryBuilder()
-        .model('Domain')
-        .action(QueryAction.create)
-        .data({
-          'id': testDomainId,       // Generate UUID for id field
-          'name': testDomainName,
-          'createdAt': now,         // Use camelCase field name
-          'updatedAt': now,         // Use camelCase field name
-        })
-        .build();
+    final createQuery =
+        JsonQueryBuilder().model('Domain').action(QueryAction.create).data({
+      'id': testDomainId, // Generate UUID for id field
+      'name': testDomainName,
+      'createdAt': now, // Use camelCase field name
+      'updatedAt': now, // Use camelCase field name
+    }).build();
 
     print('Creating domain: $testDomainName\n');
 
@@ -134,17 +135,18 @@ void main() async {
       // ======================================================================
       print('═══════════════════════════════════════════════════════════════');
       print('TEST 3: READ (findUnique) - Fetch created domain');
-      print('═══════════════════════════════════════════════════════════════\n');
+      print(
+          '═══════════════════════════════════════════════════════════════\n');
 
       final findUniqueQuery = JsonQueryBuilder()
           .model('Domain')
           .action(QueryAction.findUnique)
-          .where({'id': createdId})
-          .build();
+          .where({'id': createdId}).build();
 
       print('Fetching domain with ID: $createdId\n');
 
-      final foundDomain = await executor.executeQueryAsSingleMap(findUniqueQuery);
+      final foundDomain =
+          await executor.executeQueryAsSingleMap(findUniqueQuery);
 
       if (foundDomain != null) {
         print('✅ Domain found:');
@@ -160,19 +162,18 @@ void main() async {
       // ======================================================================
       print('═══════════════════════════════════════════════════════════════');
       print('TEST 4: UPDATE - Modify domain name');
-      print('═══════════════════════════════════════════════════════════════\n');
+      print(
+          '═══════════════════════════════════════════════════════════════\n');
 
       final updatedName = '${testDomainName}_UPDATED';
 
       final updateQuery = JsonQueryBuilder()
           .model('Domain')
           .action(QueryAction.update)
-          .where({'id': createdId})
-          .data({
-            'name': updatedName,
-            'updatedAt': DateTime.now().toUtc().toIso8601String(),
-          })
-          .build();
+          .where({'id': createdId}).data({
+        'name': updatedName,
+        'updatedAt': DateTime.now().toUtc().toIso8601String(),
+      }).build();
 
       print('Updating domain name to: $updatedName\n');
 
@@ -182,8 +183,7 @@ void main() async {
       final verifyQuery = JsonQueryBuilder()
           .model('Domain')
           .action(QueryAction.findUnique)
-          .where({'id': createdId})
-          .build();
+          .where({'id': createdId}).build();
 
       final updatedDomain = await executor.executeQueryAsSingleMap(verifyQuery);
 
@@ -200,13 +200,13 @@ void main() async {
       // ======================================================================
       print('═══════════════════════════════════════════════════════════════');
       print('TEST 5: DELETE - Clean up test domain');
-      print('═══════════════════════════════════════════════════════════════\n');
+      print(
+          '═══════════════════════════════════════════════════════════════\n');
 
       final deleteQuery = JsonQueryBuilder()
           .model('Domain')
           .action(QueryAction.delete)
-          .where({'id': createdId})
-          .build();
+          .where({'id': createdId}).build();
 
       print('Deleting test domain...\n');
 
@@ -216,10 +216,10 @@ void main() async {
       final verifyDeleteQuery = JsonQueryBuilder()
           .model('Domain')
           .action(QueryAction.findUnique)
-          .where({'id': createdId})
-          .build();
+          .where({'id': createdId}).build();
 
-      final deletedDomain = await executor.executeQueryAsSingleMap(verifyDeleteQuery);
+      final deletedDomain =
+          await executor.executeQueryAsSingleMap(verifyDeleteQuery);
 
       if (deletedDomain == null) {
         print('✅ Domain deleted successfully!');
@@ -233,12 +233,11 @@ void main() async {
       // ======================================================================
       print('═══════════════════════════════════════════════════════════════');
       print('TEST 6: COUNT - Count total domains');
-      print('═══════════════════════════════════════════════════════════════\n');
+      print(
+          '═══════════════════════════════════════════════════════════════\n');
 
-      final countQuery = JsonQueryBuilder()
-          .model('Domain')
-          .action(QueryAction.count)
-          .build();
+      final countQuery =
+          JsonQueryBuilder().model('Domain').action(QueryAction.count).build();
 
       final totalCount = await executor.executeCount(countQuery);
 
@@ -250,7 +249,8 @@ void main() async {
       // ======================================================================
       print('═══════════════════════════════════════════════════════════════');
       print('TEST 7: FILTER - Find domains containing "tech"');
-      print('═══════════════════════════════════════════════════════════════\n');
+      print(
+          '═══════════════════════════════════════════════════════════════\n');
 
       final filterQuery = JsonQueryBuilder()
           .model('Domain')
@@ -289,7 +289,6 @@ void main() async {
     print('🚀 Adapter-based ORM is working perfectly!');
     print('🚀 Ready to continue development and publish to pub.dev!');
     print('');
-
   } catch (e, stackTrace) {
     print('\n❌ ERROR: $e\n');
     print('Stack trace:');

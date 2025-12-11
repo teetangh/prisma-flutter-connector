@@ -19,8 +19,10 @@ class ClientGenerator {
     // File header
     buffer.writeln('/// Generated Prisma Client for Dart/Flutter');
     buffer.writeln('///');
-    buffer.writeln('/// This client provides type-safe database access using adapters.');
-    buffer.writeln('/// No GraphQL backend required - connects directly to your database!');
+    buffer.writeln(
+        '/// This client provides type-safe database access using adapters.');
+    buffer.writeln(
+        '/// No GraphQL backend required - connects directly to your database!');
     buffer.writeln('///');
     buffer.writeln('/// Usage:');
     buffer.writeln('/// ```dart');
@@ -53,10 +55,12 @@ class ClientGenerator {
     // PrismaClient class
     buffer.writeln('/// Main Prisma client for database operations');
     buffer.writeln('///');
-    buffer.writeln('/// This client provides access to all your models through');
+    buffer
+        .writeln('/// This client provides access to all your models through');
     buffer.writeln('/// type-safe delegate classes.');
     buffer.writeln('class PrismaClient {');
-    buffer.writeln('  /// The database adapter (PostgreSQL, Supabase, SQLite, etc.)');
+    buffer.writeln(
+        '  /// The database adapter (PostgreSQL, Supabase, SQLite, etc.)');
     buffer.writeln('  final SqlDriverAdapter adapter;');
     buffer.writeln();
     buffer.writeln('  /// The query executor');
@@ -109,8 +113,10 @@ class ClientGenerator {
     buffer.writeln('    Future<T> Function(PrismaClient) callback, {');
     buffer.writeln('    IsolationLevel? isolationLevel,');
     buffer.writeln('  }) async {');
-    buffer.writeln('    return await _executor.executeInTransaction((txExecutor) async {');
-    buffer.writeln('      final txClient = PrismaClient._transaction(txExecutor);');
+    buffer.writeln(
+        '    return await _executor.executeInTransaction((txExecutor) async {');
+    buffer.writeln(
+        '      final txClient = PrismaClient._transaction(txExecutor);');
     buffer.writeln('      return await callback(txClient);');
     buffer.writeln('    }, isolationLevel: isolationLevel);');
     buffer.writeln('  }');
@@ -133,7 +139,8 @@ class ClientGenerator {
     // Disconnect method
     buffer.writeln('  /// Close the database connection');
     buffer.writeln('  ///');
-    buffer.writeln('  /// Call this when you\'re done using the client to clean up resources.');
+    buffer.writeln(
+        '  /// Call this when you\'re done using the client to clean up resources.');
     buffer.writeln('  Future<void> \$disconnect() async {');
     buffer.writeln('    await _executor.dispose();');
     buffer.writeln('  }');
@@ -147,56 +154,72 @@ class ClientGenerator {
     buffer.writeln('/// Use these when building WHERE clauses.');
     buffer.writeln('class Where {');
     buffer.writeln('  /// Equals');
-    buffer.writeln('  static Map<String, dynamic> equals(dynamic value) => FilterOperators.equals(value);');
+    buffer.writeln(
+        '  static Map<String, dynamic> equals(dynamic value) => FilterOperators.equals(value);');
     buffer.writeln();
     buffer.writeln('  /// Not equals');
-    buffer.writeln('  static Map<String, dynamic> not(dynamic value) => FilterOperators.not(value);');
+    buffer.writeln(
+        '  static Map<String, dynamic> not(dynamic value) => FilterOperators.not(value);');
     buffer.writeln();
     buffer.writeln('  /// In list');
-    buffer.writeln('  static Map<String, dynamic> in_(List<dynamic> values) => FilterOperators.in_(values);');
+    buffer.writeln(
+        '  static Map<String, dynamic> in_(List<dynamic> values) => FilterOperators.in_(values);');
     buffer.writeln();
     buffer.writeln('  /// Not in list');
-    buffer.writeln('  static Map<String, dynamic> notIn(List<dynamic> values) => FilterOperators.notIn(values);');
+    buffer.writeln(
+        '  static Map<String, dynamic> notIn(List<dynamic> values) => FilterOperators.notIn(values);');
     buffer.writeln();
     buffer.writeln('  /// Less than');
-    buffer.writeln('  static Map<String, dynamic> lt(dynamic value) => FilterOperators.lt(value);');
+    buffer.writeln(
+        '  static Map<String, dynamic> lt(dynamic value) => FilterOperators.lt(value);');
     buffer.writeln();
     buffer.writeln('  /// Less than or equal');
-    buffer.writeln('  static Map<String, dynamic> lte(dynamic value) => FilterOperators.lte(value);');
+    buffer.writeln(
+        '  static Map<String, dynamic> lte(dynamic value) => FilterOperators.lte(value);');
     buffer.writeln();
     buffer.writeln('  /// Greater than');
-    buffer.writeln('  static Map<String, dynamic> gt(dynamic value) => FilterOperators.gt(value);');
+    buffer.writeln(
+        '  static Map<String, dynamic> gt(dynamic value) => FilterOperators.gt(value);');
     buffer.writeln();
     buffer.writeln('  /// Greater than or equal');
-    buffer.writeln('  static Map<String, dynamic> gte(dynamic value) => FilterOperators.gte(value);');
+    buffer.writeln(
+        '  static Map<String, dynamic> gte(dynamic value) => FilterOperators.gte(value);');
     buffer.writeln();
     buffer.writeln('  /// Contains (string)');
-    buffer.writeln('  static Map<String, dynamic> contains(String value) => FilterOperators.contains(value);');
+    buffer.writeln(
+        '  static Map<String, dynamic> contains(String value) => FilterOperators.contains(value);');
     buffer.writeln();
     buffer.writeln('  /// Starts with (string)');
-    buffer.writeln('  static Map<String, dynamic> startsWith(String value) => FilterOperators.startsWith(value);');
+    buffer.writeln(
+        '  static Map<String, dynamic> startsWith(String value) => FilterOperators.startsWith(value);');
     buffer.writeln();
     buffer.writeln('  /// Ends with (string)');
-    buffer.writeln('  static Map<String, dynamic> endsWith(String value) => FilterOperators.endsWith(value);');
+    buffer.writeln(
+        '  static Map<String, dynamic> endsWith(String value) => FilterOperators.endsWith(value);');
     buffer.writeln();
     buffer.writeln('  /// AND conditions');
-    buffer.writeln('  static Map<String, dynamic> and(List<Map<String, dynamic>> conditions) => FilterOperators.and(conditions);');
+    buffer.writeln(
+        '  static Map<String, dynamic> and(List<Map<String, dynamic>> conditions) => FilterOperators.and(conditions);');
     buffer.writeln();
     buffer.writeln('  /// OR conditions');
-    buffer.writeln('  static Map<String, dynamic> or(List<Map<String, dynamic>> conditions) => FilterOperators.or(conditions);');
+    buffer.writeln(
+        '  static Map<String, dynamic> or(List<Map<String, dynamic>> conditions) => FilterOperators.or(conditions);');
     buffer.writeln();
     buffer.writeln('  /// NOT condition');
-    buffer.writeln('  static Map<String, dynamic> none(Map<String, dynamic> condition) => FilterOperators.none(condition);');
+    buffer.writeln(
+        '  static Map<String, dynamic> none(Map<String, dynamic> condition) => FilterOperators.none(condition);');
     buffer.writeln('}');
 
     return buffer.toString();
   }
 
   String _toSnakeCase(String input) {
-    return input.replaceAllMapped(
-      RegExp(r'[A-Z]'),
-      (match) => '_${match.group(0)!.toLowerCase()}',
-    ).replaceFirst(RegExp(r'^_'), '');
+    return input
+        .replaceAllMapped(
+          RegExp(r'[A-Z]'),
+          (match) => '_${match.group(0)!.toLowerCase()}',
+        )
+        .replaceFirst(RegExp(r'^_'), '');
   }
 
   String _toLowerCamelCase(String input) {

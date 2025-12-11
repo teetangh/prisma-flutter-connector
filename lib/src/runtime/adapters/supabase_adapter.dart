@@ -34,7 +34,8 @@ class SupabaseAdapter implements SqlDriverAdapter {
   final PostgresAdapter _pgAdapter;
 
   SupabaseAdapter(pg.Connection connection, {ConnectionInfo? connectionInfo})
-      : _pgAdapter = PostgresAdapter(connection, connectionInfo: connectionInfo);
+      : _pgAdapter =
+            PostgresAdapter(connection, connectionInfo: connectionInfo);
 
   /// Create Supabase adapter from connection string.
   ///
@@ -51,7 +52,8 @@ class SupabaseAdapter implements SqlDriverAdapter {
       pg.Endpoint(
         host: uri.host,
         port: uri.port,
-        database: uri.pathSegments.isNotEmpty ? uri.pathSegments.first : 'postgres',
+        database:
+            uri.pathSegments.isNotEmpty ? uri.pathSegments.first : 'postgres',
         username: uri.userInfo.split(':').first,
         password: uri.userInfo.split(':').last,
       ),

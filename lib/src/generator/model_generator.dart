@@ -14,7 +14,8 @@ class ModelGenerator {
     final buffer = StringBuffer();
 
     // Imports
-    buffer.writeln("import 'package:freezed_annotation/freezed_annotation.dart';");
+    buffer.writeln(
+        "import 'package:freezed_annotation/freezed_annotation.dart';");
     buffer.writeln();
 
     // Import filter types for WhereInput
@@ -52,7 +53,8 @@ class ModelGenerator {
     for (final field in model.fields) {
       // Handle relation fields - exclude from JSON serialization
       if (field.isRelation) {
-        buffer.writeln('    @JsonKey(includeFromJson: false, includeToJson: false)');
+        buffer.writeln(
+            '    @JsonKey(includeFromJson: false, includeToJson: false)');
         // Relation fields are always optional
         final relationType = field.isList ? 'List<${field.type}>' : field.type;
         buffer.writeln('    $relationType? ${field.name},');
@@ -107,7 +109,8 @@ class ModelGenerator {
 
     buffer.writeln('  }) = _${model.name};');
     buffer.writeln();
-    buffer.writeln('  factory ${model.name}.fromJson(Map<String, dynamic> json) =>');
+    buffer.writeln(
+        '  factory ${model.name}.fromJson(Map<String, dynamic> json) =>');
     buffer.writeln('      _\$${model.name}FromJson(json);');
     buffer.writeln('}');
     buffer.writeln();
@@ -137,12 +140,16 @@ class ModelGenerator {
     // CreateInput
     buffer.writeln('/// Input for creating a new ${model.name}');
     buffer.writeln('@freezed');
-    buffer.writeln('class Create${model.name}Input with _\$Create${model.name}Input {');
+    buffer.writeln(
+        'class Create${model.name}Input with _\$Create${model.name}Input {');
     buffer.writeln('  const factory Create${model.name}Input({');
 
     for (final field in model.fields) {
       // Skip auto-generated fields and relations
-      if (field.isId || field.isCreatedAt || field.isUpdatedAt || field.isRelation) {
+      if (field.isId ||
+          field.isCreatedAt ||
+          field.isUpdatedAt ||
+          field.isRelation) {
         continue;
       }
 
@@ -191,7 +198,8 @@ class ModelGenerator {
 
     buffer.writeln('  }) = _Create${model.name}Input;');
     buffer.writeln();
-    buffer.writeln('  factory Create${model.name}Input.fromJson(Map<String, dynamic> json) =>');
+    buffer.writeln(
+        '  factory Create${model.name}Input.fromJson(Map<String, dynamic> json) =>');
     buffer.writeln('      _\$Create${model.name}InputFromJson(json);');
     buffer.writeln('}');
     buffer.writeln();
@@ -199,12 +207,16 @@ class ModelGenerator {
     // UpdateInput
     buffer.writeln('/// Input for updating an existing ${model.name}');
     buffer.writeln('@freezed');
-    buffer.writeln('class Update${model.name}Input with _\$Update${model.name}Input {');
+    buffer.writeln(
+        'class Update${model.name}Input with _\$Update${model.name}Input {');
     buffer.writeln('  const factory Update${model.name}Input({');
 
     for (final field in model.fields) {
       // Skip auto-generated, ID fields, and relations
-      if (field.isId || field.isCreatedAt || field.isUpdatedAt || field.isRelation) {
+      if (field.isId ||
+          field.isCreatedAt ||
+          field.isUpdatedAt ||
+          field.isRelation) {
         continue;
       }
 
@@ -218,7 +230,8 @@ class ModelGenerator {
 
     buffer.writeln('  }) = _Update${model.name}Input;');
     buffer.writeln();
-    buffer.writeln('  factory Update${model.name}Input.fromJson(Map<String, dynamic> json) =>');
+    buffer.writeln(
+        '  factory Update${model.name}Input.fromJson(Map<String, dynamic> json) =>');
     buffer.writeln('      _\$Update${model.name}InputFromJson(json);');
     buffer.writeln('}');
     buffer.writeln();
@@ -231,8 +244,9 @@ class ModelGenerator {
     final buffer = StringBuffer();
 
     // Find unique fields (id or @unique)
-    final uniqueFields = model.fields.where((f) =>
-        (f.isId || f.isUnique) && !f.isRelation).toList();
+    final uniqueFields = model.fields
+        .where((f) => (f.isId || f.isUnique) && !f.isRelation)
+        .toList();
 
     if (uniqueFields.isEmpty) {
       return ''; // No unique fields, skip generation
@@ -241,7 +255,8 @@ class ModelGenerator {
     buffer.writeln('/// Unique where input for ${model.name}');
     buffer.writeln('/// At least one field must be provided');
     buffer.writeln('@freezed');
-    buffer.writeln('class ${model.name}WhereUniqueInput with _\$${model.name}WhereUniqueInput {');
+    buffer.writeln(
+        'class ${model.name}WhereUniqueInput with _\$${model.name}WhereUniqueInput {');
     buffer.writeln('  const factory ${model.name}WhereUniqueInput({');
 
     // All unique fields are optional (but at least one required at runtime)
@@ -255,7 +270,8 @@ class ModelGenerator {
 
     buffer.writeln('  }) = _${model.name}WhereUniqueInput;');
     buffer.writeln();
-    buffer.writeln('  factory ${model.name}WhereUniqueInput.fromJson(Map<String, dynamic> json) =>');
+    buffer.writeln(
+        '  factory ${model.name}WhereUniqueInput.fromJson(Map<String, dynamic> json) =>');
     buffer.writeln('      _\$${model.name}WhereUniqueInputFromJson(json);');
     buffer.writeln('}');
     buffer.writeln();
@@ -269,7 +285,8 @@ class ModelGenerator {
 
     buffer.writeln('/// Where input for filtering ${model.name} records');
     buffer.writeln('@freezed');
-    buffer.writeln('class ${model.name}WhereInput with _\$${model.name}WhereInput {');
+    buffer.writeln(
+        'class ${model.name}WhereInput with _\$${model.name}WhereInput {');
     buffer.writeln('  const factory ${model.name}WhereInput({');
 
     // Add field filters (using field-level filter types)
@@ -290,7 +307,8 @@ class ModelGenerator {
 
     buffer.writeln('  }) = _${model.name}WhereInput;');
     buffer.writeln();
-    buffer.writeln('  factory ${model.name}WhereInput.fromJson(Map<String, dynamic> json) =>');
+    buffer.writeln(
+        '  factory ${model.name}WhereInput.fromJson(Map<String, dynamic> json) =>');
     buffer.writeln('      _\$${model.name}WhereInputFromJson(json);');
     buffer.writeln('}');
     buffer.writeln();
@@ -304,7 +322,8 @@ class ModelGenerator {
 
     buffer.writeln('/// Order by input for sorting ${model.name} records');
     buffer.writeln('@freezed');
-    buffer.writeln('class ${model.name}OrderByInput with _\$${model.name}OrderByInput {');
+    buffer.writeln(
+        'class ${model.name}OrderByInput with _\$${model.name}OrderByInput {');
     buffer.writeln('  const factory ${model.name}OrderByInput({');
 
     // Include sortable fields
@@ -324,7 +343,8 @@ class ModelGenerator {
 
     buffer.writeln('  }) = _${model.name}OrderByInput;');
     buffer.writeln();
-    buffer.writeln('  factory ${model.name}OrderByInput.fromJson(Map<String, dynamic> json) =>');
+    buffer.writeln(
+        '  factory ${model.name}OrderByInput.fromJson(Map<String, dynamic> json) =>');
     buffer.writeln('      _\$${model.name}OrderByInputFromJson(json);');
     buffer.writeln('}');
     buffer.writeln();
@@ -375,7 +395,8 @@ class ModelGenerator {
   String generateEnum(PrismaEnum enumDef) {
     final buffer = StringBuffer();
 
-    buffer.writeln("import 'package:freezed_annotation/freezed_annotation.dart';");
+    buffer.writeln(
+        "import 'package:freezed_annotation/freezed_annotation.dart';");
     buffer.writeln();
     buffer.writeln('enum ${enumDef.name} {');
 
@@ -410,10 +431,12 @@ class ModelGenerator {
 
   /// Convert PascalCase to snake_case
   String _toSnakeCase(String input) {
-    return input.replaceAllMapped(
-      RegExp(r'[A-Z]'),
-      (match) => '_${match.group(0)!.toLowerCase()}',
-    ).substring(1); // Remove leading underscore
+    return input
+        .replaceAllMapped(
+          RegExp(r'[A-Z]'),
+          (match) => '_${match.group(0)!.toLowerCase()}',
+        )
+        .substring(1); // Remove leading underscore
   }
 
   /// Convert SCREAMING_CASE to camelCase

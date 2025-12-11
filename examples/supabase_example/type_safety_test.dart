@@ -1,6 +1,6 @@
 /// Type Safety Test - Intentional Errors
 /// This file contains intentional errors to test compile-time type safety
-/// 
+///
 /// Expected: All errors should be caught by dart analyze BEFORE runtime
 library;
 
@@ -18,13 +18,10 @@ void main() async {
   print('Test 1: Invalid field name');
 
   // ignore: unused_local_variable
-  final query1 = JsonQueryBuilder()
-      .model('Domain')
-      .action(QueryAction.findUnique)
-      .where({
-        'nonExistentField': '123',  // ❌ Should error: field doesn't exist
-      })
-      .build();
+  final query1 =
+      JsonQueryBuilder().model('Domain').action(QueryAction.findUnique).where({
+    'nonExistentField': '123', // ❌ Should error: field doesn't exist
+  }).build();
 
   // ============================================================================
   // TEST 2: Wrong type in where clause
@@ -32,13 +29,10 @@ void main() async {
   print('Test 2: Wrong type in where');
 
   // ignore: unused_local_variable
-  final query2 = JsonQueryBuilder()
-      .model('Domain')
-      .action(QueryAction.findMany)
-      .where({
-        'createdAt': 'not-a-date',  // ❌ Should error: expects DateTime
-      })
-      .build();
+  final query2 =
+      JsonQueryBuilder().model('Domain').action(QueryAction.findMany).where({
+    'createdAt': 'not-a-date', // ❌ Should error: expects DateTime
+  }).build();
 
   // ============================================================================
   // TEST 3: Invalid model name
@@ -47,7 +41,7 @@ void main() async {
 
   // ignore: unused_local_variable
   final query3 = JsonQueryBuilder()
-      .model('NonExistentModel')  // ❌ Should error: model doesn't exist
+      .model('NonExistentModel') // ❌ Should error: model doesn't exist
       .action(QueryAction.findMany)
       .build();
 
@@ -60,7 +54,7 @@ void main() async {
   final query4 = JsonQueryBuilder()
       .model('Domain')
       .action(QueryAction.findMany)
-      .orderBy({'invalidField': 'asc'})  // ❌ Should error: field doesn't exist
+      .orderBy({'invalidField': 'asc'}) // ❌ Should error: field doesn't exist
       .build();
 
   // ============================================================================
@@ -69,15 +63,12 @@ void main() async {
   print('Test 5: Wrong type in create');
 
   // ignore: unused_local_variable
-  final query5 = JsonQueryBuilder()
-      .model('Domain')
-      .action(QueryAction.create)
-      .data({
-        'id': 123,  // ❌ Should error: expects String, got int
-        'name': 'Test',
-        'createdAt': 'not-a-datetime',  // ❌ Should error: expects DateTime
-      })
-      .build();
+  final query5 =
+      JsonQueryBuilder().model('Domain').action(QueryAction.create).data({
+    'id': 123, // ❌ Should error: expects String, got int
+    'name': 'Test',
+    'createdAt': 'not-a-datetime', // ❌ Should error: expects DateTime
+  }).build();
 
   // ============================================================================
   // TEST 6: Missing required fields
@@ -85,14 +76,11 @@ void main() async {
   print('Test 6: Missing required field');
 
   // ignore: unused_local_variable
-  final query6 = JsonQueryBuilder()
-      .model('Domain')
-      .action(QueryAction.create)
-      .data({
-        'id': 'abc',
-        // Missing 'name' which is required
-      })
-      .build();
+  final query6 =
+      JsonQueryBuilder().model('Domain').action(QueryAction.create).data({
+    'id': 'abc',
+    // Missing 'name' which is required
+  }).build();
 
   // ============================================================================
   // TEST 7: Invalid filter operator for type
@@ -100,13 +88,10 @@ void main() async {
   print('Test 7: Invalid operator for type');
 
   // ignore: unused_local_variable
-  final query7 = JsonQueryBuilder()
-      .model('Domain')
-      .action(QueryAction.findMany)
-      .where({
-        'name': {'gte': 5},  // ❌ Should error: can't use numeric operator on String
-      })
-      .build();
+  final query7 =
+      JsonQueryBuilder().model('Domain').action(QueryAction.findMany).where({
+    'name': {'gte': 5}, // ❌ Should error: can't use numeric operator on String
+  }).build();
 
   print('All tests completed - check analyzer output!');
 }

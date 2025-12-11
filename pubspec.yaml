@@ -7,9 +7,9 @@ environment:
   sdk: '>=3.0.0 <4.0.0'
 
 dependencies:
+  args: ^2.4.2
   flutter:
     sdk: flutter
-  args: ^2.4.2
   freezed_annotation: ^2.4.1
   gql: ^1.0.0
   graphql_flutter: ^5.1.0
@@ -21,10 +21,10 @@ dependencies:
   web_socket_channel: ^2.4.0
 
 dev_dependencies:
-  flutter_test:
-    sdk: flutter
   build_runner: ^2.4.6
   flutter_lints: ^3.0.0
+  flutter_test:
+    sdk: flutter
   freezed: ^2.5.8
   json_serializable: ^6.8.0
 

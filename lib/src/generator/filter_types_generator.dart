@@ -19,11 +19,13 @@ class FilterTypesGenerator {
     // File header
     buffer.writeln('/// Generated filter types for type-safe queries');
     buffer.writeln('///');
-    buffer.writeln('/// These filter classes provide compile-time type checking');
+    buffer
+        .writeln('/// These filter classes provide compile-time type checking');
     buffer.writeln('/// for WHERE clause operations.');
     buffer.writeln('library;');
     buffer.writeln();
-    buffer.writeln("import 'package:freezed_annotation/freezed_annotation.dart';");
+    buffer.writeln(
+        "import 'package:freezed_annotation/freezed_annotation.dart';");
     buffer.writeln();
     buffer.writeln("part 'filters.freezed.dart';");
     buffer.writeln("part 'filters.g.dart';");
@@ -80,7 +82,8 @@ class FilterTypesGenerator {
     buffer.writeln('    String? gte,');
     buffer.writeln('  }) = _StringFilter;');
     buffer.writeln();
-    buffer.writeln('  factory StringFilter.fromJson(Map<String, dynamic> json) =>');
+    buffer.writeln(
+        '  factory StringFilter.fromJson(Map<String, dynamic> json) =>');
     buffer.writeln('      _\$StringFilterFromJson(json);');
     buffer.writeln('}');
     buffer.writeln();
@@ -114,7 +117,8 @@ class FilterTypesGenerator {
     buffer.writeln('    int? gte,');
     buffer.writeln('  }) = _IntFilter;');
     buffer.writeln();
-    buffer.writeln('  factory IntFilter.fromJson(Map<String, dynamic> json) =>');
+    buffer
+        .writeln('  factory IntFilter.fromJson(Map<String, dynamic> json) =>');
     buffer.writeln('      _\$IntFilterFromJson(json);');
     buffer.writeln('}');
     buffer.writeln();
@@ -148,7 +152,8 @@ class FilterTypesGenerator {
     buffer.writeln('    double? gte,');
     buffer.writeln('  }) = _FloatFilter;');
     buffer.writeln();
-    buffer.writeln('  factory FloatFilter.fromJson(Map<String, dynamic> json) =>');
+    buffer.writeln(
+        '  factory FloatFilter.fromJson(Map<String, dynamic> json) =>');
     buffer.writeln('      _\$FloatFilterFromJson(json);');
     buffer.writeln('}');
     buffer.writeln();
@@ -170,7 +175,8 @@ class FilterTypesGenerator {
     buffer.writeln('    bool? not,');
     buffer.writeln('  }) = _BooleanFilter;');
     buffer.writeln();
-    buffer.writeln('  factory BooleanFilter.fromJson(Map<String, dynamic> json) =>');
+    buffer.writeln(
+        '  factory BooleanFilter.fromJson(Map<String, dynamic> json) =>');
     buffer.writeln('      _\$BooleanFilterFromJson(json);');
     buffer.writeln('}');
     buffer.writeln();
@@ -204,7 +210,8 @@ class FilterTypesGenerator {
     buffer.writeln('    DateTime? gte,');
     buffer.writeln('  }) = _DateTimeFilter;');
     buffer.writeln();
-    buffer.writeln('  factory DateTimeFilter.fromJson(Map<String, dynamic> json) =>');
+    buffer.writeln(
+        '  factory DateTimeFilter.fromJson(Map<String, dynamic> json) =>');
     buffer.writeln('      _\$DateTimeFilterFromJson(json);');
     buffer.writeln('}');
     buffer.writeln();
@@ -218,7 +225,8 @@ class FilterTypesGenerator {
 
     buffer.writeln('/// Filter for ${enumDef.name} enum fields');
     buffer.writeln('@freezed');
-    buffer.writeln('class ${enumDef.name}Filter with _\$${enumDef.name}Filter {');
+    buffer
+        .writeln('class ${enumDef.name}Filter with _\$${enumDef.name}Filter {');
     buffer.writeln('  const factory ${enumDef.name}Filter({');
     buffer.writeln('    /// Exact match');
     buffer.writeln('    ${enumDef.name}? equals,');
@@ -230,7 +238,8 @@ class FilterTypesGenerator {
     buffer.writeln('    List<${enumDef.name}>? notIn,');
     buffer.writeln('  }) = _${enumDef.name}Filter;');
     buffer.writeln();
-    buffer.writeln('  factory ${enumDef.name}Filter.fromJson(Map<String, dynamic> json) =>');
+    buffer.writeln(
+        '  factory ${enumDef.name}Filter.fromJson(Map<String, dynamic> json) =>');
     buffer.writeln('      _\$${enumDef.name}FilterFromJson(json);');
     buffer.writeln('}');
     buffer.writeln();
@@ -256,7 +265,8 @@ class FilterTypesGenerator {
     buffer.writeln('    bool? isEmpty,');
     buffer.writeln('  }) = _StringListFilter;');
     buffer.writeln();
-    buffer.writeln('  factory StringListFilter.fromJson(Map<String, dynamic> json) =>');
+    buffer.writeln(
+        '  factory StringListFilter.fromJson(Map<String, dynamic> json) =>');
     buffer.writeln('      _\$StringListFilterFromJson(json);');
     buffer.writeln('}');
     buffer.writeln();
@@ -282,7 +292,8 @@ class FilterTypesGenerator {
     buffer.writeln('    bool? isEmpty,');
     buffer.writeln('  }) = _IntListFilter;');
     buffer.writeln();
-    buffer.writeln('  factory IntListFilter.fromJson(Map<String, dynamic> json) =>');
+    buffer.writeln(
+        '  factory IntListFilter.fromJson(Map<String, dynamic> json) =>');
     buffer.writeln('      _\$IntListFilterFromJson(json);');
     buffer.writeln('}');
     buffer.writeln();

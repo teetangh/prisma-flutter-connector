@@ -63,7 +63,8 @@ void main(List<String> arguments) async {
   final prismaParser = PrismaParser();
   final schema = prismaParser.parse(schemaContent);
 
-  print('✅ Found ${schema.models.length} models and ${schema.enums.length} enums');
+  print(
+      '✅ Found ${schema.models.length} models and ${schema.enums.length} enums');
 
   // Create output directory
   final outputDir = Directory(outputPath);
@@ -137,7 +138,8 @@ void main(List<String> arguments) async {
   print('  4. Use the type-safe client:');
   print('     final prisma = PrismaClient(adapter: adapter);');
   print('     final users = await prisma.user.findMany(');
-  print('       where: UserWhereInput(email: StringFilter(contains: \'@example.com\')),');
+  print(
+      '       where: UserWhereInput(email: StringFilter(contains: \'@example.com\')),');
   print('       orderBy: UserOrderByInput(createdAt: SortOrder.desc),');
   print('     );');
 }
@@ -187,8 +189,10 @@ String _generateBarrelExport(PrismaSchema schema) {
 
 /// Convert PascalCase to snake_case
 String _toSnakeCase(String input) {
-  return input.replaceAllMapped(
-    RegExp(r'[A-Z]'),
-    (match) => '_${match.group(0)!.toLowerCase()}',
-  ).replaceFirst(RegExp(r'^_'), '');
+  return input
+      .replaceAllMapped(
+        RegExp(r'[A-Z]'),
+        (match) => '_${match.group(0)!.toLowerCase()}',
+      )
+      .replaceFirst(RegExp(r'^_'), '');
 }

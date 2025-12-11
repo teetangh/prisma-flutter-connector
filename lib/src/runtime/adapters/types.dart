@@ -56,7 +56,8 @@ class SqlResultSet {
   int get length => rows.length;
 
   @override
-  String toString() => 'SqlResultSet(rows: ${rows.length}, columns: ${columnNames.length})';
+  String toString() =>
+      'SqlResultSet(rows: ${rows.length}, columns: ${columnNames.length})';
 }
 
 /// Type information for query arguments.

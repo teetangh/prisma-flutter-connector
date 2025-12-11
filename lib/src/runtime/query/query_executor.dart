@@ -173,7 +173,10 @@ class QueryExecutor {
     if (parts.isEmpty) return input;
 
     return parts.first +
-        parts.skip(1).map((p) => p.isEmpty ? '' : p[0].toUpperCase() + p.substring(1)).join();
+        parts
+            .skip(1)
+            .map((p) => p.isEmpty ? '' : p[0].toUpperCase() + p.substring(1))
+            .join();
   }
 
   /// Close the adapter connection.
@@ -252,6 +255,9 @@ class TransactionExecutor {
     if (parts.isEmpty) return input;
 
     return parts.first +
-        parts.skip(1).map((p) => p.isEmpty ? '' : p[0].toUpperCase() + p.substring(1)).join();
+        parts
+            .skip(1)
+            .map((p) => p.isEmpty ? '' : p[0].toUpperCase() + p.substring(1))
+            .join();
   }
 }
