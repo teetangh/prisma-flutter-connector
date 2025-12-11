@@ -26,7 +26,7 @@ void main() {
 
     test('should connect to MongoDB backend', () async {
       // Test connection
-      expect(true, isTrue); // Placeholder
+      fail('MongoDB adapter not implemented yet');
     });
 
     test('should create an author', () async {

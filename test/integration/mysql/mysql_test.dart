@@ -26,7 +26,7 @@ void main() {
 
     test('should connect to MySQL backend', () async {
       // Test connection
-      expect(true, isTrue); // Placeholder
+      fail('MySQL adapter not implemented yet');
     });
 
     test('should create a category', () async {
