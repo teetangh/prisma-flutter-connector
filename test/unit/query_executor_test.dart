@@ -190,7 +190,7 @@ void main() {
 
     group('executeMutation', () {
       test('returns 1 for successful CREATE', () async {
-        final query = JsonQuery(
+        const query = JsonQuery(
           modelName: 'User',
           action: 'create',
           args: JsonQueryArgs(
@@ -215,7 +215,7 @@ void main() {
       });
 
       test('returns 0 for CREATE with no result', () async {
-        final query = JsonQuery(
+        const query = JsonQuery(
           modelName: 'User',
           action: 'create',
           args: JsonQueryArgs(
@@ -237,7 +237,7 @@ void main() {
       });
 
       test('returns affected rows for UPDATE', () async {
-        final query = JsonQuery(
+        const query = JsonQuery(
           modelName: 'User',
           action: 'update',
           args: JsonQueryArgs(
@@ -256,7 +256,7 @@ void main() {
       });
 
       test('returns affected rows for DELETE', () async {
-        final query = JsonQuery(
+        const query = JsonQuery(
           modelName: 'User',
           action: 'delete',
           args: JsonQueryArgs(
@@ -490,10 +490,10 @@ void main() {
 
     group('executeCount', () {
       test('returns count as int', () async {
-        final query = JsonQuery(
+        const query = JsonQuery(
           modelName: 'User',
           action: 'count',
-          args: const JsonQueryArgs(),
+          args: JsonQueryArgs(),
         );
 
         mockAdapter.setNextQueryResult(const SqlResultSet(
@@ -510,10 +510,10 @@ void main() {
       });
 
       test('returns count from string', () async {
-        final query = JsonQuery(
+        const query = JsonQuery(
           modelName: 'User',
           action: 'count',
-          args: const JsonQueryArgs(),
+          args: JsonQueryArgs(),
         );
 
         mockAdapter.setNextQueryResult(const SqlResultSet(
@@ -530,10 +530,10 @@ void main() {
       });
 
       test('returns 0 for empty result', () async {
-        final query = JsonQuery(
+        const query = JsonQuery(
           modelName: 'User',
           action: 'count',
-          args: const JsonQueryArgs(),
+          args: JsonQueryArgs(),
         );
 
         mockAdapter.setNextQueryResult(const SqlResultSet(
@@ -548,7 +548,7 @@ void main() {
       });
 
       test('returns count with WHERE clause', () async {
-        final query = JsonQuery(
+        const query = JsonQuery(
           modelName: 'User',
           action: 'count',
           args: JsonQueryArgs(
@@ -615,7 +615,7 @@ void main() {
 
       test('executes multiple queries in transaction', () async {
         await executor.executeInTransaction((tx) async {
-          final query1 = JsonQuery(
+          const query1 = JsonQuery(
             modelName: 'User',
             action: 'create',
             args: JsonQueryArgs(
@@ -625,7 +625,7 @@ void main() {
             ),
           );
 
-          final query2 = JsonQuery(
+          const query2 = JsonQuery(
             modelName: 'Profile',
             action: 'create',
             args: JsonQueryArgs(

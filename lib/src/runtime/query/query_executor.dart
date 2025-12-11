@@ -195,7 +195,7 @@ class TransactionExecutor {
   /// Execute a query within the transaction.
   Future<SqlResultSet> executeQuery(JsonQuery query) async {
     final sqlQuery = compiler.compile(query);
-    return await transaction.queryRaw(sqlQuery);
+    return transaction.queryRaw(sqlQuery);
   }
 
   /// Execute a mutation within the transaction.
@@ -207,7 +207,7 @@ class TransactionExecutor {
       return result.rows.isNotEmpty ? 1 : 0;
     }
 
-    return await transaction.executeRaw(sqlQuery);
+    return transaction.executeRaw(sqlQuery);
   }
 
   /// Execute a query and deserialize results to maps.

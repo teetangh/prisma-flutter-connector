@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:prisma_flutter_connector/prisma_flutter_connector.dart';
 import 'dart:io';
 
 /// Integration tests for SQLite
@@ -13,8 +12,9 @@ import 'dart:io';
 
 void main() {
   group('SQLite Integration Tests', () {
+    // ignore: unused_local_variable
     late dynamic client; // Will be PrismaClient after generation
-    final testDbPath = 'test/integration/sqlite/test.db';
+    const testDbPath = 'test/integration/sqlite/test.db';
 
     setUpAll(() async {
       // Remove existing test database
@@ -66,6 +66,7 @@ void main() {
 
     test('should handle file-based database correctly', () async {
       // Verify database file exists
+      // ignore: unused_local_variable
       final dbFile = File(testDbPath);
       // expect(await dbFile.exists(), isTrue);
     });

@@ -12,7 +12,7 @@ void main() async {
       username: 'postgres.pzmbxqdgibfkhjwzeprf',
       password: 'wUScbMsQ0OsipiYv',
     ),
-    settings: pg.ConnectionSettings(
+    settings: const pg.ConnectionSettings(
       sslMode: pg.SslMode.require,
     ),
   );

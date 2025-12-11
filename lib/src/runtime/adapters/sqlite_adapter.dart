@@ -236,7 +236,7 @@ class SQLiteTransaction implements Transaction {
       return result;
     } else {
       final adapter = SQLiteAdapter(_database);
-      return await adapter.queryRaw(query);
+      return adapter.queryRaw(query);
     }
   }
 
@@ -254,7 +254,7 @@ class SQLiteTransaction implements Transaction {
       return result;
     } else {
       final adapter = SQLiteAdapter(_database);
-      return await adapter.executeRaw(query);
+      return adapter.executeRaw(query);
     }
   }
 
@@ -276,17 +276,17 @@ class SQLiteTransaction implements Transaction {
     _isRolledBack = true;
     _isActive = false;
 
-    throw AdapterError('Transaction rolled back');
+    throw const AdapterError('Transaction rolled back');
   }
 
   void _checkActive() {
     if (!_isActive) {
       if (_isCommitted) {
-        throw AdapterError('Transaction already committed');
+        throw const AdapterError('Transaction already committed');
       } else if (_isRolledBack) {
-        throw AdapterError('Transaction already rolled back');
+        throw const AdapterError('Transaction already rolled back');
       } else {
-        throw AdapterError('Transaction is no longer active');
+        throw const AdapterError('Transaction is no longer active');
       }
     }
   }

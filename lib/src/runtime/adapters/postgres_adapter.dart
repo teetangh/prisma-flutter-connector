@@ -333,11 +333,11 @@ class PostgresTransaction implements Transaction {
   void _checkActive() {
     if (!_isActive) {
       if (_isCommitted) {
-        throw AdapterError('Transaction already committed');
+        throw const AdapterError('Transaction already committed');
       } else if (_isRolledBack) {
-        throw AdapterError('Transaction already rolled back');
+        throw const AdapterError('Transaction already rolled back');
       } else {
-        throw AdapterError('Transaction is no longer active');
+        throw const AdapterError('Transaction is no longer active');
       }
     }
   }

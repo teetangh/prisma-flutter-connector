@@ -8,6 +8,7 @@
 ///
 /// For a working example that doesn't require code generation, see:
 ///   simple_example.dart
+library;
 
 import 'dart:io';
 import 'package:dotenv/dotenv.dart';

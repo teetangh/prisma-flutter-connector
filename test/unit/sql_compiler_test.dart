@@ -170,7 +170,7 @@ void main() {
 
       group('create', () {
         test('generates INSERT query with RETURNING', () {
-          final query = JsonQuery(
+          const query = JsonQuery(
             modelName: 'User',
             action: 'create',
             args: JsonQueryArgs(
@@ -195,10 +195,10 @@ void main() {
         });
 
         test('throws error when data is missing', () {
-          final query = JsonQuery(
+          const query = JsonQuery(
             modelName: 'User',
             action: 'create',
-            args: const JsonQueryArgs(arguments: {}),
+            args: JsonQueryArgs(arguments: {}),
           );
 
           expect(
@@ -210,7 +210,7 @@ void main() {
 
       group('createMany', () {
         test('generates batch INSERT query', () {
-          final query = JsonQuery(
+          const query = JsonQuery(
             modelName: 'User',
             action: 'createMany',
             args: JsonQueryArgs(
@@ -234,10 +234,10 @@ void main() {
         });
 
         test('throws error when data is empty', () {
-          final query = JsonQuery(
+          const query = JsonQuery(
             modelName: 'User',
             action: 'createMany',
-            args: const JsonQueryArgs(arguments: {'data': []}),
+            args: JsonQueryArgs(arguments: {'data': []}),
           );
 
           expect(
@@ -249,7 +249,7 @@ void main() {
 
       group('update', () {
         test('generates UPDATE query', () {
-          final query = JsonQuery(
+          const query = JsonQuery(
             modelName: 'User',
             action: 'update',
             args: JsonQueryArgs(
@@ -270,7 +270,7 @@ void main() {
         });
 
         test('generates UPDATE without WHERE', () {
-          final query = JsonQuery(
+          const query = JsonQuery(
             modelName: 'User',
             action: 'update',
             args: JsonQueryArgs(
@@ -287,10 +287,10 @@ void main() {
         });
 
         test('throws error when data is missing', () {
-          final query = JsonQuery(
+          const query = JsonQuery(
             modelName: 'User',
             action: 'update',
-            args: const JsonQueryArgs(arguments: {'where': {'id': '123'}}),
+            args: JsonQueryArgs(arguments: {'where': {'id': '123'}}),
           );
 
           expect(
@@ -302,7 +302,7 @@ void main() {
 
       group('delete', () {
         test('generates DELETE query with WHERE', () {
-          final query = JsonQuery(
+          const query = JsonQuery(
             modelName: 'User',
             action: 'delete',
             args: JsonQueryArgs(
@@ -319,10 +319,10 @@ void main() {
         });
 
         test('generates DELETE without WHERE (dangerous!)', () {
-          final query = JsonQuery(
+          const query = JsonQuery(
             modelName: 'User',
             action: 'delete',
-            args: const JsonQueryArgs(arguments: {}),
+            args: JsonQueryArgs(arguments: {}),
           );
 
           final result = compiler.compile(query);
@@ -334,7 +334,7 @@ void main() {
 
       group('deleteMany', () {
         test('generates DELETE query for multiple records', () {
-          final query = JsonQuery(
+          const query = JsonQuery(
             modelName: 'User',
             action: 'deleteMany',
             args: JsonQueryArgs(
@@ -353,10 +353,10 @@ void main() {
 
       group('count', () {
         test('generates COUNT query without WHERE', () {
-          final query = JsonQuery(
+          const query = JsonQuery(
             modelName: 'User',
             action: 'count',
-            args: const JsonQueryArgs(),
+            args: JsonQueryArgs(),
           );
 
           final result = compiler.compile(query);
@@ -366,7 +366,7 @@ void main() {
         });
 
         test('generates COUNT query with WHERE', () {
-          final query = JsonQuery(
+          const query = JsonQuery(
             modelName: 'User',
             action: 'count',
             args: JsonQueryArgs(
@@ -673,10 +673,10 @@ void main() {
 
       group('Unsupported Actions', () {
         test('throws for unsupported action', () {
-          final query = JsonQuery(
+          const query = JsonQuery(
             modelName: 'User',
             action: 'unsupported',
-            args: const JsonQueryArgs(),
+            args: JsonQueryArgs(),
           );
 
           expect(
@@ -718,7 +718,7 @@ void main() {
       });
 
       test('does not add RETURNING clause for INSERT', () {
-        final query = JsonQuery(
+        const query = JsonQuery(
           modelName: 'User',
           action: 'create',
           args: JsonQueryArgs(
@@ -766,7 +766,7 @@ void main() {
       });
 
       test('does not add RETURNING clause for INSERT', () {
-        final query = JsonQuery(
+        const query = JsonQuery(
           modelName: 'User',
           action: 'create',
           args: JsonQueryArgs(
@@ -803,7 +803,7 @@ void main() {
       });
 
       test('adds RETURNING clause for INSERT', () {
-        final query = JsonQuery(
+        const query = JsonQuery(
           modelName: 'User',
           action: 'create',
           args: JsonQueryArgs(

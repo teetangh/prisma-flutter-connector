@@ -484,14 +484,6 @@ class SqlCompiler {
     }
   }
 
-  /// Convert camelCase to snake_case.
-  String _toSnakeCase(String input) {
-    return input.replaceAllMapped(
-      RegExp(r'[A-Z]'),
-      (match) => '_${match.group(0)!.toLowerCase()}',
-    ).replaceFirst(RegExp(r'^_'), '');
-  }
-
   /// Infer argument type from value.
   ArgType _inferArgType(dynamic value) {
     if (value == null) return ArgType.unknown;

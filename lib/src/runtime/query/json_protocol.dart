@@ -126,7 +126,7 @@ class JsonQueryBuilder {
   Map<String, dynamic>? _orderBy;
   int? _take;
   int? _skip;
-  bool _selectScalars = true;
+  final bool _selectScalars = true;
 
   JsonQueryBuilder model(String name) {
     _modelName = name;
@@ -205,13 +205,13 @@ class JsonQueryBuilder {
       if (_include != null) {
         for (final entry in _include!.entries) {
           if (entry.value == true) {
-            fields[entry.key] = JsonFieldSelection(
+            fields[entry.key] = const JsonFieldSelection(
               selection: JsonSelection(scalars: true),
             );
           } else if (entry.value is Map) {
             fields[entry.key] = JsonFieldSelection(
               arguments: entry.value as Map<String, dynamic>,
-              selection: JsonSelection(scalars: true),
+              selection: const JsonSelection(scalars: true),
             );
           }
         }

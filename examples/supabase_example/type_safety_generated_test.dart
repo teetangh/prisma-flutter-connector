@@ -1,5 +1,6 @@
 /// Type Safety Test - Generated Client
 /// Testing if generated PrismaClient provides compile-time type safety
+library;
 
 // Uncomment when generated code works:
 // import 'lib/generated/prisma_client.dart';
