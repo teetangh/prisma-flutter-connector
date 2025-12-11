@@ -49,14 +49,19 @@ class PrismaSchema {
 
 class PrismaModel {
   final String name;
+  final String? dbName; // Original table name if renamed due to reserved keyword
   final List<PrismaField> fields;
   final List<PrismaRelation> relations;
 
   const PrismaModel({
     required this.name,
+    this.dbName,
     required this.fields,
     required this.relations,
   });
+
+  /// Get the database table name (original name if renamed, otherwise model name)
+  String get tableName => dbName ?? name;
 }
 
 class PrismaField {
@@ -203,8 +208,26 @@ class PrismaEnum {
   });
 }
 
+/// Result of handling a reserved keyword
+class ReservedKeywordResult {
+  final String dartName;
+  final String? dbName; // Original name if renamed
+  final String? warning; // Warning message if renamed
+
+  const ReservedKeywordResult({
+    required this.dartName,
+    this.dbName,
+    this.warning,
+  });
+
+  bool get wasRenamed => dbName != null;
+}
+
 /// Parse a Prisma schema file
 class PrismaParser {
+  /// Warnings generated during parsing (e.g., reserved keyword renames)
+  final List<String> warnings = [];
+
   /// Normalize field name to Dart camelCase convention
   /// If field starts with uppercase, convert to camelCase and return dbName
   String _normalizeFieldName(String fieldName) {
@@ -218,98 +241,117 @@ class PrismaParser {
     return fieldName;
   }
 
-  /// Validate that name is not a reserved Dart keyword
-  void _validateIdentifier(String name, String type) {
-    if (dartReservedKeywords.contains(name.toLowerCase())) {
-      final suggestions = _getSuggestionForReservedKeyword(name, type);
-      throw GeneratorError(
-        'Reserved Dart keyword "$name" cannot be used as $type name',
-        suggestion: suggestions,
-      );
+  /// Check if name is a reserved Dart keyword and auto-rename if needed
+  /// Returns the (possibly renamed) identifier and original name for @map
+  ReservedKeywordResult _handleReservedKeyword(String name, String type) {
+    if (!dartReservedKeywords.contains(name.toLowerCase())) {
+      return ReservedKeywordResult(dartName: name);
     }
-  }
 
-  /// Get context-specific suggestions for reserved keyword violations
-  String _getSuggestionForReservedKeyword(String name, String type) {
+    // Auto-rename based on type
+    String renamedName;
     if (type == 'model') {
-      // Common model name alternatives
-      final alternatives = _getModelAlternatives(name);
-      return '''
-Prisma follows strict naming rules to ensure generated code compiles.
-
-Option 1 (Recommended): Rename the model in your schema
-  ${alternatives.map((alt) => '→ model $alt { ... }').join('\n  ')}
-
-Option 2: Use @map to keep the original database table name
-  → model ${alternatives.first} {
-      ...
-      @@map("$name")  // Maps to "$name" table in database
-    }
-
-Learn more: https://pris.ly/d/naming-models''';
+      renamedName = _getAutoRenamedModel(name);
     } else {
-      // Field name alternatives
-      final alternatives = _getFieldAlternatives(name);
-      return '''
-Prisma follows strict naming rules to ensure generated code compiles.
-
-Option 1 (Recommended): Rename the field in your schema
-  ${alternatives.map((alt) => '→ $alt: Type').join('\n  ')}
-
-Option 2: Use @map to keep the original database column name
-  → ${alternatives.first} Type @map("$name")  // Maps to "$name" column
-
-Note: Unlike TypeScript, Dart does not allow reserved keywords as identifiers.''';
+      renamedName = _getAutoRenamedField(name);
     }
+
+    final warning =
+        '⚠️  Reserved keyword "$name" auto-renamed to "$renamedName" '
+        '(database mapping preserved via ${type == 'model' ? '@@map' : '@map'}("$name"))';
+
+    return ReservedKeywordResult(
+      dartName: renamedName,
+      dbName: name,
+      warning: warning,
+    );
   }
 
-  /// Get alternative model names for a reserved keyword
-  List<String> _getModelAlternatives(String name) {
+  /// Get auto-renamed model name for a reserved keyword
+  /// Uses "Model" suffix as the standard pattern
+  String _getAutoRenamedModel(String name) {
     final capitalized = name[0].toUpperCase() + name.substring(1);
-
-    // Common patterns based on the keyword
-    final commonAlternatives = <String, List<String>>{
-      'class': ['Lesson', 'Course', 'ClassModel'],
-      'enum': ['Enumeration', 'EnumType', 'EnumModel'],
-      'interface': ['Contract', 'InterfaceType', 'InterfaceModel'],
-      'default': ['DefaultValue', 'DefaultConfig', 'DefaultModel'],
-      'void': ['Empty', 'VoidType', 'VoidModel'],
-      'static': ['StaticData', 'StaticConfig', 'StaticModel'],
-      'final': ['FinalData', 'FinalValue', 'FinalModel'],
-      'const': ['Constant', 'ConstValue', 'ConstModel'],
-    };
-
-    if (commonAlternatives.containsKey(name.toLowerCase())) {
-      return commonAlternatives[name.toLowerCase()]!;
-    }
-
-    // Generic alternatives
-    return ['${capitalized}Model', '${capitalized}Entity', '${capitalized}Data'];
+    return '${capitalized}Model';
   }
 
-  /// Get alternative field names for a reserved keyword
-  List<String> _getFieldAlternatives(String name) {
-    // Common patterns based on the keyword
-    final commonAlternatives = <String, List<String>>{
-      'class': ['lesson', 'course', 'classRef'],
-      'enum': ['enumeration', 'enumType', 'enumValue'],
-      'type': ['dataType', 'kind', 'category'],
-      'default': ['defaultValue', 'defaultConfig', 'isDefault'],
-      'static': ['isStatic', 'staticValue', 'staticData'],
-      'final': ['isFinal', 'finalValue', 'finalData'],
-      'const': ['constant', 'constValue', 'isConst'],
-      'void': ['isEmpty', 'voidValue', 'voidType'],
-      'return': ['returnValue', 'result', 'output'],
-      'continue': ['shouldContinue', 'continueFlag', 'nextStep'],
-      'break': ['shouldBreak', 'breakPoint', 'stop'],
+  /// Get auto-renamed field name for a reserved keyword
+  /// Uses "Ref" suffix for relation-like fields, "Value" for others
+  String _getAutoRenamedField(String name) {
+    final lowerName = name.toLowerCase();
+
+    // Common field name mappings
+    final fieldMappings = <String, String>{
+      'class': 'classRef',
+      'enum': 'enumValue',
+      'type': 'typeValue',
+      'default': 'defaultValue',
+      'static': 'staticValue',
+      'final': 'finalValue',
+      'const': 'constValue',
+      'void': 'voidValue',
+      'return': 'returnValue',
+      'continue': 'continueFlag',
+      'break': 'breakFlag',
+      'switch': 'switchValue',
+      'case': 'caseValue',
+      'new': 'newValue',
+      'null': 'nullValue',
+      'true': 'trueValue',
+      'false': 'falseValue',
+      'is': 'isValue',
+      'in': 'inValue',
+      'as': 'asValue',
+      'if': 'ifValue',
+      'else': 'elseValue',
+      'for': 'forValue',
+      'do': 'doValue',
+      'while': 'whileValue',
+      'try': 'tryValue',
+      'catch': 'catchValue',
+      'throw': 'throwValue',
+      'this': 'thisRef',
+      'super': 'superRef',
+      'with': 'withValue',
+      'get': 'getValue',
+      'set': 'setValue',
+      'var': 'varValue',
+      'late': 'lateValue',
+      'import': 'importValue',
+      'export': 'exportValue',
+      'part': 'partValue',
+      'library': 'libraryValue',
+      'abstract': 'abstractValue',
+      'extends': 'extendsValue',
+      'implements': 'implementsValue',
+      'mixin': 'mixinValue',
+      'interface': 'interfaceValue',
+      'factory': 'factoryValue',
+      'operator': 'operatorValue',
+      'typedef': 'typedefValue',
+      'dynamic': 'dynamicValue',
+      'covariant': 'covariantValue',
+      'Function': 'functionValue',
+      'async': 'asyncValue',
+      'await': 'awaitValue',
+      'sync': 'syncValue',
+      'yield': 'yieldValue',
+      'assert': 'assertValue',
+      'rethrow': 'rethrowValue',
+      'required': 'requiredValue',
+      'on': 'onValue',
+      'show': 'showValue',
+      'hide': 'hideValue',
+      'deferred': 'deferredValue',
+      'external': 'externalValue',
+      'extension': 'extensionValue',
     };
 
-    if (commonAlternatives.containsKey(name.toLowerCase())) {
-      return commonAlternatives[name.toLowerCase()]!;
+    if (fieldMappings.containsKey(lowerName)) {
+      return fieldMappings[lowerName]!;
     }
 
-    // Generic alternatives
-    return ['${name}Value', '${name}Data', '${name}Field'];
+    // Generic fallback: append "Value"
+    return '${name}Value';
   }
 
   /// Parse schema content from a string
@@ -339,14 +381,30 @@ Note: Unlike TypeScript, Dart does not allow reserved keywords as identifiers.''
       enums.add(PrismaEnum(name: name, values: values));
     }
 
-    // Extract models
+    // Track model name mappings for relation type resolution
+    final modelNameMap = <String, String>{}; // originalName -> dartName
+
+    // First pass: collect all model name mappings
     final modelPattern = RegExp(r'model\s+(\w+)\s*\{([^}]+)\}', multiLine: true);
     for (final match in modelPattern.allMatches(schemaContent)) {
-      final modelName = match.group(1)!;
+      final originalModelName = match.group(1)!;
+      final modelResult = _handleReservedKeyword(originalModelName, 'model');
+      modelNameMap[originalModelName] = modelResult.dartName;
+    }
+
+    // Second pass: parse models with resolved type names
+    for (final match in modelPattern.allMatches(schemaContent)) {
+      final originalModelName = match.group(1)!;
       final modelBody = match.group(2)!;
 
-      // Validate model name
-      _validateIdentifier(modelName, 'model');
+      // Handle reserved keywords - auto-rename if needed
+      final modelResult = _handleReservedKeyword(originalModelName, 'model');
+      final modelName = modelResult.dartName;
+      final modelDbName = modelResult.dbName;
+
+      if (modelResult.warning != null) {
+        warnings.add(modelResult.warning!);
+      }
 
       final fields = <PrismaField>[];
       final relations = <PrismaRelation>[];
@@ -361,12 +419,18 @@ Note: Unlike TypeScript, Dart does not allow reserved keywords as identifiers.''
         // Parse field
         final fieldMatch = RegExp(r'^(\w+)\s+([\w\[\]?]+)(.*)$').firstMatch(trimmed);
         if (fieldMatch != null) {
-          final originalFieldName = fieldMatch.group(1)!;
+          final schemaFieldName = fieldMatch.group(1)!;
           var fieldType = fieldMatch.group(2)!;
           final attributes = fieldMatch.group(3) ?? '';
 
-          // Validate field name against reserved keywords
-          _validateIdentifier(originalFieldName, 'field');
+          // Handle reserved keywords - auto-rename if needed
+          final fieldResult = _handleReservedKeyword(schemaFieldName, 'field');
+          final originalFieldName = fieldResult.dartName;
+          final fieldDbName = fieldResult.dbName;
+
+          if (fieldResult.warning != null) {
+            warnings.add(fieldResult.warning!);
+          }
 
           // Detect list type
           final isList = fieldType.contains('[]');
@@ -436,10 +500,13 @@ Note: Unlike TypeScript, Dart does not allow reserved keywords as identifiers.''
                     .toList();
               }
 
+              // Resolve target model type to potentially renamed type
+              final resolvedTargetModel = modelNameMap[fieldType] ?? fieldType;
+
               // Add to relations list (for backward compatibility)
               relations.add(PrismaRelation(
                 name: originalFieldName,
-                targetModel: fieldType,
+                targetModel: resolvedTargetModel,
                 relationName: relationName ?? '',
                 fields: relationFromFields ?? [],
                 references: relationToFields ?? [],
@@ -447,14 +514,26 @@ Note: Unlike TypeScript, Dart does not allow reserved keywords as identifiers.''
             }
           }
 
+          // Resolve field type to potentially renamed model type
+          final resolvedFieldType = modelNameMap[fieldType] ?? fieldType;
+
           // Normalize field name (PascalCase → camelCase)
           final normalizedName = _normalizeFieldName(originalFieldName);
-          final dbName = (normalizedName != originalFieldName) ? originalFieldName : null;
+
+          // Determine dbName: prioritize reserved keyword rename, then PascalCase normalization
+          String? dbName;
+          if (fieldDbName != null) {
+            // Field was renamed due to reserved keyword
+            dbName = fieldDbName;
+          } else if (normalizedName != originalFieldName) {
+            // Field was normalized from PascalCase
+            dbName = schemaFieldName;
+          }
 
           // Add field (including relation fields for generator access)
           fields.add(PrismaField(
             name: normalizedName,
-            type: fieldType,
+            type: resolvedFieldType,
             isRequired: isRequired,
             isList: isList,
             isId: isId,
@@ -474,6 +553,7 @@ Note: Unlike TypeScript, Dart does not allow reserved keywords as identifiers.''
 
       models.add(PrismaModel(
         name: modelName,
+        dbName: modelDbName,
         fields: fields,
         relations: relations,
       ));

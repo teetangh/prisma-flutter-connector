@@ -16,6 +16,7 @@ class DelegateGenerator {
   String generateDelegate(PrismaModel model) {
     final buffer = StringBuffer();
     final modelName = model.name;
+    final tableName = model.tableName; // Use database table name for queries
 
     // Imports
     buffer.writeln("import 'package:prisma_flutter_connector/runtime.dart';");
@@ -38,7 +39,7 @@ class DelegateGenerator {
     buffer.writeln('    required ${modelName}WhereUniqueInput where,');
     buffer.writeln('  }) async {');
     buffer.writeln('    final query = JsonQueryBuilder()');
-    buffer.writeln('        .model(\'$modelName\')');
+    buffer.writeln('        .model(\'$tableName\')');
     buffer.writeln('        .action(QueryAction.findUnique)');
     buffer.writeln('        .where(_whereUniqueToJson(where))');
     buffer.writeln('        .build();');
@@ -68,7 +69,7 @@ class DelegateGenerator {
     buffer.writeln('    ${modelName}OrderByInput? orderBy,');
     buffer.writeln('  }) async {');
     buffer.writeln('    final queryBuilder = JsonQueryBuilder()');
-    buffer.writeln('        .model(\'$modelName\')');
+    buffer.writeln('        .model(\'$tableName\')');
     buffer.writeln('        .action(QueryAction.findFirst);');
     buffer.writeln();
     buffer.writeln('    if (where != null) queryBuilder.where(_whereToJson(where));');
@@ -88,7 +89,7 @@ class DelegateGenerator {
     buffer.writeln('    int? skip,');
     buffer.writeln('  }) async {');
     buffer.writeln('    final queryBuilder = JsonQueryBuilder()');
-    buffer.writeln('        .model(\'$modelName\')');
+    buffer.writeln('        .model(\'$tableName\')');
     buffer.writeln('        .action(QueryAction.findMany);');
     buffer.writeln();
     buffer.writeln('    if (where != null) queryBuilder.where(_whereToJson(where));');
@@ -107,7 +108,7 @@ class DelegateGenerator {
     buffer.writeln('    required Create${modelName}Input data,');
     buffer.writeln('  }) async {');
     buffer.writeln('    final query = JsonQueryBuilder()');
-    buffer.writeln('        .model(\'$modelName\')');
+    buffer.writeln('        .model(\'$tableName\')');
     buffer.writeln('        .action(QueryAction.create)');
     buffer.writeln('        .data(data.toJson())');
     buffer.writeln('        .build();');
@@ -126,7 +127,7 @@ class DelegateGenerator {
     buffer.writeln('    required List<Create${modelName}Input> data,');
     buffer.writeln('  }) async {');
     buffer.writeln('    final query = JsonQueryBuilder()');
-    buffer.writeln('        .model(\'$modelName\')');
+    buffer.writeln('        .model(\'$tableName\')');
     buffer.writeln('        .action(QueryAction.createMany)');
     buffer.writeln('        .data({\'data\': data.map((d) => d.toJson()).toList()})');
     buffer.writeln('        .build();');
@@ -142,7 +143,7 @@ class DelegateGenerator {
     buffer.writeln('    required Update${modelName}Input data,');
     buffer.writeln('  }) async {');
     buffer.writeln('    final query = JsonQueryBuilder()');
-    buffer.writeln('        .model(\'$modelName\')');
+    buffer.writeln('        .model(\'$tableName\')');
     buffer.writeln('        .action(QueryAction.update)');
     buffer.writeln('        .where(_whereUniqueToJson(where))');
     buffer.writeln('        .data(data.toJson())');
@@ -162,7 +163,7 @@ class DelegateGenerator {
     buffer.writeln('    required Update${modelName}Input data,');
     buffer.writeln('  }) async {');
     buffer.writeln('    final query = JsonQueryBuilder()');
-    buffer.writeln('        .model(\'$modelName\')');
+    buffer.writeln('        .model(\'$tableName\')');
     buffer.writeln('        .action(QueryAction.updateMany)');
     buffer.writeln('        .where(_whereToJson(where))');
     buffer.writeln('        .data(data.toJson())');
@@ -181,7 +182,7 @@ class DelegateGenerator {
     buffer.writeln('    final existing = await findUniqueOrThrow(where: where);');
     buffer.writeln();
     buffer.writeln('    final query = JsonQueryBuilder()');
-    buffer.writeln('        .model(\'$modelName\')');
+    buffer.writeln('        .model(\'$tableName\')');
     buffer.writeln('        .action(QueryAction.delete)');
     buffer.writeln('        .where(_whereUniqueToJson(where))');
     buffer.writeln('        .build();');
@@ -197,7 +198,7 @@ class DelegateGenerator {
     buffer.writeln('    required ${modelName}WhereInput where,');
     buffer.writeln('  }) async {');
     buffer.writeln('    final query = JsonQueryBuilder()');
-    buffer.writeln('        .model(\'$modelName\')');
+    buffer.writeln('        .model(\'$tableName\')');
     buffer.writeln('        .action(QueryAction.deleteMany)');
     buffer.writeln('        .where(_whereToJson(where))');
     buffer.writeln('        .build();');
@@ -212,7 +213,7 @@ class DelegateGenerator {
     buffer.writeln('    ${modelName}WhereInput? where,');
     buffer.writeln('  }) async {');
     buffer.writeln('    final queryBuilder = JsonQueryBuilder()');
-    buffer.writeln('        .model(\'$modelName\')');
+    buffer.writeln('        .model(\'$tableName\')');
     buffer.writeln('        .action(QueryAction.count);');
     buffer.writeln();
     buffer.writeln('    if (where != null) queryBuilder.where(_whereToJson(where));');

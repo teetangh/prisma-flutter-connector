@@ -59,6 +59,11 @@ class ModelGenerator {
         continue;
       }
 
+      // Add @JsonKey for fields with database name mapping (reserved keyword renames)
+      if (field.dbName != null) {
+        buffer.writeln("    @JsonKey(name: '${field.dbName}')");
+      }
+
       // Handle list fields with empty default
       if (field.hasEmptyListDefault && field.isList) {
         final elementType = field.type;

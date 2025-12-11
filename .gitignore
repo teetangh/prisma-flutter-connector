@@ -121,3 +121,6 @@ backend_example/.env
 backend_example/prisma/dev.db
 backend_example/prisma/dev.db-journal
 backend_example/prisma/migrations/
+
+# Complex test schemas (intellectual property - not for public repo)
+test/integration/complex/
