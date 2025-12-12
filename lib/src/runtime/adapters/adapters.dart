@@ -7,10 +7,11 @@
 /// - PostgreSQL (via `postgres` package)
 /// - Supabase (via direct PostgreSQL connection)
 /// - SQLite (via `sqflite` package for mobile)
-/// - MySQL (planned)
+/// - MySQL (via `mysql_client` package)
 library;
 
 export 'types.dart';
 export 'postgres_adapter.dart';
 export 'supabase_adapter.dart';
 export 'sqlite_adapter.dart';
+export 'mysql_adapter.dart';
