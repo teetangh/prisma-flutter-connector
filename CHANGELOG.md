@@ -2,7 +2,25 @@
 
 All notable changes to the Prisma Flutter Connector.
 
-## [Unreleased] - 2025-11-02
+## [Unreleased]
+
+## [0.1.1] - 2025-12-14
+
+### Added
+- Automated publishing via GitHub Actions (OIDC authentication)
+- pub.dev package metadata (topics, homepage, repository)
+
+### Changed
+- Renamed `docs/` to `doc/` (pub.dev convention)
+- Renamed `examples/` to `example/` (pub.dev convention)
+- Renamed `Readme.md` to `README.md` (pub.dev convention)
+
+### Removed
+- Removed prisma-submodule (not needed for package users)
+
+---
+
+## [0.1.0] - 2025-12-14
 
 ### 🎉 MAJOR: Architecture Transformation - True Prisma-Style ORM for Dart
 
