@@ -57,7 +57,7 @@ class SupabaseAdapter implements SqlDriverAdapter {
         username: uri.userInfo.split(':').first,
         password: uri.userInfo.split(':').last,
       ),
-      settings: const pg.ConnectionSettings(
+      settings: pg.ConnectionSettings(
         sslMode: pg.SslMode.require,
       ),
     );

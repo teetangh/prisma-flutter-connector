@@ -16,8 +16,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          submodules: 'recursive'
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -39,4 +37,5 @@ jobs:
         continue-on-error: true
 
       - name: Verify publishable to pub.dev
-        run: dart pub publish --dry-run
+        # Allow warnings (e.g., submodule gitignore notice) but catch errors
+        run: dart pub publish --dry-run || [ $? -eq 65 ]

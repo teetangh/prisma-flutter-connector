@@ -32,7 +32,10 @@ MIGRATION.md
 # Backend example (too large for pub.dev)
 backend_example/
 
-# Submodules (contains symlinks not supported by pub.dev)
+# Temporary test scripts
+tmp/
+
+# Submodules (not needed for package users)
 prisma-submodule/
 
 # Git

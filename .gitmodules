@@ -1,3 +1,0 @@
-[submodule "prisma-submodule"]
-	path = prisma-submodule
-	url = https://github.com/prisma/prisma.git
