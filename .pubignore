@@ -1,0 +1,37 @@
+# CI/CD and Development
+.github/
+.claude/
+scripts/
+tasks/
+
+# Test files (not needed for package users)
+test/
+
+# Build configuration
+Makefile
+*.iml
+
+# Build artifacts
+build/
+.dart_tool/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Development docs
+PLAN*.md
+PROGRESS.md
+MIGRATION.md
+
+# Lock files (library packages shouldn't include these)
+*.lock
+
+# Backend example (too large for pub.dev)
+backend_example/
+
+# Git
+.git/
+.gitignore

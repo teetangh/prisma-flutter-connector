@@ -37,3 +37,6 @@ jobs:
       - name: Check for outdated dependencies
         run: flutter pub outdated
         continue-on-error: true
+
+      - name: Verify publishable to pub.dev
+        run: dart pub publish --dry-run
