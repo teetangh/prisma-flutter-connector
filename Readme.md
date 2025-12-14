@@ -2,7 +2,7 @@
 
 [![pub package](https://img.shields.io/pub/v/prisma_flutter_connector.svg)](https://pub.dev/packages/prisma_flutter_connector)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://github.com/yourusername/prisma-flutter-connector/workflows/Tests/badge.svg)](https://github.com/yourusername/prisma-flutter-connector/actions)
+[![Tests](https://github.com/teetangh/prisma-flutter-connector/workflows/Tests/badge.svg)](https://github.com/teetangh/prisma-flutter-connector/actions)
 
 A type-safe, database-agnostic Flutter connector that generates type-safe Dart clients from your Prisma schema. Build Flutter apps with seamless Prisma ORM integration, automatic code generation, and support for multiple databases.
 
@@ -832,8 +832,8 @@ Special thanks to:
 ## Support
 
 - 📖 [Documentation](docs/)
-- 🐛 [Issue Tracker](https://github.com/yourusername/prisma-flutter-connector/issues)
-- 💬 [Discussions](https://github.com/yourusername/prisma-flutter-connector/discussions)
+- 🐛 [Issue Tracker](https://github.com/teetangh/prisma-flutter-connector/issues)
+- 💬 [Discussions](https://github.com/teetangh/prisma-flutter-connector/discussions)
 
 ---
 

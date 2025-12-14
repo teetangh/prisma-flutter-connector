@@ -1,7 +1,20 @@
 name: prisma_flutter_connector
-description: A type-safe Flutter connector for Prisma backends using GraphQL. Provides seamless integration between Flutter apps and Prisma ORM with automatic code generation.
+description: >-
+  A type-safe Flutter connector for Prisma backends. Generate Dart models
+  and type-safe APIs from your Prisma schema with support for PostgreSQL,
+  MySQL, SQLite, and Supabase.
 version: 0.1.0
-homepage: https://github.com/yourusername/prisma-flutter-connector
+homepage: https://github.com/teetangh/prisma-flutter-connector
+repository: https://github.com/teetangh/prisma-flutter-connector
+issue_tracker: https://github.com/teetangh/prisma-flutter-connector/issues
+documentation: https://github.com/teetangh/prisma-flutter-connector#readme
+
+topics:
+  - prisma
+  - orm
+  - database
+  - code-generation
+  - graphql
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
