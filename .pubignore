@@ -32,6 +32,12 @@ MIGRATION.md
 # Backend example (too large for pub.dev)
 backend_example/
 
+# Temporary test scripts
+tmp/
+
+# Submodules (not needed for package users)
+prisma-submodule/
+
 # Git
 .git/
 .gitignore

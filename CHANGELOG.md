@@ -4,6 +4,17 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.1.2] - 2025-12-14
+
+### Fixed
+- Fixed const constructor compatibility issue in SupabaseAdapter for dependency downgrade testing
+- Updated dependency version constraints to allow latest versions (freezed_annotation, web_socket_channel)
+
+### Improved
+- Added comprehensive dartdoc comments to public APIs
+
+---
+
 ## [0.1.1] - 2025-12-14
 
 ### Added
