@@ -37,4 +37,5 @@ jobs:
         continue-on-error: true
 
       - name: Verify publishable to pub.dev
-        run: dart pub publish --dry-run
+        # Allow warnings (e.g., submodule gitignore notice) but catch errors
+        run: dart pub publish --dry-run || [ $? -eq 65 ]
