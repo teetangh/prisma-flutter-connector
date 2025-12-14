@@ -32,9 +32,6 @@ MIGRATION.md
 # Backend example (too large for pub.dev)
 backend_example/
 
-# Submodules (contains symlinks not supported by pub.dev)
-prisma-submodule/
-
 # Git
 .git/
 .gitignore
