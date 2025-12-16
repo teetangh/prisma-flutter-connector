@@ -209,9 +209,8 @@ class PostgresAdapter implements SqlDriverAdapter {
     final rows = <List<dynamic>>[];
     for (final row in result) {
       final rowMap = row.toColumnMap();
-      final rowData = columnNames
-          .map((name) => _convertValue(rowMap[name]))
-          .toList();
+      final rowData =
+          columnNames.map((name) => _convertValue(rowMap[name])).toList();
       rows.add(rowData);
     }
 
