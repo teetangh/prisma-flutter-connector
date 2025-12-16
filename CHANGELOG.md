@@ -4,6 +4,15 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.1.4] - 2025-12-16
+
+### Fixed
+- **PostgreSQL Enum Type Handling** - Fixed `UndecodedBytes` error when querying tables with enum columns
+  - PostgreSQL custom types (enums like `UserRole`, `Gender`, etc.) are now properly decoded to strings
+  - Added `_convertValue` helper in PostgresAdapter to handle `UndecodedBytes` from the postgres package
+
+---
+
 ## [0.1.3] - 2025-12-16
 
 ### Added
