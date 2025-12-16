@@ -54,6 +54,20 @@ Run:
 flutter pub get
 ```
 
+### Server Usage (Dart Frog, Shelf, etc.)
+
+For pure Dart server environments, use the server-specific import to avoid Flutter dependencies:
+
+```dart
+// In your Dart server (Dart Frog, Shelf, etc.)
+import 'package:prisma_flutter_connector/runtime_server.dart';
+
+// For Flutter apps (includes SQLite support)
+import 'package:prisma_flutter_connector/runtime.dart';
+```
+
+The `runtime_server.dart` exports only PostgreSQL and Supabase adapters, which use the pure Dart `postgres` package. This avoids the `dart:ui not available` error that occurs when the SQLite adapter (which depends on Flutter's `sqflite`) is imported in server environments.
+
 ## Quick Start
 
 ### 1. Create Your Prisma Schema
