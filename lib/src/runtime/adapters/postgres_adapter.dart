@@ -201,7 +201,7 @@ class PostgresAdapter implements SqlDriverAdapter {
 
     // Infer column types from values
     final columnTypes = columnNames.map((name) {
-      final value = firstRowMap[name];
+      final value = _convertValue(firstRowMap[name]);
       return _inferColumnType(value);
     }).toList();
 
@@ -209,7 +209,9 @@ class PostgresAdapter implements SqlDriverAdapter {
     final rows = <List<dynamic>>[];
     for (final row in result) {
       final rowMap = row.toColumnMap();
-      final rowData = columnNames.map((name) => rowMap[name]).toList();
+      final rowData = columnNames
+          .map((name) => _convertValue(rowMap[name]))
+          .toList();
       rows.add(rowData);
     }
 
@@ -218,6 +220,20 @@ class PostgresAdapter implements SqlDriverAdapter {
       columnTypes: columnTypes,
       rows: rows,
     );
+  }
+
+  /// Convert PostgreSQL values to Dart types.
+  /// Handles special types like UndecodedBytes (enums, custom types).
+  dynamic _convertValue(dynamic value) {
+    if (value == null) return null;
+
+    // Handle UndecodedBytes (PostgreSQL enums and custom types)
+    if (value is pg.UndecodedBytes) {
+      // UndecodedBytes contains raw bytes - decode as UTF-8 string
+      return String.fromCharCodes(value.bytes);
+    }
+
+    return value;
   }
 
   /// Infer column type from value.
