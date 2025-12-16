@@ -4,6 +4,34 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.1.3] - 2025-12-16
+
+### Added
+- **Server Runtime Support** - New `runtime_server.dart` entry point for pure Dart server environments
+  - Use `import 'package:prisma_flutter_connector/runtime_server.dart'` in Dart Frog, Shelf, or other server frameworks
+  - Exports only PostgreSQL and Supabase adapters (no Flutter/sqflite dependencies)
+  - Fixes "dart:ui not available" errors when using the package in server environments
+
+### Why This Matters
+The main `runtime.dart` exports the SQLite adapter which depends on `sqflite` (a Flutter plugin).
+When imported in pure Dart servers, this caused compilation errors because `sqflite` imports `dart:ui`.
+
+Now you can:
+- Use `runtime_server.dart` for Dart servers (Dart Frog, Shelf, etc.)
+- Use `runtime.dart` for Flutter apps (includes SQLite for offline-first mobile)
+
+### Usage
+
+```dart
+// In Dart Frog backend:
+import 'package:prisma_flutter_connector/runtime_server.dart';
+
+// In Flutter app:
+import 'package:prisma_flutter_connector/runtime.dart';
+```
+
+---
+
 ## [0.1.2] - 2025-12-14
 
 ### Fixed
