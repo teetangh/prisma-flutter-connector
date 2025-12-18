@@ -169,7 +169,8 @@ class RelationCompiler {
     for (final entry in aliases.entries) {
       final alias = entry.key;
       final info = entry.value;
-      columns.add('${_quote(info.tableAlias)}.${_quote(info.columnName)} AS ${_quote(alias)}');
+      columns.add(
+          '${_quote(info.tableAlias)}.${_quote(info.columnName)} AS ${_quote(alias)}');
     }
 
     return columns.join(', ');
@@ -436,7 +437,8 @@ class RelationDeserializer {
         final alias = entry.key;
         final info = entry.value;
 
-        if (alias.startsWith(prefix) && !alias.substring(prefix.length).contains('__')) {
+        if (alias.startsWith(prefix) &&
+            !alias.substring(prefix.length).contains('__')) {
           final columnName = info.columnName;
           final value = row[alias];
           obj[columnName] = value;
@@ -481,7 +483,8 @@ class RelationDeserializer {
           final alias = entry.key;
           final info = entry.value;
 
-          if (alias.startsWith(prefix) && !alias.substring(prefix.length).contains('__')) {
+          if (alias.startsWith(prefix) &&
+              !alias.substring(prefix.length).contains('__')) {
             obj[info.columnName] = row[alias];
           }
         }

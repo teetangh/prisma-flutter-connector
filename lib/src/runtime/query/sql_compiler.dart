@@ -97,7 +97,8 @@ class SqlCompiler {
     String joinClauses = '';
     CompiledRelations? compiledRelations;
 
-    if (hasRelations && (schema != null || schemaRegistry.hasModel(query.modelName))) {
+    if (hasRelations &&
+        (schema != null || schemaRegistry.hasModel(query.modelName))) {
       // Use relation compiler for JOINs
       const baseAlias = 't0';
       compiledRelations = relationCompiler.compile(
@@ -136,8 +137,11 @@ class SqlCompiler {
 
     // Construct SQL with optional table alias
     final sql = StringBuffer();
-    if (hasRelations && compiledRelations != null && compiledRelations.isNotEmpty) {
-      sql.write('SELECT $selectClause FROM ${_quoteIdentifier(tableName)} "t0"');
+    if (hasRelations &&
+        compiledRelations != null &&
+        compiledRelations.isNotEmpty) {
+      sql.write(
+          'SELECT $selectClause FROM ${_quoteIdentifier(tableName)} "t0"');
       sql.write(' $joinClauses');
     } else {
       sql.write('SELECT $selectClause FROM ${_quoteIdentifier(tableName)}');
@@ -180,8 +184,7 @@ class SqlCompiler {
       // A field is an include if it has nested selection (means it's a relation)
       if (fieldSelection.selection != null) {
         include[entry.key] = {
-          if (fieldSelection.arguments != null)
-            ...fieldSelection.arguments!,
+          if (fieldSelection.arguments != null) ...fieldSelection.arguments!,
           if (fieldSelection.selection!.fields != null)
             'include': _extractInclude(fieldSelection.selection),
         };
@@ -461,7 +464,8 @@ class SqlCompiler {
 
     final (whereClause, whereArgs, whereTypes) = _buildWhereClause(where);
 
-    final sql = 'SELECT ${functions.join(', ')} FROM ${_quoteIdentifier(tableName)}'
+    final sql =
+        'SELECT ${functions.join(', ')} FROM ${_quoteIdentifier(tableName)}'
         '${whereClause.isNotEmpty ? ' WHERE $whereClause' : ''}';
 
     return SqlQuery(
@@ -510,35 +514,41 @@ class SqlCompiler {
     }
     if (agg['_avg'] is Map) {
       for (final field in (agg['_avg'] as Map).keys) {
-        selectParts.add('AVG(${_quoteIdentifier(field.toString())}) AS "_avg_$field"');
+        selectParts
+            .add('AVG(${_quoteIdentifier(field.toString())}) AS "_avg_$field"');
       }
     }
     if (agg['_sum'] is Map) {
       for (final field in (agg['_sum'] as Map).keys) {
-        selectParts.add('SUM(${_quoteIdentifier(field.toString())}) AS "_sum_$field"');
+        selectParts
+            .add('SUM(${_quoteIdentifier(field.toString())}) AS "_sum_$field"');
       }
     }
     if (agg['_min'] is Map) {
       for (final field in (agg['_min'] as Map).keys) {
-        selectParts.add('MIN(${_quoteIdentifier(field.toString())}) AS "_min_$field"');
+        selectParts
+            .add('MIN(${_quoteIdentifier(field.toString())}) AS "_min_$field"');
       }
     }
     if (agg['_max'] is Map) {
       for (final field in (agg['_max'] as Map).keys) {
-        selectParts.add('MAX(${_quoteIdentifier(field.toString())}) AS "_max_$field"');
+        selectParts
+            .add('MAX(${_quoteIdentifier(field.toString())}) AS "_max_$field"');
       }
     }
 
     final (whereClause, whereArgs, whereTypes) = _buildWhereClause(where);
 
-    final sql = StringBuffer('SELECT ${selectParts.join(', ')} FROM ${_quoteIdentifier(tableName)}');
+    final sql = StringBuffer(
+        'SELECT ${selectParts.join(', ')} FROM ${_quoteIdentifier(tableName)}');
 
     if (whereClause.isNotEmpty) {
       sql.write(' WHERE $whereClause');
     }
 
     if (groupByFields.isNotEmpty) {
-      sql.write(' GROUP BY ${groupByFields.map((f) => _quoteIdentifier(f.toString())).join(', ')}');
+      sql.write(
+          ' GROUP BY ${groupByFields.map((f) => _quoteIdentifier(f.toString())).join(', ')}');
     }
 
     if (orderBy != null) {
@@ -579,7 +589,8 @@ class SqlCompiler {
     // Get the conflict key(s) from the where clause
     final conflictKeys = where.keys.toList();
     if (conflictKeys.isEmpty) {
-      throw ArgumentError('Upsert requires at least one unique field in where clause');
+      throw ArgumentError(
+          'Upsert requires at least one unique field in where clause');
     }
 
     // Build INSERT columns and values
@@ -616,20 +627,23 @@ VALUES (${valuePlaceholders.join(', ')})
 ON CONFLICT (${conflictKeys.map(_quoteIdentifier).join(', ')})
 DO UPDATE SET ${updateSetClauses.join(', ')}
 RETURNING *
-'''.trim();
+'''
+          .trim();
     } else if (provider == 'mysql') {
       // MySQL: INSERT ... ON DUPLICATE KEY UPDATE
       sql = '''
 INSERT INTO ${_quoteIdentifier(tableName)} (${columns.join(', ')})
 VALUES (${valuePlaceholders.join(', ')})
 ON DUPLICATE KEY UPDATE ${updateSetClauses.join(', ')}
-'''.trim();
+'''
+          .trim();
     } else if (provider == 'sqlite') {
       // SQLite: INSERT OR REPLACE
       sql = '''
 INSERT OR REPLACE INTO ${_quoteIdentifier(tableName)} (${columns.join(', ')})
 VALUES (${valuePlaceholders.join(', ')})
-'''.trim();
+'''
+          .trim();
     } else {
       throw UnsupportedError('Upsert not supported for provider: $provider');
     }

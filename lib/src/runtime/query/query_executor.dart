@@ -276,7 +276,8 @@ class QueryExecutor implements BaseExecutor {
     final flatMaps = _resultSetToMaps(result);
 
     // Check if we need to deserialize relations
-    if (sqlQuery.hasRelations && sqlQuery.relationMetadata is CompiledRelations) {
+    if (sqlQuery.hasRelations &&
+        sqlQuery.relationMetadata is CompiledRelations) {
       final compiledRelations = sqlQuery.relationMetadata as CompiledRelations;
 
       // Use relation deserializer to nest flat JOIN results

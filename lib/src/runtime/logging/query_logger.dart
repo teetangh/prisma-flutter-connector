@@ -192,7 +192,8 @@ class ConsoleQueryLogger implements QueryLogger {
     // Colorize duration based on time
     final ms = event.duration.inMilliseconds;
     final durationStr = '${ms}ms';
-    final coloredDuration = colorize ? _colorDuration(durationStr, ms) : durationStr;
+    final coloredDuration =
+        colorize ? _colorDuration(durationStr, ms) : durationStr;
 
     // Operation prefix
     if (event.operation != null) {
