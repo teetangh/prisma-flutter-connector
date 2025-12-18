@@ -516,18 +516,9 @@ class ModelGenerator {
   }
 
   /// Check if a name is a Dart reserved keyword
+  /// Uses dartReservedKeywords from prisma_parser.dart
   bool _isDartReservedKeyword(String name) {
-    const keywords = {
-      'abstract', 'as', 'assert', 'async', 'await', 'break', 'case', 'catch',
-      'class', 'const', 'continue', 'covariant', 'default', 'deferred', 'do',
-      'dynamic', 'else', 'enum', 'export', 'extends', 'extension', 'external',
-      'factory', 'false', 'final', 'finally', 'for', 'function', 'get', 'hide',
-      'if', 'implements', 'import', 'in', 'interface', 'is', 'late', 'library',
-      'mixin', 'new', 'null', 'on', 'operator', 'part', 'rethrow', 'return',
-      'set', 'show', 'static', 'super', 'switch', 'sync', 'this', 'throw',
-      'true', 'try', 'typedef', 'var', 'void', 'while', 'with', 'yield',
-    };
-    return keywords.contains(name.toLowerCase());
+    return dartReservedKeywords.contains(name.toLowerCase());
   }
 
   /// Generate all model files
@@ -556,7 +547,7 @@ class ModelGenerator {
           RegExp(r'[A-Z]'),
           (match) => '_${match.group(0)!.toLowerCase()}',
         )
-        .substring(1); // Remove leading underscore
+        .replaceFirst(RegExp(r'^_'), ''); // Remove leading underscore safely
   }
 
   /// Convert SCREAMING_CASE to camelCase

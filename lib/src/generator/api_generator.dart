@@ -170,7 +170,7 @@ class APIGenerator {
           RegExp(r'[A-Z]'),
           (match) => '_${match.group(0)!.toLowerCase()}',
         )
-        .substring(1);
+        .replaceFirst(RegExp(r'^_'), ''); // Remove leading underscore safely
   }
 
   String _toLowerCamelCase(String input) {

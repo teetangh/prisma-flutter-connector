@@ -317,6 +317,6 @@ class FilterTypesGenerator {
           RegExp(r'[A-Z]'),
           (match) => '_${match.group(0)!.toLowerCase()}',
         )
-        .substring(1); // Remove leading underscore
+        .replaceFirst(RegExp(r'^_'), ''); // Remove leading underscore safely
   }
 }
