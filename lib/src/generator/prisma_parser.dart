@@ -429,8 +429,15 @@ class PrismaParser {
       final body = match.group(2)!;
       final values = body
           .split('\n')
-          .map((line) => line.trim())
-          .where((line) => line.isNotEmpty && !line.startsWith('//'))
+          .map((line) {
+            // Strip inline comments (// ...) from the end of lines
+            final commentIndex = line.indexOf('//');
+            if (commentIndex >= 0) {
+              return line.substring(0, commentIndex).trim();
+            }
+            return line.trim();
+          })
+          .where((line) => line.isNotEmpty)
           .toList();
 
       enums.add(PrismaEnum(name: name, values: values));

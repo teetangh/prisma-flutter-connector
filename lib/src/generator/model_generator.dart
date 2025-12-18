@@ -22,20 +22,24 @@ class ModelGenerator {
     buffer.writeln("import '../filters.dart';");
     buffer.writeln();
 
-    // Add imports for related models
-    for (final relation in model.relations) {
-      buffer.writeln("import '${_toSnakeCase(relation.targetModel)}.dart';");
-    }
-    if (model.relations.isNotEmpty) {
-      buffer.writeln();
+    // Collect all types that need imports (models and enums)
+    final imports = <String>{};
+
+    for (final field in model.fields) {
+      final fieldType = field.type;
+
+      // Skip primitive types
+      if (_isPrimitiveType(fieldType)) continue;
+
+      // Add import for this type (could be model or enum)
+      imports.add(fieldType);
     }
 
-    // Add imports for enums
-    final enumFields = model.fields.where((f) => _isEnumType(f.type));
-    for (final field in enumFields) {
-      buffer.writeln("import '${_toSnakeCase(field.type)}.dart';");
+    // Write imports
+    for (final importType in imports) {
+      buffer.writeln("import '${_toSnakeCase(importType)}.dart';");
     }
-    if (enumFields.isNotEmpty) {
+    if (imports.isNotEmpty) {
       buffer.writeln();
     }
 
@@ -86,24 +90,29 @@ class ModelGenerator {
         continue;
       }
 
-      // Handle scalar defaults
-      if (field.defaultValue != null && !field.isRelation) {
+      // Handle scalar defaults (skip Prisma runtime functions)
+      if (field.defaultValue != null &&
+          !field.isRelation &&
+          !_isPrismaRuntimeDefault(field.defaultValue!)) {
         buffer.writeln('    @Default(${field.defaultValue})');
       }
+
+      // Get proper Dart type
+      final dartType = _toDartType(field.type);
 
       // Regular fields - use correct required/optional logic
       if (field.isRequired && !field.isList) {
         // Required non-list fields
-        buffer.writeln('    required ${field.type} ${field.name},');
+        buffer.writeln('    required $dartType ${field.name},');
       } else if (!field.isRequired && !field.isList) {
         // Optional non-list fields
-        buffer.writeln('    ${field.type}? ${field.name},');
+        buffer.writeln('    $dartType? ${field.name},');
       } else if (field.isList && field.isRequired) {
         // Required list fields
-        buffer.writeln('    required List<${field.type}> ${field.name},');
+        buffer.writeln('    required List<$dartType> ${field.name},');
       } else {
         // Optional list fields
-        buffer.writeln('    List<${field.type}>? ${field.name},');
+        buffer.writeln('    List<$dartType>? ${field.name},');
       }
     }
 
@@ -133,6 +142,85 @@ class ModelGenerator {
     return schema.enums.any((e) => e.name == typeName);
   }
 
+  /// Check if a type is a model (defined in the schema)
+  bool _isModelType(String typeName) {
+    return schema.models.any((m) => m.name == typeName);
+  }
+
+  /// Check if a field is a relation (either explicit or implicit)
+  bool _isRelationField(PrismaField field) {
+    // Explicit @relation attribute
+    if (field.isRelation) return true;
+    // Implicit relation - type is another model
+    if (_isModelType(field.type)) return true;
+    return false;
+  }
+
+  /// Check if a type is a Prisma primitive type
+  bool _isPrimitiveType(String typeName) {
+    const primitives = {
+      'String',
+      'Int',
+      'BigInt',
+      'Float',
+      'Decimal',
+      'Boolean',
+      'DateTime',
+      'Json',
+      'Bytes',
+    };
+    return primitives.contains(typeName);
+  }
+
+  /// Convert Prisma type to Dart type
+  String _toDartType(String prismaType) {
+    switch (prismaType) {
+      case 'String':
+        return 'String';
+      case 'Int':
+        return 'int';
+      case 'BigInt':
+        return 'BigInt';
+      case 'Float':
+      case 'Decimal':
+        return 'double';
+      case 'Boolean':
+        return 'bool';
+      case 'DateTime':
+        return 'DateTime';
+      case 'Json':
+        return 'Map<String, dynamic>';
+      case 'Bytes':
+        return 'List<int>';
+      default:
+        // Enum or relation type - keep as-is
+        return prismaType;
+    }
+  }
+
+  /// Check if a default value is a Prisma runtime function (not a compile-time constant)
+  /// These cannot be used with Freezed @Default() annotation
+  bool _isPrismaRuntimeDefault(String defaultValue) {
+    final runtimeFunctions = [
+      'uuid()',
+      'cuid()',
+      'now()',
+      'autoincrement()',
+    ];
+
+    // Check exact matches
+    if (runtimeFunctions.contains(defaultValue)) {
+      return true;
+    }
+
+    // Check for dbgenerated(...) which is always runtime
+    if (defaultValue.startsWith('dbgenerated(')) {
+      return true;
+    }
+
+    return false;
+  }
+
   /// Generate Create input type
   String _generateInputTypes(PrismaModel model) {
     final buffer = StringBuffer();
@@ -145,53 +233,55 @@ class ModelGenerator {
     buffer.writeln('  const factory Create${model.name}Input({');
 
     for (final field in model.fields) {
-      // Skip auto-generated fields and relations
+      // Skip auto-generated fields and relations (explicit or implicit)
       if (field.isId ||
           field.isCreatedAt ||
           field.isUpdatedAt ||
-          field.isRelation) {
+          _isRelationField(field)) {
         continue;
       }
 
+      final dartType = _toDartType(field.type);
+
       // Handle list fields with empty default
       if (field.hasEmptyListDefault && field.isList) {
-        final elementType = field.type;
-        buffer.writeln('    @Default(<$elementType>[])');
-        buffer.writeln('    List<$elementType>? ${field.name},');
+        buffer.writeln('    @Default(<$dartType>[])');
+        buffer.writeln('    List<$dartType>? ${field.name},');
         continue;
       }
 
       // Handle enum defaults
       if (field.defaultValue != null && _isEnumType(field.type)) {
         final enumValue = _toCamelCase(field.defaultValue!);
-        buffer.writeln('    @Default(${field.type}.$enumValue)');
+        buffer.writeln('    @Default($dartType.$enumValue)');
         if (field.isRequired) {
-          buffer.writeln('    required ${field.type} ${field.name},');
+          buffer.writeln('    required $dartType ${field.name},');
         } else {
-          buffer.writeln('    ${field.type}? ${field.name},');
+          buffer.writeln('    $dartType? ${field.name},');
         }
         continue;
       }
 
-      // Handle other defaults
+      // Handle other defaults (skip Prisma runtime functions)
       if (field.isRequired && field.defaultValue == null) {
         if (field.isList) {
-          buffer.writeln('    required List<${field.type}> ${field.name},');
+          buffer.writeln('    required List<$dartType> ${field.name},');
         } else {
-          buffer.writeln('    required ${field.type} ${field.name},');
+          buffer.writeln('    required $dartType ${field.name},');
         }
-      } else if (field.defaultValue != null) {
+      } else if (field.defaultValue != null &&
+          !_isPrismaRuntimeDefault(field.defaultValue!)) {
         buffer.writeln('    @Default(${field.defaultValue})');
         if (field.isList) {
-          buffer.writeln('    List<${field.type}>? ${field.name},');
+          buffer.writeln('    List<$dartType>? ${field.name},');
         } else {
-          buffer.writeln('    ${field.type}? ${field.name},');
+          buffer.writeln('    $dartType? ${field.name},');
         }
       } else {
         if (field.isList) {
-          buffer.writeln('    List<${field.type}>? ${field.name},');
+          buffer.writeln('    List<$dartType>? ${field.name},');
         } else {
-          buffer.writeln('    ${field.type}? ${field.name},');
+          buffer.writeln('    $dartType? ${field.name},');
         }
       }
     }
@@ -212,19 +302,21 @@ class ModelGenerator {
     buffer.writeln('  const factory Update${model.name}Input({');
 
     for (final field in model.fields) {
-      // Skip auto-generated, ID fields, and relations
+      // Skip auto-generated, ID fields, and relations (explicit or implicit)
       if (field.isId ||
           field.isCreatedAt ||
           field.isUpdatedAt ||
-          field.isRelation) {
+          _isRelationField(field)) {
         continue;
       }
 
+      final dartType = _toDartType(field.type);
+
       // All update fields are optional
       if (field.isList) {
-        buffer.writeln('    List<${field.type}>? ${field.name},');
+        buffer.writeln('    List<$dartType>? ${field.name},');
       } else {
-        buffer.writeln('    ${field.type}? ${field.name},');
+        buffer.writeln('    $dartType? ${field.name},');
       }
     }
 
@@ -364,9 +456,17 @@ class ModelGenerator {
 
   /// Get the filter type for a field based on its Prisma type
   String? _getFilterTypeForField(PrismaField field) {
+    // Handle list fields - only String and Int lists have generated filters
     if (field.isList) {
-      // List fields use special list filters
-      return '${field.type}ListFilter';
+      switch (field.type) {
+        case 'String':
+          return 'StringListFilter';
+        case 'Int':
+          return 'IntListFilter';
+        default:
+          // No filter for other list types (models, enums, etc.)
+          return null;
+      }
     }
 
     switch (field.type) {
@@ -386,7 +486,7 @@ class ModelGenerator {
         if (_isEnumType(field.type)) {
           return '${field.type}Filter';
         }
-        // Unknown type, skip filter
+        // Unknown type (model types, etc.), skip filter
         return null;
     }
   }
@@ -402,12 +502,32 @@ class ModelGenerator {
 
     for (final value in enumDef.values) {
       buffer.writeln("  @JsonValue('$value')");
-      buffer.writeln('  ${_toCamelCase(value)},');
+      // Handle reserved keywords in enum values
+      var dartValue = _toCamelCase(value);
+      if (_isDartReservedKeyword(dartValue)) {
+        dartValue = '${dartValue}Value';
+      }
+      buffer.writeln('  $dartValue,');
     }
 
     buffer.writeln('}');
 
     return buffer.toString();
+  }
+
+  /// Check if a name is a Dart reserved keyword
+  bool _isDartReservedKeyword(String name) {
+    const keywords = {
+      'abstract', 'as', 'assert', 'async', 'await', 'break', 'case', 'catch',
+      'class', 'const', 'continue', 'covariant', 'default', 'deferred', 'do',
+      'dynamic', 'else', 'enum', 'export', 'extends', 'extension', 'external',
+      'factory', 'false', 'final', 'finally', 'for', 'function', 'get', 'hide',
+      'if', 'implements', 'import', 'in', 'interface', 'is', 'late', 'library',
+      'mixin', 'new', 'null', 'on', 'operator', 'part', 'rethrow', 'return',
+      'set', 'show', 'static', 'super', 'switch', 'sync', 'this', 'throw',
+      'true', 'try', 'typedef', 'var', 'void', 'while', 'with', 'yield',
+    };
+    return keywords.contains(name.toLowerCase());
   }
 
   /// Generate all model files
