@@ -4,6 +4,70 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.2.0] - 2025-12-19
+
+### Added - Production-Grade Features
+
+#### Exception System
+- **`PrismaException`** - Base sealed class for all connector exceptions
+- **`UniqueConstraintException`** - Duplicate key violations (code: P2002)
+- **`ForeignKeyException`** - Reference constraint violations (code: P2003)
+- **`RecordNotFoundException`** - Record not found (code: P2025)
+- **`QueryTimeoutException`** - Query execution timeout (code: P5008)
+- **`InternalException`** - General database errors (code: P5000)
+
+#### Query Logging
+- **`QueryLogger`** - Abstract interface for query logging
+- **`ConsoleQueryLogger`** - Simple console output logger
+- **`MetricsQueryLogger`** - Tracks query metrics (count, avg/min/max duration)
+- Events: `onQueryStart`, `onQueryEnd`, `onQueryError`
+
+#### Raw SQL API
+- **`executeRaw(sql, params)`** - Execute raw SELECT queries
+- **`executeMutationRaw(sql, params)`** - Execute raw INSERT/UPDATE/DELETE
+- Parameterized queries with type inference
+- Full logging integration
+
+#### Aggregations
+- **`QueryAction.count`** - Count records matching filter
+- **`QueryAction.aggregate`** - Planned for future (_avg, _sum, _min, _max)
+
+#### Upsert Operation
+- **`QueryAction.upsert`** - Insert or update based on conflict
+- PostgreSQL: `ON CONFLICT DO UPDATE ... RETURNING *`
+- SQLite: `ON CONFLICT DO UPDATE ... RETURNING *` (requires SQLite 3.35.0+)
+- MySQL: `ON DUPLICATE KEY UPDATE` (see Known Limitations)
+
+#### Relations with JOINs
+- **`include`** option for eager loading related data
+- **`SchemaRegistry`** - Stores relation metadata from Prisma schema
+- **`RelationCompiler`** - Generates LEFT JOIN clauses
+- Automatic result nesting (flat rows → nested objects)
+- Falls back to N+1 queries if relations not configured
+
+### Known Limitations
+
+#### MySQL Upsert
+MySQL's `ON DUPLICATE KEY UPDATE` does not support the `RETURNING` clause. Unlike PostgreSQL and SQLite 3.35+, MySQL upsert operations return the affected row count instead of the actual record. If you need the upserted record, perform a follow-up SELECT query:
+
+```dart
+// MySQL workaround for upsert
+final result = await executor.executeQueryAsSingleMap(upsertQuery);
+if (result == null || result.isEmpty) {
+  // Fetch the record manually
+  final selectQuery = JsonQueryBuilder()
+      .model('User')
+      .action(QueryAction.findUnique)
+      .where({'email': email})
+      .build();
+  return executor.executeQueryAsSingleMap(selectQuery);
+}
+return result;
+```
+
+### Breaking Changes
+- None - fully backward compatible with v0.1.x
+
 ## [0.1.8] - 2025-12-18
 
 ### Fixed

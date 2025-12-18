@@ -639,11 +639,13 @@ ON DUPLICATE KEY UPDATE ${updateSetClauses.join(', ')}
           .trim();
     } else if (provider == 'sqlite') {
       // SQLite: INSERT ... ON CONFLICT DO UPDATE (since SQLite 3.24.0)
+      // RETURNING * requires SQLite 3.35.0+ (2021-03-12)
       sql = '''
 INSERT INTO ${_quoteIdentifier(tableName)} (${columns.join(', ')})
 VALUES (${valuePlaceholders.join(', ')})
 ON CONFLICT (${conflictKeys.map(_quoteIdentifier).join(', ')})
 DO UPDATE SET ${updateSetClauses.join(', ')}
+RETURNING *
 '''
           .trim();
     } else {
