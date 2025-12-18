@@ -201,14 +201,14 @@ class ModelGenerator {
   /// Check if a default value is a Prisma runtime function (not a compile-time constant)
   /// These cannot be used with Freezed @Default() annotation
   bool _isPrismaRuntimeDefault(String defaultValue) {
-    final runtimeFunctions = [
+    const runtimeFunctions = {
       'uuid()',
       'cuid()',
       'now()',
       'autoincrement()',
-    ];
+    };
 
-    // Check exact matches
+    // Check exact matches (O(1) lookup with Set)
     if (runtimeFunctions.contains(defaultValue)) {
       return true;
     }
