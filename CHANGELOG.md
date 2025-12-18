@@ -4,6 +4,19 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.1.6] - 2025-12-18
+
+### Fixed
+- **SortOrder Enum Duplication** - Moved `SortOrder` enum to shared `filters.dart` instead of generating it in every model file
+  - Previously caused "ambiguous export" errors when re-exporting all models from index.dart
+  - Now defined once in filters.dart and imported by all model files
+- **@Default + required Conflict** - Fields with `@Default` annotation are no longer marked as `required`
+  - Fixes "Required named parameters can't have a default value" errors in Freezed-generated code
+  - Applies to both main model classes and CreateInput types
+- **Transaction Executor Type Mismatch** - Added `BaseExecutor` abstract interface
+  - Allows delegates to work with both `QueryExecutor` (normal ops) and `TransactionExecutor` (transactions)
+  - Fixes "argument type not assignable" errors when using `$transaction`
+
 ## [0.1.5] - 2025-12-18
 
 ### Fixed

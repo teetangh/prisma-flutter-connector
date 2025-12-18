@@ -57,6 +57,25 @@ class FilterTypesGenerator {
     buffer.write(_generateStringListFilter());
     buffer.write(_generateIntListFilter());
 
+    // Generate SortOrder enum (shared by all OrderByInput classes)
+    buffer.write(_generateSortOrderEnum());
+
+    return buffer.toString();
+  }
+
+  /// Generate SortOrder enum for ordering results
+  String _generateSortOrderEnum() {
+    final buffer = StringBuffer();
+
+    buffer.writeln('/// Sort order for ordering results');
+    buffer.writeln('enum SortOrder {');
+    buffer.writeln("  @JsonValue('asc')");
+    buffer.writeln('  asc,');
+    buffer.writeln("  @JsonValue('desc')");
+    buffer.writeln('  desc,');
+    buffer.writeln('}');
+    buffer.writeln();
+
     return buffer.toString();
   }
 

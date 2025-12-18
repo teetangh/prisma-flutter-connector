@@ -30,7 +30,7 @@ class DelegateGenerator {
     buffer.writeln(
         '/// Provides type-safe CRUD operations using database adapters');
     buffer.writeln('class ${modelName}Delegate {');
-    buffer.writeln('  final QueryExecutor _executor;');
+    buffer.writeln('  final BaseExecutor _executor;');
     buffer.writeln();
     buffer.writeln('  ${modelName}Delegate(this._executor);');
     buffer.writeln();

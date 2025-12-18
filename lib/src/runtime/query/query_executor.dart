@@ -12,8 +12,31 @@ import 'package:prisma_flutter_connector/src/runtime/adapters/types.dart';
 import 'package:prisma_flutter_connector/src/runtime/query/json_protocol.dart';
 import 'package:prisma_flutter_connector/src/runtime/query/sql_compiler.dart';
 
+/// Abstract base class for query execution.
+///
+/// This interface is implemented by both [QueryExecutor] (for normal operations)
+/// and [TransactionExecutor] (for transaction operations), allowing delegates
+/// to work with either one.
+abstract class BaseExecutor {
+  /// The database adapter.
+  SqlDriverAdapter get adapter;
+
+  /// Execute a query and deserialize results to maps.
+  Future<List<Map<String, dynamic>>> executeQueryAsMaps(JsonQuery query);
+
+  /// Execute a query expecting a single result.
+  Future<Map<String, dynamic>?> executeQueryAsSingleMap(JsonQuery query);
+
+  /// Execute a mutation (CREATE, UPDATE, DELETE) and return affected rows.
+  Future<int> executeMutation(JsonQuery query);
+
+  /// Execute a count query.
+  Future<int> executeCount(JsonQuery query);
+}
+
 /// Executes Prisma queries against a database adapter.
-class QueryExecutor {
+class QueryExecutor implements BaseExecutor {
+  @override
   final SqlDriverAdapter adapter;
   final SqlCompiler compiler;
 
@@ -38,6 +61,7 @@ class QueryExecutor {
   }
 
   /// Execute a mutation (CREATE, UPDATE, DELETE) and return affected rows.
+  @override
   Future<int> executeMutation(JsonQuery query) async {
     final sqlQuery = compiler.compile(query);
 
@@ -53,6 +77,7 @@ class QueryExecutor {
   }
 
   /// Execute a query and deserialize results to maps.
+  @override
   Future<List<Map<String, dynamic>>> executeQueryAsMaps(JsonQuery query) async {
     final result = await executeQuery(query);
 
@@ -60,12 +85,14 @@ class QueryExecutor {
   }
 
   /// Execute a query expecting a single result.
+  @override
   Future<Map<String, dynamic>?> executeQueryAsSingleMap(JsonQuery query) async {
     final results = await executeQueryAsMaps(query);
     return results.isEmpty ? null : results.first;
   }
 
   /// Execute a count query.
+  @override
   Future<int> executeCount(JsonQuery query) async {
     final result = await executeQuery(query);
 
@@ -89,6 +116,7 @@ class QueryExecutor {
       final txExecutor = TransactionExecutor(
         transaction: transaction,
         compiler: compiler,
+        adapter: adapter,
       );
 
       final result = await callback(txExecutor);
@@ -186,14 +214,19 @@ class QueryExecutor {
 }
 
 /// Query executor for use within transactions.
-class TransactionExecutor {
+class TransactionExecutor implements BaseExecutor {
   final Transaction transaction;
   final SqlCompiler compiler;
+  final SqlDriverAdapter _adapter;
 
   TransactionExecutor({
     required this.transaction,
     required this.compiler,
-  });
+    required SqlDriverAdapter adapter,
+  }) : _adapter = adapter;
+
+  @override
+  SqlDriverAdapter get adapter => _adapter;
 
   /// Execute a query within the transaction.
   Future<SqlResultSet> executeQuery(JsonQuery query) async {
@@ -202,6 +235,7 @@ class TransactionExecutor {
   }
 
   /// Execute a mutation within the transaction.
+  @override
   Future<int> executeMutation(JsonQuery query) async {
     final sqlQuery = compiler.compile(query);
 
@@ -214,15 +248,31 @@ class TransactionExecutor {
   }
 
   /// Execute a query and deserialize results to maps.
+  @override
   Future<List<Map<String, dynamic>>> executeQueryAsMaps(JsonQuery query) async {
     final result = await executeQuery(query);
     return _resultSetToMaps(result);
   }
 
   /// Execute a query expecting a single result.
+  @override
   Future<Map<String, dynamic>?> executeQueryAsSingleMap(JsonQuery query) async {
     final results = await executeQueryAsMaps(query);
     return results.isEmpty ? null : results.first;
+  }
+
+  /// Execute a count query.
+  @override
+  Future<int> executeCount(JsonQuery query) async {
+    final result = await executeQuery(query);
+
+    if (result.rows.isEmpty) return 0;
+
+    final count = result.rows.first.first;
+    if (count is int) return count;
+    if (count is String) return int.parse(count);
+
+    return 0;
   }
 
   /// Convert SqlResultSet to list of maps.

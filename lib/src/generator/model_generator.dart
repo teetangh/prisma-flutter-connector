@@ -80,21 +80,21 @@ class ModelGenerator {
       }
 
       // Handle enum defaults
+      // Note: Fields with @Default should NOT be required - the default provides the value
       if (field.defaultValue != null && _isEnumType(field.type)) {
         final enumValue = toCamelCase(field.defaultValue!);
         buffer.writeln('    @Default(${field.type}.$enumValue)');
-        if (field.isRequired && !field.isList) {
-          buffer.writeln('    required ${field.dartType} ${field.name},');
-        } else {
-          buffer.writeln('    ${field.dartType} ${field.name},');
-        }
+        buffer.writeln('    ${field.dartType} ${field.name},');
         continue;
       }
 
       // Handle scalar defaults (skip Prisma runtime functions)
-      if (field.defaultValue != null &&
+      // Note: Fields with @Default should NOT be required - the default provides the value
+      final hasScalarDefault = field.defaultValue != null &&
           !field.isRelation &&
-          !_isPrismaRuntimeDefault(field.defaultValue!)) {
+          !_isPrismaRuntimeDefault(field.defaultValue!);
+
+      if (hasScalarDefault) {
         buffer.writeln('    @Default(${field.defaultValue})');
       }
 
@@ -102,14 +102,22 @@ class ModelGenerator {
       final dartType = _toDartType(field.type);
 
       // Regular fields - use correct required/optional logic
-      if (field.isRequired && !field.isList) {
-        // Required non-list fields
+      // Note: If a field has @Default, it should NOT be required
+      if (hasScalarDefault) {
+        // Field has a default value - not required
+        if (field.isList) {
+          buffer.writeln('    List<$dartType> ${field.name},');
+        } else {
+          buffer.writeln('    $dartType ${field.name},');
+        }
+      } else if (field.isRequired && !field.isList) {
+        // Required non-list fields (no default)
         buffer.writeln('    required $dartType ${field.name},');
       } else if (!field.isRequired && !field.isList) {
         // Optional non-list fields
         buffer.writeln('    $dartType? ${field.name},');
       } else if (field.isList && field.isRequired) {
-        // Required list fields
+        // Required list fields (no default)
         buffer.writeln('    required List<$dartType> ${field.name},');
       } else {
         // Optional list fields
@@ -252,14 +260,11 @@ class ModelGenerator {
       }
 
       // Handle enum defaults
+      // Note: Fields with @Default should NOT be required - the default provides the value
       if (field.defaultValue != null && _isEnumType(field.type)) {
         final enumValue = toCamelCase(field.defaultValue!);
         buffer.writeln('    @Default($dartType.$enumValue)');
-        if (field.isRequired) {
-          buffer.writeln('    required $dartType ${field.name},');
-        } else {
-          buffer.writeln('    $dartType? ${field.name},');
-        }
+        buffer.writeln('    $dartType ${field.name},');
         continue;
       }
 
@@ -442,15 +447,7 @@ class ModelGenerator {
     buffer.writeln('}');
     buffer.writeln();
 
-    // Generate SortOrder enum (only once, could be shared)
-    buffer.writeln('/// Sort order for ordering results');
-    buffer.writeln('enum SortOrder {');
-    buffer.writeln("  @JsonValue('asc')");
-    buffer.writeln('  asc,');
-    buffer.writeln("  @JsonValue('desc')");
-    buffer.writeln('  desc,');
-    buffer.writeln('}');
-    buffer.writeln();
+    // Note: SortOrder enum is now generated in filters.dart (shared)
 
     return buffer.toString();
   }

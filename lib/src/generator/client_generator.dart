@@ -65,7 +65,7 @@ class ClientGenerator {
     buffer.writeln('  final SqlDriverAdapter adapter;');
     buffer.writeln();
     buffer.writeln('  /// The query executor');
-    buffer.writeln('  final QueryExecutor _executor;');
+    buffer.writeln('  final BaseExecutor _executor;');
     buffer.writeln();
 
     // Declare delegate properties
@@ -114,8 +114,9 @@ class ClientGenerator {
     buffer.writeln('    Future<T> Function(PrismaClient) callback, {');
     buffer.writeln('    IsolationLevel? isolationLevel,');
     buffer.writeln('  }) async {');
+    buffer.writeln('    final queryExecutor = _executor as QueryExecutor;');
     buffer.writeln(
-        '    return await _executor.executeInTransaction((txExecutor) async {');
+        '    return await queryExecutor.executeInTransaction((txExecutor) async {');
     buffer.writeln(
         '      final txClient = PrismaClient._transaction(txExecutor);');
     buffer.writeln('      return await callback(txClient);');
@@ -125,7 +126,7 @@ class ClientGenerator {
 
     // Private transaction constructor
     buffer.writeln('  /// Private constructor for transaction client');
-    buffer.writeln('  PrismaClient._transaction(QueryExecutor executor)');
+    buffer.writeln('  PrismaClient._transaction(BaseExecutor executor)');
     buffer.writeln('      : adapter = executor.adapter,');
     buffer.writeln('        _executor = executor {');
 
@@ -143,7 +144,8 @@ class ClientGenerator {
     buffer.writeln(
         '  /// Call this when you\'re done using the client to clean up resources.');
     buffer.writeln('  Future<void> \$disconnect() async {');
-    buffer.writeln('    await _executor.dispose();');
+    buffer.writeln('    final queryExecutor = _executor as QueryExecutor;');
+    buffer.writeln('    await queryExecutor.dispose();');
     buffer.writeln('  }');
 
     buffer.writeln('}');
