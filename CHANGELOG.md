@@ -4,6 +4,22 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.1.5] - 2025-12-18
+
+### Fixed
+- **Enum Comment Stripping** - Parser now correctly strips inline comments from enum values
+- **Prisma Type Conversion** - Fixed `Int` → `int`, `Float`/`Decimal` → `double`, `Json` → `Map<String, dynamic>`, `Bytes` → `List<int>`
+- **Runtime Defaults** - Skip `uuid()`, `now()`, `autoincrement()`, `dbgenerated()` for `@Default` annotation
+- **Reserved Keywords** - Enum values like `class` are renamed to `classValue` to avoid Dart conflicts
+- **Relation Fields** - Excluded from `Create`/`Update` input types (handled separately)
+- **Enum Imports** - Filter types now properly import all enum definitions
+- **toSnakeCase Bug** - Use `replaceFirst` instead of `substring(1)` to safely handle edge cases
+- **Const Constructor** - Added `const` to `ConnectionSettings` in Supabase adapter
+
+### Changed
+- **DRY Refactor** - Extracted `toSnakeCase`, `toCamelCase`, `toLowerCamelCase` to shared `string_utils.dart`
+- **Performance** - Use `const Set` instead of `List` for `runtimeFunctions` lookup (O(1) vs O(n))
+
 ## [0.1.4] - 2025-12-16
 
 ### Fixed
