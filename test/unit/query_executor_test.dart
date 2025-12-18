@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:prisma_flutter_connector/src/runtime/errors/prisma_exceptions.dart';
 import 'package:prisma_flutter_connector/src/runtime/query/query_executor.dart';
 import 'package:prisma_flutter_connector/src/runtime/query/json_protocol.dart';
 import 'package:prisma_flutter_connector/src/runtime/adapters/types.dart';
@@ -757,7 +758,7 @@ void main() {
     });
 
     group('Error Handling', () {
-      test('propagates adapter errors', () async {
+      test('maps adapter errors to typed exceptions', () async {
         final query = JsonQueryBuilder()
             .model('User')
             .action(QueryAction.findMany)
@@ -767,9 +768,10 @@ void main() {
           const AdapterError('Connection failed', code: 'CONNECTION_ERROR'),
         );
 
+        // AdapterError is now mapped to InternalException by the error mapper
         expect(
           () => executor.executeQuery(query),
-          throwsA(isA<AdapterError>()),
+          throwsA(isA<InternalException>()),
         );
       });
 

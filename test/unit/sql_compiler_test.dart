@@ -262,7 +262,7 @@ void main() {
           expect(
               result.sql,
               'UPDATE "User" SET "name" = \$1, "email" = \$2 '
-              'WHERE "id" = \$3');
+              'WHERE "id" = \$3 RETURNING *');
           expect(result.args, ['Jane', 'jane@test.com', '123']);
         });
 
@@ -279,7 +279,7 @@ void main() {
 
           final result = compiler.compile(query);
 
-          expect(result.sql, 'UPDATE "User" SET "status" = \$1');
+          expect(result.sql, 'UPDATE "User" SET "status" = \$1 RETURNING *');
           expect(result.args, ['inactive']);
         });
 
