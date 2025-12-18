@@ -124,6 +124,8 @@ class JsonQueryBuilder {
   Map<String, dynamic>? _select;
   Map<String, dynamic>? _include;
   Map<String, dynamic>? _orderBy;
+  Map<String, dynamic>? _aggregate;
+  List<String>? _groupBy;
   int? _take;
   int? _skip;
   final bool _selectScalars = true;
@@ -173,6 +175,34 @@ class JsonQueryBuilder {
     return this;
   }
 
+  /// Set aggregation functions for aggregate queries.
+  ///
+  /// Example:
+  /// ```dart
+  /// .aggregation({
+  ///   '_count': true,
+  ///   '_avg': {'price': true, 'rating': true},
+  ///   '_sum': {'quantity': true},
+  ///   '_min': {'price': true},
+  ///   '_max': {'price': true},
+  /// })
+  /// ```
+  JsonQueryBuilder aggregation(Map<String, dynamic> agg) {
+    _aggregate = agg;
+    return this;
+  }
+
+  /// Set fields to group by for groupBy queries.
+  ///
+  /// Example:
+  /// ```dart
+  /// .groupBy(['status', 'category'])
+  /// ```
+  JsonQueryBuilder groupByFields(List<String> fields) {
+    _groupBy = fields;
+    return this;
+  }
+
   JsonQuery build() {
     if (_modelName == null) {
       throw StateError('Model name is required');
@@ -188,6 +218,8 @@ class JsonQueryBuilder {
     if (_orderBy != null) arguments['orderBy'] = _orderBy;
     if (_take != null) arguments['take'] = _take;
     if (_skip != null) arguments['skip'] = _skip;
+    if (_aggregate != null) arguments['_aggregate'] = _aggregate;
+    if (_groupBy != null) arguments['by'] = _groupBy;
 
     // Build selection
     JsonSelection? selection;
