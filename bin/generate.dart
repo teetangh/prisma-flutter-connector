@@ -19,6 +19,7 @@ import 'package:prisma_flutter_connector/src/generator/model_generator.dart';
 import 'package:prisma_flutter_connector/src/generator/delegate_generator.dart';
 import 'package:prisma_flutter_connector/src/generator/client_generator.dart';
 import 'package:prisma_flutter_connector/src/generator/filter_types_generator.dart';
+import 'package:prisma_flutter_connector/src/generator/string_utils.dart';
 
 void main(List<String> arguments) async {
   final parser = ArgParser()
@@ -164,7 +165,7 @@ String _generateBarrelExport(PrismaSchema schema) {
   // Export all models
   buffer.writeln('// Models');
   for (final model in schema.models) {
-    final snakeName = _toSnakeCase(model.name);
+    final snakeName = toSnakeCase(model.name);
     buffer.writeln("export 'models/$snakeName.dart';");
   }
   buffer.writeln();
@@ -172,7 +173,7 @@ String _generateBarrelExport(PrismaSchema schema) {
   // Export all enums
   buffer.writeln('// Enums');
   for (final enumDef in schema.enums) {
-    final snakeName = _toSnakeCase(enumDef.name);
+    final snakeName = toSnakeCase(enumDef.name);
     buffer.writeln("export 'models/$snakeName.dart';");
   }
   buffer.writeln();
@@ -180,19 +181,9 @@ String _generateBarrelExport(PrismaSchema schema) {
   // Export all delegates
   buffer.writeln('// Delegates');
   for (final model in schema.models) {
-    final snakeName = _toSnakeCase(model.name);
+    final snakeName = toSnakeCase(model.name);
     buffer.writeln("export 'delegates/${snakeName}_delegate.dart';");
   }
 
   return buffer.toString();
-}
-
-/// Convert PascalCase to snake_case
-String _toSnakeCase(String input) {
-  return input
-      .replaceAllMapped(
-        RegExp(r'[A-Z]'),
-        (match) => '_${match.group(0)!.toLowerCase()}',
-      )
-      .replaceFirst(RegExp(r'^_'), '');
 }

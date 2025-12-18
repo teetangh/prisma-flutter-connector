@@ -2,6 +2,7 @@
 library;
 
 import 'package:prisma_flutter_connector/src/generator/prisma_parser.dart';
+import 'package:prisma_flutter_connector/src/generator/string_utils.dart';
 
 /// Generates API interface classes from Prisma models
 class APIGenerator {
@@ -13,14 +14,14 @@ class APIGenerator {
   String generateAPI(PrismaModel model) {
     final buffer = StringBuffer();
     final modelName = model.name;
-    final modelNameLower = _toLowerCamelCase(modelName);
+    final modelNameLower = toLowerCamelCase(modelName);
 
     // Imports
     buffer.writeln("import 'package:graphql_flutter/graphql_flutter.dart'");
     buffer.writeln("    hide NetworkException; // Avoid conflict");
     buffer.writeln(
         "import 'package:prisma_flutter_connector/prisma_flutter_connector.dart';");
-    buffer.writeln("import '../models/${_toSnakeCase(modelName)}.dart';");
+    buffer.writeln("import '../models/${toSnakeCase(modelName)}.dart';");
     buffer.writeln();
 
     // API class
@@ -157,24 +158,10 @@ class APIGenerator {
     final files = <String, String>{};
 
     for (final model in schema.models) {
-      final fileName = '${_toSnakeCase(model.name)}_api.dart';
+      final fileName = '${toSnakeCase(model.name)}_api.dart';
       files[fileName] = generateAPI(model);
     }
 
     return files;
-  }
-
-  String _toSnakeCase(String input) {
-    return input
-        .replaceAllMapped(
-          RegExp(r'[A-Z]'),
-          (match) => '_${match.group(0)!.toLowerCase()}',
-        )
-        .replaceFirst(RegExp(r'^_'), ''); // Remove leading underscore safely
-  }
-
-  String _toLowerCamelCase(String input) {
-    if (input.isEmpty) return input;
-    return input[0].toLowerCase() + input.substring(1);
   }
 }

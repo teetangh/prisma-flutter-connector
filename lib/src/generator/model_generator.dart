@@ -2,6 +2,7 @@
 library;
 
 import 'package:prisma_flutter_connector/src/generator/prisma_parser.dart';
+import 'package:prisma_flutter_connector/src/generator/string_utils.dart';
 
 /// Generates Freezed model files from Prisma models
 class ModelGenerator {
@@ -37,15 +38,15 @@ class ModelGenerator {
 
     // Write imports
     for (final importType in imports) {
-      buffer.writeln("import '${_toSnakeCase(importType)}.dart';");
+      buffer.writeln("import '${toSnakeCase(importType)}.dart';");
     }
     if (imports.isNotEmpty) {
       buffer.writeln();
     }
 
     // Part files
-    buffer.writeln("part '${_toSnakeCase(model.name)}.freezed.dart';");
-    buffer.writeln("part '${_toSnakeCase(model.name)}.g.dart';");
+    buffer.writeln("part '${toSnakeCase(model.name)}.freezed.dart';");
+    buffer.writeln("part '${toSnakeCase(model.name)}.g.dart';");
     buffer.writeln();
 
     // Main model class
@@ -80,7 +81,7 @@ class ModelGenerator {
 
       // Handle enum defaults
       if (field.defaultValue != null && _isEnumType(field.type)) {
-        final enumValue = _toCamelCase(field.defaultValue!);
+        final enumValue = toCamelCase(field.defaultValue!);
         buffer.writeln('    @Default(${field.type}.$enumValue)');
         if (field.isRequired && !field.isList) {
           buffer.writeln('    required ${field.dartType} ${field.name},');
@@ -252,7 +253,7 @@ class ModelGenerator {
 
       // Handle enum defaults
       if (field.defaultValue != null && _isEnumType(field.type)) {
-        final enumValue = _toCamelCase(field.defaultValue!);
+        final enumValue = toCamelCase(field.defaultValue!);
         buffer.writeln('    @Default($dartType.$enumValue)');
         if (field.isRequired) {
           buffer.writeln('    required $dartType ${field.name},');
@@ -503,7 +504,7 @@ class ModelGenerator {
     for (final value in enumDef.values) {
       buffer.writeln("  @JsonValue('$value')");
       // Handle reserved keywords in enum values
-      var dartValue = _toCamelCase(value);
+      var dartValue = toCamelCase(value);
       if (_isDartReservedKeyword(dartValue)) {
         dartValue = '${dartValue}Value';
       }
@@ -527,41 +528,16 @@ class ModelGenerator {
 
     // Generate models
     for (final model in schema.models) {
-      final fileName = '${_toSnakeCase(model.name)}.dart';
+      final fileName = '${toSnakeCase(model.name)}.dart';
       files[fileName] = generateModel(model);
     }
 
     // Generate enums
     for (final enumDef in schema.enums) {
-      final fileName = '${_toSnakeCase(enumDef.name)}.dart';
+      final fileName = '${toSnakeCase(enumDef.name)}.dart';
       files[fileName] = generateEnum(enumDef);
     }
 
     return files;
-  }
-
-  /// Convert PascalCase to snake_case
-  String _toSnakeCase(String input) {
-    return input
-        .replaceAllMapped(
-          RegExp(r'[A-Z]'),
-          (match) => '_${match.group(0)!.toLowerCase()}',
-        )
-        .replaceFirst(RegExp(r'^_'), ''); // Remove leading underscore safely
-  }
-
-  /// Convert SCREAMING_CASE to camelCase
-  String _toCamelCase(String input) {
-    final parts = input.toLowerCase().split('_');
-    if (parts.isEmpty) return input;
-
-    final result = StringBuffer(parts[0]);
-    for (var i = 1; i < parts.length; i++) {
-      if (parts[i].isNotEmpty) {
-        result.write(parts[i][0].toUpperCase() + parts[i].substring(1));
-      }
-    }
-
-    return result.toString();
   }
 }

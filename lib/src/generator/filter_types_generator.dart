@@ -5,6 +5,7 @@
 library;
 
 import 'package:prisma_flutter_connector/src/generator/prisma_parser.dart';
+import 'package:prisma_flutter_connector/src/generator/string_utils.dart';
 
 /// Generates field-level filter type classes
 class FilterTypesGenerator {
@@ -30,7 +31,7 @@ class FilterTypesGenerator {
 
     // Import all enums that are used in filter types
     for (final enumDef in schema.enums) {
-      buffer.writeln("import 'models/${_toSnakeCase(enumDef.name)}.dart';");
+      buffer.writeln("import 'models/${toSnakeCase(enumDef.name)}.dart';");
     }
     if (schema.enums.isNotEmpty) {
       buffer.writeln();
@@ -308,15 +309,5 @@ class FilterTypesGenerator {
     buffer.writeln();
 
     return buffer.toString();
-  }
-
-  /// Convert PascalCase to snake_case
-  String _toSnakeCase(String input) {
-    return input
-        .replaceAllMapped(
-          RegExp(r'[A-Z]'),
-          (match) => '_${match.group(0)!.toLowerCase()}',
-        )
-        .replaceFirst(RegExp(r'^_'), ''); // Remove leading underscore safely
   }
 }

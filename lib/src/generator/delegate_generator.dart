@@ -5,6 +5,7 @@
 library;
 
 import 'package:prisma_flutter_connector/src/generator/prisma_parser.dart';
+import 'package:prisma_flutter_connector/src/generator/string_utils.dart';
 
 /// Generates delegate classes for adapter-based database access
 class DelegateGenerator {
@@ -20,7 +21,7 @@ class DelegateGenerator {
 
     // Imports
     buffer.writeln("import 'package:prisma_flutter_connector/runtime.dart';");
-    buffer.writeln("import '../models/${_toSnakeCase(modelName)}.dart';");
+    buffer.writeln("import '../models/${toSnakeCase(modelName)}.dart';");
     buffer.writeln("import '../filters.dart';");
     buffer.writeln();
 
@@ -328,19 +329,10 @@ class DelegateGenerator {
     final files = <String, String>{};
 
     for (final model in schema.models) {
-      final fileName = '${_toSnakeCase(model.name)}_delegate.dart';
+      final fileName = '${toSnakeCase(model.name)}_delegate.dart';
       files[fileName] = generateDelegate(model);
     }
 
     return files;
-  }
-
-  String _toSnakeCase(String input) {
-    return input
-        .replaceAllMapped(
-          RegExp(r'[A-Z]'),
-          (match) => '_${match.group(0)!.toLowerCase()}',
-        )
-        .replaceFirst(RegExp(r'^_'), '');
   }
 }

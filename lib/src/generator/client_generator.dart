@@ -5,6 +5,7 @@
 library;
 
 import 'package:prisma_flutter_connector/src/generator/prisma_parser.dart';
+import 'package:prisma_flutter_connector/src/generator/string_utils.dart';
 
 /// Generates the main PrismaClient class
 class ClientGenerator {
@@ -40,14 +41,14 @@ class ClientGenerator {
 
     // Import delegates
     for (final model in schema.models) {
-      final snakeName = _toSnakeCase(model.name);
+      final snakeName = toSnakeCase(model.name);
       buffer.writeln("import 'delegates/${snakeName}_delegate.dart';");
     }
     buffer.writeln();
 
     // Import models
     for (final model in schema.models) {
-      final snakeName = _toSnakeCase(model.name);
+      final snakeName = toSnakeCase(model.name);
       buffer.writeln("import 'models/$snakeName.dart';");
     }
     buffer.writeln();
@@ -69,7 +70,7 @@ class ClientGenerator {
 
     // Declare delegate properties
     for (final model in schema.models) {
-      final camelName = _toLowerCamelCase(model.name);
+      final camelName = toLowerCamelCase(model.name);
       buffer.writeln('  /// Delegate for ${model.name} operations');
       buffer.writeln('  late final ${model.name}Delegate $camelName;');
     }
@@ -89,7 +90,7 @@ class ClientGenerator {
 
     // Initialize delegates
     for (final model in schema.models) {
-      final camelName = _toLowerCamelCase(model.name);
+      final camelName = toLowerCamelCase(model.name);
       buffer.writeln('    $camelName = ${model.name}Delegate(_executor);');
     }
 
@@ -129,7 +130,7 @@ class ClientGenerator {
     buffer.writeln('        _executor = executor {');
 
     for (final model in schema.models) {
-      final camelName = _toLowerCamelCase(model.name);
+      final camelName = toLowerCamelCase(model.name);
       buffer.writeln('    $camelName = ${model.name}Delegate(_executor);');
     }
 
@@ -211,19 +212,5 @@ class ClientGenerator {
     buffer.writeln('}');
 
     return buffer.toString();
-  }
-
-  String _toSnakeCase(String input) {
-    return input
-        .replaceAllMapped(
-          RegExp(r'[A-Z]'),
-          (match) => '_${match.group(0)!.toLowerCase()}',
-        )
-        .replaceFirst(RegExp(r'^_'), '');
-  }
-
-  String _toLowerCamelCase(String input) {
-    if (input.isEmpty) return input;
-    return input[0].toLowerCase() + input.substring(1);
   }
 }
