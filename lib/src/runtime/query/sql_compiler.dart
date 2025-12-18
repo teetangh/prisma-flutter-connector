@@ -9,16 +9,30 @@ library;
 
 import 'package:prisma_flutter_connector/src/runtime/adapters/types.dart';
 import 'package:prisma_flutter_connector/src/runtime/query/json_protocol.dart';
+import 'package:prisma_flutter_connector/src/runtime/query/relation_compiler.dart';
+import 'package:prisma_flutter_connector/src/runtime/schema/schema_registry.dart';
 
 /// Compiles JSON queries to SQL.
 class SqlCompiler {
   final String provider;
   final String? schemaName;
+  final SchemaRegistry? schema;
+
+  /// Lazily created relation compiler.
+  RelationCompiler? _relationCompiler;
 
   SqlCompiler({
     required this.provider,
     this.schemaName,
+    this.schema,
   });
+
+  /// Get or create relation compiler.
+  RelationCompiler get relationCompiler =>
+      _relationCompiler ??= RelationCompiler(
+        schema: schema ?? schemaRegistry,
+        provider: provider,
+      );
 
   /// Compile a JSON query to SQL.
   SqlQuery compile(JsonQuery query) {
@@ -74,9 +88,39 @@ class SqlCompiler {
     // Prisma schemas can have PascalCase or snake_case table names
     final tableName = query.modelName;
 
-    // Build SELECT clause
-    final selectFields = _buildSelectFields(query.args.selection);
-    final selectClause = selectFields.isEmpty ? '*' : selectFields.join(', ');
+    // Check for include directive (relations)
+    final include = _extractInclude(query.args.selection);
+    final hasRelations = include != null && include.isNotEmpty;
+
+    // Build SELECT clause and JOIN clauses if relations are included
+    String selectClause;
+    String joinClauses = '';
+    CompiledRelations? compiledRelations;
+
+    if (hasRelations && (schema != null || schemaRegistry.hasModel(query.modelName))) {
+      // Use relation compiler for JOINs
+      const baseAlias = 't0';
+      compiledRelations = relationCompiler.compile(
+        baseModel: query.modelName,
+        baseAlias: baseAlias,
+        include: include,
+      );
+
+      if (compiledRelations.isNotEmpty) {
+        selectClause = relationCompiler.generateSelectColumns(
+          compiledRelations.columnAliases,
+        );
+        joinClauses = compiledRelations.joinClauses;
+      } else {
+        // Fall back to simple select
+        final selectFields = _buildSelectFields(query.args.selection);
+        selectClause = selectFields.isEmpty ? '*' : selectFields.join(', ');
+      }
+    } else {
+      // Simple select without relations
+      final selectFields = _buildSelectFields(query.args.selection);
+      selectClause = selectFields.isEmpty ? '*' : selectFields.join(', ');
+    }
 
     // Build WHERE clause
     final where = args['where'] as Map<String, dynamic>?;
@@ -90,9 +134,14 @@ class SqlCompiler {
     final take = args['take'] as int?;
     final skip = args['skip'] as int?;
 
-    // Construct SQL
-    final sql = StringBuffer(
-        'SELECT $selectClause FROM ${_quoteIdentifier(tableName)}');
+    // Construct SQL with optional table alias
+    final sql = StringBuffer();
+    if (hasRelations && compiledRelations != null && compiledRelations.isNotEmpty) {
+      sql.write('SELECT $selectClause FROM ${_quoteIdentifier(tableName)} "t0"');
+      sql.write(' $joinClauses');
+    } else {
+      sql.write('SELECT $selectClause FROM ${_quoteIdentifier(tableName)}');
+    }
 
     if (whereClause.isNotEmpty) {
       sql.write(' WHERE $whereClause');
@@ -116,7 +165,33 @@ class SqlCompiler {
       sql: sql.toString(),
       args: whereArgs,
       argTypes: whereTypes,
+      relationMetadata: compiledRelations,
     );
+  }
+
+  /// Extract include from selection.
+  Map<String, dynamic>? _extractInclude(JsonSelection? selection) {
+    if (selection == null || selection.fields == null) return null;
+
+    final include = <String, dynamic>{};
+
+    for (final entry in selection.fields!.entries) {
+      final fieldSelection = entry.value;
+      // A field is an include if it has nested selection (means it's a relation)
+      if (fieldSelection.selection != null) {
+        include[entry.key] = {
+          if (fieldSelection.arguments != null)
+            ...fieldSelection.arguments!,
+          if (fieldSelection.selection!.fields != null)
+            'include': _extractInclude(fieldSelection.selection),
+        };
+        if (include[entry.key] is Map && (include[entry.key] as Map).isEmpty) {
+          include[entry.key] = true;
+        }
+      }
+    }
+
+    return include.isEmpty ? null : include;
   }
 
   /// Compile a CREATE query.

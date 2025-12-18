@@ -18,11 +18,19 @@ class SqlQuery {
   /// Type information for each argument (for proper type conversion)
   final List<ArgType> argTypes;
 
+  /// Relation metadata for deserializing JOIN results into nested objects.
+  /// Only present when the query includes relations via `include`.
+  final Object? relationMetadata;
+
   const SqlQuery({
     required this.sql,
     required this.args,
     required this.argTypes,
+    this.relationMetadata,
   });
+
+  /// Whether this query has relation metadata that needs deserialization.
+  bool get hasRelations => relationMetadata != null;
 
   @override
   String toString() => 'SqlQuery(sql: $sql, args: $args)';

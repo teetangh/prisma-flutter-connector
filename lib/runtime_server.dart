@@ -92,6 +92,10 @@ export 'src/runtime/adapters/supabase_adapter.dart';
 export 'src/runtime/query/json_protocol.dart';
 export 'src/runtime/query/sql_compiler.dart';
 export 'src/runtime/query/query_executor.dart';
+export 'src/runtime/query/relation_compiler.dart';
+
+// Schema registry for relations
+export 'src/runtime/schema/schema_registry.dart';
 
 // Error handling (typed Prisma exceptions)
 export 'src/runtime/errors/prisma_exceptions.dart';

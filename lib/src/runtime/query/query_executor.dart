@@ -4,7 +4,7 @@
 /// 1. Takes JSON protocol queries
 /// 2. Compiles them to SQL using SqlCompiler
 /// 3. Executes SQL via database adapters
-/// 4. Deserializes results back to Dart objects
+/// 4. Deserializes results back to Dart objects (including nested relations)
 library;
 
 import 'dart:async';
@@ -12,7 +12,9 @@ import 'package:prisma_flutter_connector/src/runtime/adapters/types.dart';
 import 'package:prisma_flutter_connector/src/runtime/errors/prisma_exceptions.dart';
 import 'package:prisma_flutter_connector/src/runtime/logging/query_logger.dart';
 import 'package:prisma_flutter_connector/src/runtime/query/json_protocol.dart';
+import 'package:prisma_flutter_connector/src/runtime/query/relation_compiler.dart';
 import 'package:prisma_flutter_connector/src/runtime/query/sql_compiler.dart';
+import 'package:prisma_flutter_connector/src/runtime/schema/schema_registry.dart';
 
 /// Abstract base class for query execution.
 ///
@@ -253,11 +255,44 @@ class QueryExecutor implements BaseExecutor {
   }
 
   /// Execute a query and deserialize results to maps.
+  ///
+  /// If the query includes relations via `include`, results are automatically
+  /// deserialized into nested structures using the [RelationDeserializer].
   @override
   Future<List<Map<String, dynamic>>> executeQueryAsMaps(JsonQuery query) async {
-    final result = await executeQuery(query);
+    // Compile to get relation metadata
+    final sqlQuery = compiler.compile(query);
 
-    return _resultSetToMaps(result);
+    // Execute the query
+    final result = await _executeWithLogging(
+      sql: sqlQuery.sql,
+      parameters: sqlQuery.args,
+      model: query.modelName,
+      operation: query.action,
+      execute: () => adapter.queryRaw(sqlQuery),
+    );
+
+    // Convert to maps (flat results)
+    final flatMaps = _resultSetToMaps(result);
+
+    // Check if we need to deserialize relations
+    if (sqlQuery.hasRelations && sqlQuery.relationMetadata is CompiledRelations) {
+      final compiledRelations = sqlQuery.relationMetadata as CompiledRelations;
+
+      // Use relation deserializer to nest flat JOIN results
+      final deserializer = RelationDeserializer(
+        schema: compiler.schema ?? schemaRegistry,
+      );
+
+      return deserializer.deserialize(
+        rows: flatMaps,
+        baseModel: query.modelName,
+        columnAliases: compiledRelations.columnAliases,
+        includedRelations: compiledRelations.includedRelations,
+      );
+    }
+
+    return flatMaps;
   }
 
   /// Execute a query expecting a single result.
