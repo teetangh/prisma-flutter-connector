@@ -9,6 +9,8 @@ library;
 
 import 'dart:async';
 import 'package:prisma_flutter_connector/src/runtime/adapters/types.dart';
+import 'package:prisma_flutter_connector/src/runtime/errors/prisma_exceptions.dart';
+import 'package:prisma_flutter_connector/src/runtime/logging/query_logger.dart';
 import 'package:prisma_flutter_connector/src/runtime/query/json_protocol.dart';
 import 'package:prisma_flutter_connector/src/runtime/query/sql_compiler.dart';
 
@@ -40,9 +42,13 @@ class QueryExecutor implements BaseExecutor {
   final SqlDriverAdapter adapter;
   final SqlCompiler compiler;
 
+  /// Optional query logger for debugging and monitoring.
+  final QueryLogger? logger;
+
   QueryExecutor({
     required this.adapter,
     SqlCompiler? compiler,
+    this.logger,
   }) : compiler = compiler ??
             SqlCompiler(
               provider: adapter.provider,
@@ -54,10 +60,180 @@ class QueryExecutor implements BaseExecutor {
     // Compile JSON query to SQL
     final sqlQuery = compiler.compile(query);
 
-    // Execute via adapter
-    final result = await adapter.queryRaw(sqlQuery);
+    return _executeWithLogging(
+      sql: sqlQuery.sql,
+      parameters: sqlQuery.args,
+      model: query.modelName,
+      operation: query.action,
+      execute: () => adapter.queryRaw(sqlQuery),
+    );
+  }
 
-    return result;
+  /// Execute raw SQL and return results.
+  ///
+  /// This is an escape hatch for complex queries not supported by the
+  /// query builder. Use parameterized queries to prevent SQL injection.
+  ///
+  /// Example:
+  /// ```dart
+  /// final results = await executor.executeRaw(
+  ///   'SELECT * FROM users WHERE created_at > NOW() - INTERVAL \$1 DAY',
+  ///   [7],
+  /// );
+  /// ```
+  Future<List<Map<String, dynamic>>> executeRaw(
+    String sql,
+    List<dynamic> parameters,
+  ) async {
+    final argTypes = parameters.map((p) => _inferArgType(p)).toList();
+    final sqlQuery = SqlQuery(sql: sql, args: parameters, argTypes: argTypes);
+
+    final result = await _executeWithLogging(
+      sql: sql,
+      parameters: parameters,
+      operation: 'raw',
+      execute: () => adapter.queryRaw(sqlQuery),
+    );
+
+    return _resultSetToMaps(result);
+  }
+
+  /// Execute raw SQL mutation (INSERT/UPDATE/DELETE) and return affected rows.
+  ///
+  /// Example:
+  /// ```dart
+  /// final affected = await executor.executeMutationRaw(
+  ///   'DELETE FROM sessions WHERE expires_at < NOW()',
+  ///   [],
+  /// );
+  /// ```
+  Future<int> executeMutationRaw(
+    String sql,
+    List<dynamic> parameters,
+  ) async {
+    final argTypes = parameters.map((p) => _inferArgType(p)).toList();
+    final sqlQuery = SqlQuery(sql: sql, args: parameters, argTypes: argTypes);
+
+    final startTime = DateTime.now();
+    logger?.onQueryStart(QueryStartEvent(
+      sql: sql,
+      parameters: parameters,
+      operation: 'rawMutation',
+      startTime: startTime,
+    ));
+
+    try {
+      final result = await adapter.executeRaw(sqlQuery);
+      final duration = DateTime.now().difference(startTime);
+
+      logger?.onQueryEnd(QueryEndEvent(
+        sql: sql,
+        parameters: parameters,
+        operation: 'rawMutation',
+        duration: duration,
+        rowCount: result,
+      ));
+
+      return result;
+    } catch (e, stackTrace) {
+      final duration = DateTime.now().difference(startTime);
+      logger?.onQueryError(QueryErrorEvent(
+        sql: sql,
+        parameters: parameters,
+        operation: 'rawMutation',
+        duration: duration,
+        error: e,
+        stackTrace: stackTrace,
+      ));
+      throw _mapError(e);
+    }
+  }
+
+  /// Helper to execute SQL with logging and error mapping.
+  Future<SqlResultSet> _executeWithLogging({
+    required String sql,
+    required List<dynamic> parameters,
+    String? model,
+    String? operation,
+    required Future<SqlResultSet> Function() execute,
+  }) async {
+    final startTime = DateTime.now();
+
+    logger?.onQueryStart(QueryStartEvent(
+      sql: sql,
+      parameters: parameters,
+      model: model,
+      operation: operation,
+      startTime: startTime,
+    ));
+
+    try {
+      final result = await execute();
+      final duration = DateTime.now().difference(startTime);
+
+      logger?.onQueryEnd(QueryEndEvent(
+        sql: sql,
+        parameters: parameters,
+        model: model,
+        operation: operation,
+        duration: duration,
+        rowCount: result.rows.length,
+      ));
+
+      return result;
+    } catch (e, stackTrace) {
+      final duration = DateTime.now().difference(startTime);
+      logger?.onQueryError(QueryErrorEvent(
+        sql: sql,
+        parameters: parameters,
+        model: model,
+        operation: operation,
+        duration: duration,
+        error: e,
+        stackTrace: stackTrace,
+      ));
+      throw _mapError(e);
+    }
+  }
+
+  /// Map adapter errors to typed Prisma exceptions.
+  PrismaException _mapError(Object error) {
+    if (error is PrismaException) return error;
+
+    if (error is AdapterError) {
+      // Try to map based on error code
+      if (adapter.provider == 'postgresql' || adapter.provider == 'supabase') {
+        return PrismaErrorMapper.fromPostgresError(
+          error.message,
+          sqlState: error.code,
+          originalError: error.originalError,
+        );
+      }
+      // Fallback to internal exception
+      return InternalException(
+        error.message,
+        originalError: error,
+        context: {'code': error.code},
+      );
+    }
+
+    return InternalException(
+      error.toString(),
+      originalError: error,
+    );
+  }
+
+  /// Infer ArgType from a Dart value.
+  ArgType _inferArgType(dynamic value) {
+    if (value == null) return ArgType.unknown;
+    if (value is int) return ArgType.int64;
+    if (value is double) return ArgType.double;
+    if (value is bool) return ArgType.boolean;
+    if (value is String) return ArgType.string;
+    if (value is DateTime) return ArgType.dateTime;
+    if (value is List<int>) return ArgType.bytes;
+    if (value is Map) return ArgType.json;
+    return ArgType.unknown;
   }
 
   /// Execute a mutation (CREATE, UPDATE, DELETE) and return affected rows.

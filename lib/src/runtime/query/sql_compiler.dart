@@ -53,6 +53,15 @@ class SqlCompiler {
       case 'count':
         return _compileCountQuery(query);
 
+      case 'aggregate':
+        return _compileAggregateQuery(query);
+
+      case 'groupBy':
+        return _compileGroupByQuery(query);
+
+      case 'upsert':
+        return _compileUpsertQuery(query);
+
       default:
         throw UnsupportedError('Action ${query.action} not yet implemented');
     }
@@ -287,6 +296,273 @@ class SqlCompiler {
       sql: sql,
       args: whereArgs,
       argTypes: whereTypes,
+    );
+  }
+
+  /// Compile an AGGREGATE query.
+  ///
+  /// Supports: _count, _avg, _sum, _min, _max
+  /// Example:
+  /// ```dart
+  /// JsonQueryBuilder()
+  ///   .model('Product')
+  ///   .action(QueryAction.aggregate)
+  ///   .aggregation({
+  ///     '_count': true,
+  ///     '_avg': {'price': true},
+  ///     '_sum': {'quantity': true},
+  ///     '_min': {'price': true},
+  ///     '_max': {'price': true},
+  ///   })
+  ///   .build();
+  /// ```
+  SqlQuery _compileAggregateQuery(JsonQuery query) {
+    final args = query.args.arguments ?? {};
+    final where = args['where'] as Map<String, dynamic>?;
+    final agg = args['_aggregate'] as Map<String, dynamic>? ?? {};
+
+    final tableName = query.modelName;
+    final functions = <String>[];
+
+    // _count
+    if (agg['_count'] == true) {
+      functions.add('COUNT(*) AS "_count"');
+    } else if (agg['_count'] is Map) {
+      // Count specific fields
+      final countFields = agg['_count'] as Map<String, dynamic>;
+      for (final field in countFields.keys) {
+        if (countFields[field] == true) {
+          functions.add(
+            'COUNT(${_quoteIdentifier(field)}) AS "_count_$field"',
+          );
+        }
+      }
+    }
+
+    // _avg
+    if (agg['_avg'] is Map) {
+      final avgFields = agg['_avg'] as Map<String, dynamic>;
+      for (final field in avgFields.keys) {
+        if (avgFields[field] == true) {
+          functions.add('AVG(${_quoteIdentifier(field)}) AS "_avg_$field"');
+        }
+      }
+    }
+
+    // _sum
+    if (agg['_sum'] is Map) {
+      final sumFields = agg['_sum'] as Map<String, dynamic>;
+      for (final field in sumFields.keys) {
+        if (sumFields[field] == true) {
+          functions.add('SUM(${_quoteIdentifier(field)}) AS "_sum_$field"');
+        }
+      }
+    }
+
+    // _min
+    if (agg['_min'] is Map) {
+      final minFields = agg['_min'] as Map<String, dynamic>;
+      for (final field in minFields.keys) {
+        if (minFields[field] == true) {
+          functions.add('MIN(${_quoteIdentifier(field)}) AS "_min_$field"');
+        }
+      }
+    }
+
+    // _max
+    if (agg['_max'] is Map) {
+      final maxFields = agg['_max'] as Map<String, dynamic>;
+      for (final field in maxFields.keys) {
+        if (maxFields[field] == true) {
+          functions.add('MAX(${_quoteIdentifier(field)}) AS "_max_$field"');
+        }
+      }
+    }
+
+    // Default to COUNT(*) if no aggregations specified
+    if (functions.isEmpty) {
+      functions.add('COUNT(*) AS "_count"');
+    }
+
+    final (whereClause, whereArgs, whereTypes) = _buildWhereClause(where);
+
+    final sql = 'SELECT ${functions.join(', ')} FROM ${_quoteIdentifier(tableName)}'
+        '${whereClause.isNotEmpty ? ' WHERE $whereClause' : ''}';
+
+    return SqlQuery(
+      sql: sql,
+      args: whereArgs,
+      argTypes: whereTypes,
+    );
+  }
+
+  /// Compile a GROUP BY query.
+  ///
+  /// Example:
+  /// ```dart
+  /// JsonQueryBuilder()
+  ///   .model('Order')
+  ///   .action(QueryAction.groupBy)
+  ///   .groupBy(['status', 'category'])
+  ///   .aggregation({
+  ///     '_count': true,
+  ///     '_sum': {'amount': true},
+  ///   })
+  ///   .build();
+  /// ```
+  SqlQuery _compileGroupByQuery(JsonQuery query) {
+    final args = query.args.arguments ?? {};
+    final where = args['where'] as Map<String, dynamic>?;
+    final groupByFields = args['by'] as List<dynamic>? ?? [];
+    final agg = args['_aggregate'] as Map<String, dynamic>? ?? {};
+    // TODO: Add HAVING support in future
+    // final having = args['having'] as Map<String, dynamic>?;
+    final orderBy = args['orderBy'] as Map<String, dynamic>?;
+
+    final tableName = query.modelName;
+
+    // Build SELECT clause with group by fields and aggregations
+    final selectParts = <String>[];
+
+    // Add group by fields to SELECT
+    for (final field in groupByFields) {
+      selectParts.add(_quoteIdentifier(field.toString()));
+    }
+
+    // Add aggregation functions
+    if (agg['_count'] == true) {
+      selectParts.add('COUNT(*) AS "_count"');
+    }
+    if (agg['_avg'] is Map) {
+      for (final field in (agg['_avg'] as Map).keys) {
+        selectParts.add('AVG(${_quoteIdentifier(field.toString())}) AS "_avg_$field"');
+      }
+    }
+    if (agg['_sum'] is Map) {
+      for (final field in (agg['_sum'] as Map).keys) {
+        selectParts.add('SUM(${_quoteIdentifier(field.toString())}) AS "_sum_$field"');
+      }
+    }
+    if (agg['_min'] is Map) {
+      for (final field in (agg['_min'] as Map).keys) {
+        selectParts.add('MIN(${_quoteIdentifier(field.toString())}) AS "_min_$field"');
+      }
+    }
+    if (agg['_max'] is Map) {
+      for (final field in (agg['_max'] as Map).keys) {
+        selectParts.add('MAX(${_quoteIdentifier(field.toString())}) AS "_max_$field"');
+      }
+    }
+
+    final (whereClause, whereArgs, whereTypes) = _buildWhereClause(where);
+
+    final sql = StringBuffer('SELECT ${selectParts.join(', ')} FROM ${_quoteIdentifier(tableName)}');
+
+    if (whereClause.isNotEmpty) {
+      sql.write(' WHERE $whereClause');
+    }
+
+    if (groupByFields.isNotEmpty) {
+      sql.write(' GROUP BY ${groupByFields.map((f) => _quoteIdentifier(f.toString())).join(', ')}');
+    }
+
+    if (orderBy != null) {
+      sql.write(' ORDER BY ${_buildOrderByClause(orderBy)}');
+    }
+
+    return SqlQuery(
+      sql: sql.toString(),
+      args: whereArgs,
+      argTypes: whereTypes,
+    );
+  }
+
+  /// Compile an UPSERT query.
+  ///
+  /// Generates INSERT ... ON CONFLICT DO UPDATE for PostgreSQL/Supabase.
+  /// Example:
+  /// ```dart
+  /// JsonQueryBuilder()
+  ///   .model('User')
+  ///   .action(QueryAction.upsert)
+  ///   .where({'email': 'user@example.com'})
+  ///   .data({
+  ///     'create': {'email': 'user@example.com', 'name': 'New User'},
+  ///     'update': {'name': 'Updated User'},
+  ///   })
+  ///   .build();
+  /// ```
+  SqlQuery _compileUpsertQuery(JsonQuery query) {
+    final args = query.args.arguments ?? {};
+    final where = args['where'] as Map<String, dynamic>? ?? {};
+    final data = args['data'] as Map<String, dynamic>? ?? {};
+    final createData = data['create'] as Map<String, dynamic>? ?? {};
+    final updateData = data['update'] as Map<String, dynamic>? ?? {};
+
+    final tableName = query.modelName;
+
+    // Get the conflict key(s) from the where clause
+    final conflictKeys = where.keys.toList();
+    if (conflictKeys.isEmpty) {
+      throw ArgumentError('Upsert requires at least one unique field in where clause');
+    }
+
+    // Build INSERT columns and values
+    final columns = <String>[];
+    final valuePlaceholders = <String>[];
+    final values = <dynamic>[];
+    final types = <ArgType>[];
+    var paramIndex = 1;
+
+    for (final entry in createData.entries) {
+      columns.add(_quoteIdentifier(entry.key));
+      valuePlaceholders.add(_placeholder(paramIndex++));
+      values.add(entry.value);
+      types.add(_inferArgType(entry.value));
+    }
+
+    // Build UPDATE SET clause
+    final updateSetClauses = <String>[];
+    for (final entry in updateData.entries) {
+      updateSetClauses.add(
+        '${_quoteIdentifier(entry.key)} = ${_placeholder(paramIndex++)}',
+      );
+      values.add(entry.value);
+      types.add(_inferArgType(entry.value));
+    }
+
+    // Generate SQL based on provider
+    String sql;
+    if (provider == 'postgresql' || provider == 'supabase') {
+      // PostgreSQL: INSERT ... ON CONFLICT DO UPDATE
+      sql = '''
+INSERT INTO ${_quoteIdentifier(tableName)} (${columns.join(', ')})
+VALUES (${valuePlaceholders.join(', ')})
+ON CONFLICT (${conflictKeys.map(_quoteIdentifier).join(', ')})
+DO UPDATE SET ${updateSetClauses.join(', ')}
+RETURNING *
+'''.trim();
+    } else if (provider == 'mysql') {
+      // MySQL: INSERT ... ON DUPLICATE KEY UPDATE
+      sql = '''
+INSERT INTO ${_quoteIdentifier(tableName)} (${columns.join(', ')})
+VALUES (${valuePlaceholders.join(', ')})
+ON DUPLICATE KEY UPDATE ${updateSetClauses.join(', ')}
+'''.trim();
+    } else if (provider == 'sqlite') {
+      // SQLite: INSERT OR REPLACE
+      sql = '''
+INSERT OR REPLACE INTO ${_quoteIdentifier(tableName)} (${columns.join(', ')})
+VALUES (${valuePlaceholders.join(', ')})
+'''.trim();
+    } else {
+      throw UnsupportedError('Upsert not supported for provider: $provider');
+    }
+
+    return SqlQuery(
+      sql: sql,
+      args: values,
+      argTypes: types,
     );
   }
 

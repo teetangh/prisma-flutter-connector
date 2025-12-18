@@ -92,3 +92,9 @@ export 'src/runtime/adapters/supabase_adapter.dart';
 export 'src/runtime/query/json_protocol.dart';
 export 'src/runtime/query/sql_compiler.dart';
 export 'src/runtime/query/query_executor.dart';
+
+// Error handling (typed Prisma exceptions)
+export 'src/runtime/errors/prisma_exceptions.dart';
+
+// Query logging (debugging and monitoring)
+export 'src/runtime/logging/query_logger.dart';
