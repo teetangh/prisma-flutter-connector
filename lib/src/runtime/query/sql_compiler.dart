@@ -138,9 +138,11 @@ class SqlCompiler {
         '(${columns.join(', ')}) '
         'VALUES (${placeholders.join(', ')})';
 
-    // Add RETURNING clause for PostgreSQL
+    // Add RETURNING clause for PostgreSQL/Supabase
     final sqlWithReturning =
-        provider == 'postgresql' ? '$sql RETURNING *' : sql;
+        (provider == 'postgresql' || provider == 'supabase')
+            ? '$sql RETURNING *'
+            : sql;
 
     return SqlQuery(
       sql: sqlWithReturning,
@@ -228,8 +230,14 @@ class SqlCompiler {
         'SET ${setClauses.join(', ')}'
         '${whereClause.isNotEmpty ? ' WHERE $whereClause' : ''}';
 
+    // Add RETURNING clause for PostgreSQL/Supabase to get updated row
+    final sqlWithReturning =
+        (provider == 'postgresql' || provider == 'supabase')
+            ? '$sql RETURNING *'
+            : sql;
+
     return SqlQuery(
-      sql: sql,
+      sql: sqlWithReturning,
       args: values,
       argTypes: types,
     );
@@ -508,9 +516,26 @@ class SqlCompiler {
   }
 
   /// Check if string is ISO 8601 DateTime.
+  ///
+  /// Uses a strict pattern check before attempting to parse, since
+  /// Dart's DateTime.parse is too lenient and accepts plain numbers.
   bool _isIso8601DateTime(String value) {
+    // ISO 8601 patterns: YYYY-MM-DD, YYYY-MM-DDTHH:MM:SS, etc.
+    // Must contain dashes or "T" to be a date/datetime, not just a number.
+    // Valid examples: "2025-01-15", "2025-01-15T10:30:00", "2025-01-15T10:30:00.000Z"
+    // Invalid examples: "1234567890" (phone), "987654321" (number)
+
+    // Quick check: must contain a dash to be a date
+    if (!value.contains('-')) return false;
+
+    // Must start with 4 digits (year) followed by a dash
+    final yearPattern = RegExp(r'^\d{4}-');
+    if (!yearPattern.hasMatch(value)) return false;
+
     try {
-      DateTime.parse(value);
+      final parsed = DateTime.parse(value);
+      // Sanity check: year should be reasonable (1000-9999)
+      if (parsed.year < 1000 || parsed.year > 9999) return false;
       return true;
     } catch (_) {
       return false;

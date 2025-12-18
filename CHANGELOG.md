@@ -4,6 +4,30 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.1.8] - 2025-12-18
+
+### Fixed
+- **UPDATE/CREATE RETURNING Clause** - PostgreSQL and Supabase queries now include `RETURNING *`
+  - UPDATE queries previously returned no data, causing "Failed to update" errors
+  - Both CREATE and UPDATE now return the affected row for PostgreSQL/Supabase providers
+  - Enables proper response handling in upsert and update operations
+
+- **DateTime Type Inference** - Strict ISO 8601 date detection prevents misidentification
+  - Previously, phone numbers like "9876543210" were incorrectly detected as dates
+  - Now requires: dash separator, 4-digit year prefix, and reasonable year range (1000-9999)
+  - Fixes data corruption where phone numbers were stored as garbage date values
+
+### Verified
+- Comprehensive end-to-end testing with complex consultant onboarding:
+  - ✅ String fields (name, bio, description, URLs)
+  - ✅ Numeric fields (experience: 15.5 as double)
+  - ✅ DateTime fields (dateOfBirth)
+  - ✅ Enum fields (gender, scheduleType, sessionTypes)
+  - ✅ Array fields (languages with 4 items, toolsAndTechnologies with 20 items)
+  - ✅ Foreign key relations (Domain)
+  - ✅ Many-to-many relations (SubDomains via join table)
+  - ✅ Transaction support (atomic operations)
+
 ## [0.1.7] - 2025-12-18
 
 ### Added
