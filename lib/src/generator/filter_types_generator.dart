@@ -5,6 +5,7 @@
 library;
 
 import 'package:prisma_flutter_connector/src/generator/prisma_parser.dart';
+import 'package:prisma_flutter_connector/src/generator/string_utils.dart';
 
 /// Generates field-level filter type classes
 class FilterTypesGenerator {
@@ -27,6 +28,15 @@ class FilterTypesGenerator {
     buffer.writeln(
         "import 'package:freezed_annotation/freezed_annotation.dart';");
     buffer.writeln();
+
+    // Import all enums that are used in filter types
+    for (final enumDef in schema.enums) {
+      buffer.writeln("import 'models/${toSnakeCase(enumDef.name)}.dart';");
+    }
+    if (schema.enums.isNotEmpty) {
+      buffer.writeln();
+    }
+
     buffer.writeln("part 'filters.freezed.dart';");
     buffer.writeln("part 'filters.g.dart';");
     buffer.writeln();

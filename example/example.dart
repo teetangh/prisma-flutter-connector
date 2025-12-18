@@ -147,20 +147,16 @@ Future<void> _queryBuilderExample() async {
   final findUniqueQuery = JsonQueryBuilder()
       .model('User')
       .action(QueryAction.findUnique)
-      .where({'id': 'user-123'})
-      .build();
+      .where({'id': 'user-123'}).build();
 
   print('Find unique query: $findUniqueQuery');
 
   // Create new record
-  final createQuery = JsonQueryBuilder()
-      .model('User')
-      .action(QueryAction.create)
-      .data({
-        'email': 'newuser@example.com',
-        'name': 'New User',
-      })
-      .build();
+  final createQuery =
+      JsonQueryBuilder().model('User').action(QueryAction.create).data({
+    'email': 'newuser@example.com',
+    'name': 'New User',
+  }).build();
 
   print('Create query: $createQuery');
 
@@ -168,9 +164,7 @@ Future<void> _queryBuilderExample() async {
   final updateQuery = JsonQueryBuilder()
       .model('User')
       .action(QueryAction.update)
-      .where({'id': 'user-123'})
-      .data({'name': 'Updated Name'})
-      .build();
+      .where({'id': 'user-123'}).data({'name': 'Updated Name'}).build();
 
   print('Update query: $updateQuery');
 
@@ -178,8 +172,7 @@ Future<void> _queryBuilderExample() async {
   final deleteQuery = JsonQueryBuilder()
       .model('User')
       .action(QueryAction.delete)
-      .where({'id': 'user-123'})
-      .build();
+      .where({'id': 'user-123'}).build();
 
   print('Delete query: $deleteQuery');
 
