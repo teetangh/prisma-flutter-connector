@@ -29,6 +29,9 @@ void main(List<String> arguments) async {
         abbr: 'o',
         mandatory: true,
         help: 'Output directory for generated files')
+    ..addFlag('server',
+        negatable: false,
+        help: 'Generate for pure Dart server (no Flutter dependencies)')
     ..addFlag('help', abbr: 'h', negatable: false, help: 'Show usage');
 
   ArgResults args;
@@ -48,6 +51,7 @@ void main(List<String> arguments) async {
 
   final schemaPath = args['schema'] as String;
   final outputPath = args['output'] as String;
+  final serverMode = args['server'] as bool;
 
   // Read schema file
   final schemaFile = File(schemaPath);
@@ -91,7 +95,7 @@ void main(List<String> arguments) async {
 
   // Generate Delegates (adapter-based)
   print('🔌 Generating model delegates...');
-  final delegateGenerator = DelegateGenerator(schema);
+  final delegateGenerator = DelegateGenerator(schema, serverMode: serverMode);
   final delegateFiles = delegateGenerator.generateAll();
 
   final delegatesDir = Directory('$outputPath/delegates');
@@ -115,7 +119,7 @@ void main(List<String> arguments) async {
 
   // Generate main client file (adapter-based)
   print('🎯 Generating PrismaClient...');
-  final clientGenerator = ClientGenerator(schema);
+  final clientGenerator = ClientGenerator(schema, serverMode: serverMode);
   final clientCode = clientGenerator.generate();
   final clientFile = File('$outputPath/prisma_client.dart');
   await clientFile.writeAsString(clientCode);

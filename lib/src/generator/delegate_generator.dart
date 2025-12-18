@@ -10,8 +10,9 @@ import 'package:prisma_flutter_connector/src/generator/string_utils.dart';
 /// Generates delegate classes for adapter-based database access
 class DelegateGenerator {
   final PrismaSchema schema;
+  final bool serverMode;
 
-  const DelegateGenerator(this.schema);
+  const DelegateGenerator(this.schema, {this.serverMode = false});
 
   /// Generate delegate class for a single model
   String generateDelegate(PrismaModel model) {
@@ -19,8 +20,9 @@ class DelegateGenerator {
     final modelName = model.name;
     final tableName = model.tableName; // Use database table name for queries
 
-    // Imports
-    buffer.writeln("import 'package:prisma_flutter_connector/runtime.dart';");
+    // Imports - use runtime_server.dart for pure Dart servers (no Flutter)
+    final runtimeImport = serverMode ? 'runtime_server.dart' : 'runtime.dart';
+    buffer.writeln("import 'package:prisma_flutter_connector/$runtimeImport';");
     buffer.writeln("import '../models/${toSnakeCase(modelName)}.dart';");
     buffer.writeln("import '../filters.dart';");
     buffer.writeln();

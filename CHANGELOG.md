@@ -4,6 +4,14 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.1.7] - 2025-12-18
+
+### Added
+- **Server Mode** - New `--server` flag for code generation
+  - Use `--server` when generating for pure Dart servers (Dart Frog, Shelf, etc.)
+  - Imports `runtime_server.dart` instead of `runtime.dart` (no Flutter/sqflite dependencies)
+  - Example: `dart run prisma_flutter_connector:generate --server --schema=... --output=...`
+
 ## [0.1.6] - 2025-12-18
 
 ### Fixed

@@ -10,8 +10,9 @@ import 'package:prisma_flutter_connector/src/generator/string_utils.dart';
 /// Generates the main PrismaClient class
 class ClientGenerator {
   final PrismaSchema schema;
+  final bool serverMode;
 
-  const ClientGenerator(this.schema);
+  const ClientGenerator(this.schema, {this.serverMode = false});
 
   /// Generate the PrismaClient class
   String generate() {
@@ -35,8 +36,9 @@ class ClientGenerator {
     buffer.writeln('library;');
     buffer.writeln();
 
-    // Imports
-    buffer.writeln("import 'package:prisma_flutter_connector/runtime.dart';");
+    // Imports - use runtime_server.dart for pure Dart servers (no Flutter)
+    final runtimeImport = serverMode ? 'runtime_server.dart' : 'runtime.dart';
+    buffer.writeln("import 'package:prisma_flutter_connector/$runtimeImport';");
     buffer.writeln();
 
     // Import delegates
