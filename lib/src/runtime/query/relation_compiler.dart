@@ -10,10 +10,11 @@
 /// ```
 library;
 
+import 'package:prisma_flutter_connector/src/runtime/adapters/types.dart';
 import 'package:prisma_flutter_connector/src/runtime/schema/schema_registry.dart';
 
 /// Compiled result containing JOIN clauses and column selection.
-class CompiledRelations {
+class CompiledRelations implements RelationMetadata {
   /// SQL JOIN clauses to append to the query.
   final String joinClauses;
 

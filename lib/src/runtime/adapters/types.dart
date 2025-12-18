@@ -7,6 +7,11 @@ library;
 
 import 'dart:async';
 
+/// Marker interface for relation metadata used in JOIN queries.
+///
+/// Implemented by [CompiledRelations] in the relation compiler.
+abstract class RelationMetadata {}
+
 /// Represents a SQL query with parameterized values and type information.
 class SqlQuery {
   /// The SQL statement with placeholders (e.g., "SELECT * FROM users WHERE id = $1")
@@ -20,7 +25,7 @@ class SqlQuery {
 
   /// Relation metadata for deserializing JOIN results into nested objects.
   /// Only present when the query includes relations via `include`.
-  final Object? relationMetadata;
+  final RelationMetadata? relationMetadata;
 
   const SqlQuery({
     required this.sql,

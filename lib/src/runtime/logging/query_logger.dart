@@ -5,6 +5,8 @@
 /// in production.
 library;
 
+import 'dart:collection';
+
 /// Event data for a query that is about to be executed.
 class QueryStartEvent {
   /// The SQL query being executed
@@ -278,13 +280,13 @@ class ConsoleQueryLogger implements QueryLogger {
 ///
 /// Useful for monitoring performance and identifying slow queries.
 class MetricsQueryLogger implements QueryLogger {
-  final List<QueryMetric> _metrics = [];
+  final Queue<QueryMetric> _metrics = Queue();
   final int _maxMetrics;
 
   MetricsQueryLogger({int maxMetrics = 1000}) : _maxMetrics = maxMetrics;
 
   /// All collected metrics
-  List<QueryMetric> get metrics => List.unmodifiable(_metrics);
+  List<QueryMetric> get metrics => _metrics.toList();
 
   /// Total number of queries executed
   int get totalQueries => _metrics.length;
@@ -353,9 +355,9 @@ class MetricsQueryLogger implements QueryLogger {
 
   void _addMetric(QueryMetric metric) {
     _metrics.add(metric);
-    // Evict old metrics if over limit
+    // Evict old metrics if over limit (O(1) with Queue.removeFirst)
     while (_metrics.length > _maxMetrics) {
-      _metrics.removeAt(0);
+      _metrics.removeFirst();
     }
   }
 }

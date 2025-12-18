@@ -166,8 +166,9 @@ class UniqueConstraintException extends PrismaException {
 
   @override
   String toString() {
-    if (fields != null && fields!.isNotEmpty) {
-      return 'UniqueConstraintException [$code]: Duplicate value for ${fields!.join(', ')}';
+    final f = fields;
+    if (f != null && f.isNotEmpty) {
+      return 'UniqueConstraintException [$code]: Duplicate value for ${f.join(', ')}';
     }
     return 'UniqueConstraintException [$code]: $message';
   }

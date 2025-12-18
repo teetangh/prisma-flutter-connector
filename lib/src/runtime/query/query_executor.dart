@@ -203,20 +203,39 @@ class QueryExecutor implements BaseExecutor {
     if (error is PrismaException) return error;
 
     if (error is AdapterError) {
-      // Try to map based on error code
-      if (adapter.provider == 'postgresql' || adapter.provider == 'supabase') {
-        return PrismaErrorMapper.fromPostgresError(
-          error.message,
-          sqlState: error.code,
-          originalError: error.originalError,
-        );
+      // Map based on database provider
+      switch (adapter.provider) {
+        case 'postgresql':
+        case 'supabase':
+          return PrismaErrorMapper.fromPostgresError(
+            error.message,
+            sqlState: error.code,
+            originalError: error.originalError,
+          );
+        case 'mysql':
+          final errorCode =
+              error.code != null ? int.tryParse(error.code!) : null;
+          return PrismaErrorMapper.fromMySqlError(
+            error.message,
+            errorCode: errorCode,
+            originalError: error.originalError,
+          );
+        case 'sqlite':
+          final errorCode =
+              error.code != null ? int.tryParse(error.code!) : null;
+          return PrismaErrorMapper.fromSqliteError(
+            error.message,
+            errorCode: errorCode,
+            originalError: error.originalError,
+          );
+        default:
+          // Fallback for any other provider
+          return InternalException(
+            error.message,
+            originalError: error,
+            context: {'code': error.code},
+          );
       }
-      // Fallback to internal exception
-      return InternalException(
-        error.message,
-        originalError: error,
-        context: {'code': error.code},
-      );
     }
 
     return InternalException(

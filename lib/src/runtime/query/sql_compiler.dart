@@ -638,10 +638,12 @@ ON DUPLICATE KEY UPDATE ${updateSetClauses.join(', ')}
 '''
           .trim();
     } else if (provider == 'sqlite') {
-      // SQLite: INSERT OR REPLACE
+      // SQLite: INSERT ... ON CONFLICT DO UPDATE (since SQLite 3.24.0)
       sql = '''
-INSERT OR REPLACE INTO ${_quoteIdentifier(tableName)} (${columns.join(', ')})
+INSERT INTO ${_quoteIdentifier(tableName)} (${columns.join(', ')})
 VALUES (${valuePlaceholders.join(', ')})
+ON CONFLICT (${conflictKeys.map(_quoteIdentifier).join(', ')})
+DO UPDATE SET ${updateSetClauses.join(', ')}
 '''
           .trim();
     } else {
