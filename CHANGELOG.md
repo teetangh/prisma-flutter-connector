@@ -4,6 +4,85 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.2.4] - 2025-12-19
+
+### Added
+- **Relation Filtering SQL Compilation** - Compile `some`/`every`/`none` operators to EXISTS subqueries
+  - **One-to-Many**: `EXISTS (SELECT 1 FROM related WHERE related.fk = parent.id AND ...)`
+  - **Many-to-Many**: `EXISTS (SELECT 1 FROM junction INNER JOIN target ON ... WHERE junction.A = parent.id AND ...)`
+  - **One-to-One**: Handles both owner and non-owner sides correctly
+  - All providers supported (PostgreSQL, Supabase, MySQL, SQLite)
+
+- **Relation Filter Operators**
+  - `some` → `EXISTS (...)` - At least one match
+  - `none` → `NOT EXISTS (...)` - No matches
+  - `every` → `NOT EXISTS (... AND NOT condition)` - All match
+  - `isEmpty()` → `NOT EXISTS (...)` with no condition
+  - `isNotEmpty()` → `EXISTS (...)` with no condition
+
+### Example Usage
+```dart
+// Register schema with relation metadata
+final schema = SchemaRegistry();
+schema.registerModel(ModelSchema(
+  name: 'Product',
+  tableName: 'Product',
+  fields: {...},
+  relations: {
+    'reviews': RelationInfo(
+      name: 'reviews',
+      type: RelationType.oneToMany,
+      targetModel: 'Review',
+      foreignKey: 'productId',
+      references: ['id'],
+    ),
+    'categories': RelationInfo(
+      name: 'categories',
+      type: RelationType.manyToMany,
+      targetModel: 'Category',
+      joinTable: '_ProductToCategory',
+      joinColumn: 'A',
+      inverseJoinColumn: 'B',
+      foreignKey: '',
+      references: ['id'],
+    ),
+  },
+));
+
+// Query with relation filters
+final query = JsonQueryBuilder()
+    .model('Product')
+    .action(QueryAction.findMany)
+    .where({
+      'isActive': true,
+      'reviews': FilterOperators.some({
+        'rating': FilterOperators.gte(4),
+      }),
+      'categories': FilterOperators.some({
+        'id': 'category-electronics',
+      }),
+    })
+    .orderBy({
+      'price': {'sort': 'asc', 'nulls': 'last'},
+    })
+    .build();
+
+final compiler = SqlCompiler(provider: 'postgresql', schema: schema);
+final sql = compiler.compile(query);
+// Generates:
+// SELECT * FROM "Product" WHERE "isActive" = $1
+// AND EXISTS (SELECT 1 FROM "Review" WHERE "Review"."productId" = "Product"."id" AND "rating" >= $2)
+// AND EXISTS (SELECT 1 FROM "_ProductToCategory" INNER JOIN "Category" ON "Category"."id" = "_ProductToCategory"."B" WHERE "_ProductToCategory"."A" = "Product"."id" AND "id" = $3)
+// ORDER BY "price" ASC NULLS LAST
+```
+
+### Why This Matters
+Previously, filtering on relations required raw SQL with manual EXISTS subqueries. Now you can:
+- Use the same type-safe `FilterOperators` API for relation filters
+- Automatically generate correct JOIN patterns for M:N relations
+- Combine scalar filters with relation filters in a single query
+- Support all relation types (1:N, N:1, 1:1, M:N)
+
 ## [0.2.3] - 2025-12-19
 
 ### Added
@@ -18,27 +97,27 @@ All notable changes to the Prisma Flutter Connector.
   - `FilterOperators.noneMatch(where)` - No related records match
   - `FilterOperators.isEmpty()` - Relation has no records
   - `FilterOperators.isNotEmpty()` - Relation has at least one record
-  - *Note: These helpers generate the correct JSON structure. Relation filtering SQL compilation will be added in v0.2.4.*
+  - *Note: These helpers generate the correct JSON structure. SQL compilation added in v0.2.4.*
 
 ### Example Usage
 ```dart
 // NULLS LAST/FIRST ordering
 final query = JsonQueryBuilder()
-    .model('ConsultantProfile')
+    .model('Product')
     .action(QueryAction.findMany)
     .orderBy({
-      'rating': {'sort': 'desc', 'nulls': 'last'},  // Extended syntax
+      'price': {'sort': 'asc', 'nulls': 'last'},  // Extended syntax
       'createdAt': 'desc',  // Simple syntax still works
     })
     .build();
 
-// Relation filter helpers (SQL support coming in v0.2.4)
+// Relation filter helpers (SQL compilation added in v0.2.4)
 final where = {
-  'posts': FilterOperators.some({
-    'published': true,
-    'views': FilterOperators.gte(100),
+  'reviews': FilterOperators.some({
+    'rating': FilterOperators.gte(4),
+    'verified': true,
   }),
-  'comments': FilterOperators.isEmpty(),
+  'tags': FilterOperators.isEmpty(),
 };
 ```
 

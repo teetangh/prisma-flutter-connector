@@ -125,7 +125,10 @@ class SqlCompiler {
 
     // Build WHERE clause
     final where = args['where'] as Map<String, dynamic>?;
-    final (whereClause, whereArgs, whereTypes) = _buildWhereClause(where);
+    final (whereClause, whereArgs, whereTypes) = _buildWhereClause(
+      where,
+      modelName: query.modelName,
+    );
 
     // Build ORDER BY clause
     final orderBy = args['orderBy'] as Map<String, dynamic>?;
@@ -316,8 +319,11 @@ class SqlCompiler {
     }
 
     // Build WHERE clause
-    final (whereClause, whereArgs, whereTypes) =
-        _buildWhereClause(where, startIndex: paramIndex);
+    final (whereClause, whereArgs, whereTypes) = _buildWhereClause(
+      where,
+      startIndex: paramIndex,
+      modelName: query.modelName,
+    );
     values.addAll(whereArgs);
     types.addAll(whereTypes);
 
@@ -350,7 +356,10 @@ class SqlCompiler {
     final where = args['where'] as Map<String, dynamic>?;
 
     final tableName = query.modelName;
-    final (whereClause, whereArgs, whereTypes) = _buildWhereClause(where);
+    final (whereClause, whereArgs, whereTypes) = _buildWhereClause(
+      where,
+      modelName: query.modelName,
+    );
 
     final sql = 'DELETE FROM ${_quoteIdentifier(tableName)}'
         '${whereClause.isNotEmpty ? ' WHERE $whereClause' : ''}';
@@ -373,7 +382,10 @@ class SqlCompiler {
     final where = args['where'] as Map<String, dynamic>?;
 
     final tableName = query.modelName;
-    final (whereClause, whereArgs, whereTypes) = _buildWhereClause(where);
+    final (whereClause, whereArgs, whereTypes) = _buildWhereClause(
+      where,
+      modelName: query.modelName,
+    );
 
     final sql = 'SELECT COUNT(*) FROM ${_quoteIdentifier(tableName)}'
         '${whereClause.isNotEmpty ? ' WHERE $whereClause' : ''}';
@@ -470,7 +482,10 @@ class SqlCompiler {
       functions.add('COUNT(*) AS "_count"');
     }
 
-    final (whereClause, whereArgs, whereTypes) = _buildWhereClause(where);
+    final (whereClause, whereArgs, whereTypes) = _buildWhereClause(
+      where,
+      modelName: query.modelName,
+    );
 
     final sql =
         'SELECT ${functions.join(', ')} FROM ${_quoteIdentifier(tableName)}'
@@ -545,7 +560,10 @@ class SqlCompiler {
       }
     }
 
-    final (whereClause, whereArgs, whereTypes) = _buildWhereClause(where);
+    final (whereClause, whereArgs, whereTypes) = _buildWhereClause(
+      where,
+      modelName: query.modelName,
+    );
 
     final sql = StringBuffer(
         'SELECT ${selectParts.join(', ')} FROM ${_quoteIdentifier(tableName)}');
@@ -686,10 +704,25 @@ RETURNING *
     return fields;
   }
 
+  /// Detect if a value contains a relation filter operator.
+  ///
+  /// Returns 'some', 'every', or 'none' if found, null otherwise.
+  String? _detectRelationOperator(Map<String, dynamic> value) {
+    if (value.containsKey('some')) return 'some';
+    if (value.containsKey('every')) return 'every';
+    if (value.containsKey('none')) return 'none';
+    return null;
+  }
+
   /// Build WHERE clause from conditions.
+  ///
+  /// [modelName] is optional but required for relation filtering.
+  /// [parentAlias] is the table alias for the parent in EXISTS subqueries.
   (String, List<dynamic>, List<ArgType>) _buildWhereClause(
     Map<String, dynamic>? where, {
     int startIndex = 1,
+    String? modelName,
+    String parentAlias = '',
   }) {
     if (where == null || where.isEmpty) {
       return ('', [], []);
@@ -711,6 +744,8 @@ RETURNING *
           final (clause, vals, typs) = _buildWhereClause(
             condition as Map<String, dynamic>,
             startIndex: paramIndex,
+            modelName: modelName,
+            parentAlias: parentAlias,
           );
           subConditions.add('($clause)');
           values.addAll(vals);
@@ -727,6 +762,8 @@ RETURNING *
           final (clause, vals, typs) = _buildWhereClause(
             condition as Map<String, dynamic>,
             startIndex: paramIndex,
+            modelName: modelName,
+            parentAlias: parentAlias,
           );
           subConditions.add('($clause)');
           values.addAll(vals);
@@ -741,12 +778,40 @@ RETURNING *
         final (clause, vals, typs) = _buildWhereClause(
           value as Map<String, dynamic>,
           startIndex: paramIndex,
+          modelName: modelName,
+          parentAlias: parentAlias,
         );
         conditions.add('NOT ($clause)');
         values.addAll(vals);
         types.addAll(typs);
         paramIndex += vals.length;
         continue;
+      }
+
+      // Check if field is a relation with a filter operator (some/every/none)
+      if (modelName != null && value is Map<String, dynamic>) {
+        final effectiveSchema = schema ?? schemaRegistry;
+        final relation = effectiveSchema.getRelation(modelName, field);
+        final relOperator = _detectRelationOperator(value);
+
+        if (relation != null && relOperator != null) {
+          final whereCondition = value[relOperator];
+          final (clause, vals, typs) = _buildRelationFilterClause(
+            parentModel: modelName,
+            parentAlias: parentAlias,
+            relationName: field,
+            relation: relation,
+            operator: relOperator,
+            whereCondition:
+                whereCondition is Map<String, dynamic> ? whereCondition : {},
+            startIndex: paramIndex,
+          );
+          conditions.add(clause);
+          values.addAll(vals);
+          types.addAll(typs);
+          paramIndex += vals.length;
+          continue;
+        }
       }
 
       // Handle field conditions
@@ -859,6 +924,202 @@ RETURNING *
     }
 
     return (conditions.join(' AND '), values, types);
+  }
+
+  /// Build relation filter clause (EXISTS subquery).
+  ///
+  /// Generates EXISTS/NOT EXISTS subqueries for relation filter operators
+  /// (some, every, none).
+  (String, List<dynamic>, List<ArgType>) _buildRelationFilterClause({
+    required String parentModel,
+    required String parentAlias,
+    required String relationName,
+    required RelationInfo relation,
+    required String operator,
+    required Map<String, dynamic> whereCondition,
+    required int startIndex,
+  }) {
+    final values = <dynamic>[];
+    final types = <ArgType>[];
+    var paramIndex = startIndex;
+
+    // Get target model info
+    final effectiveSchema = schema ?? schemaRegistry;
+    final targetModelSchema = effectiveSchema.getModel(relation.targetModel);
+    final targetTable = _quoteIdentifier(
+      targetModelSchema?.tableName ?? relation.targetModel,
+    );
+
+    // Determine parent table reference
+    final parentModelSchema = effectiveSchema.getModel(parentModel);
+    final parentTable = _quoteIdentifier(
+      parentModelSchema?.tableName ?? parentModel,
+    );
+    final parentRef = parentAlias.isNotEmpty ? parentAlias : parentTable;
+
+    // Build subquery WHERE clause for the target model
+    final (subWhere, subVals, subTypes) = _buildWhereClause(
+      whereCondition,
+      startIndex: paramIndex,
+      modelName: relation.targetModel,
+      parentAlias: 'sub_$relationName',
+    );
+    values.addAll(subVals);
+    types.addAll(subTypes);
+    paramIndex += subVals.length;
+
+    // Build the EXISTS clause based on relation type
+    String existsClause;
+
+    switch (relation.type) {
+      case RelationType.oneToMany:
+        // Parent has many targets. FK is on target table.
+        // EXISTS (SELECT 1 FROM Target WHERE Target.fk = Parent.id AND ...)
+        existsClause = _buildOneToManyExistsClause(
+          operator: operator,
+          targetTable: targetTable,
+          targetFk: relation.foreignKey,
+          parentRef: parentRef,
+          parentPk: relation.references.first,
+          subWhere: subWhere,
+        );
+
+      case RelationType.manyToOne:
+        // Parent belongs to target. FK is on parent table.
+        // EXISTS (SELECT 1 FROM Target WHERE Target.id = Parent.fk AND ...)
+        existsClause = _buildManyToOneExistsClause(
+          operator: operator,
+          targetTable: targetTable,
+          targetPk: relation.references.first,
+          parentRef: parentRef,
+          parentFk: relation.foreignKey,
+          subWhere: subWhere,
+        );
+
+      case RelationType.oneToOne:
+        // Similar to manyToOne depending on which side owns the FK
+        if (relation.isOwner) {
+          // This side owns FK -> same as manyToOne
+          existsClause = _buildManyToOneExistsClause(
+            operator: operator,
+            targetTable: targetTable,
+            targetPk: relation.references.first,
+            parentRef: parentRef,
+            parentFk: relation.foreignKey,
+            subWhere: subWhere,
+          );
+        } else {
+          // Other side owns FK -> same as oneToMany
+          existsClause = _buildOneToManyExistsClause(
+            operator: operator,
+            targetTable: targetTable,
+            targetFk: relation.foreignKey,
+            parentRef: parentRef,
+            parentPk: relation.references.first,
+            subWhere: subWhere,
+          );
+        }
+
+      case RelationType.manyToMany:
+        // Uses a join table.
+        // EXISTS (SELECT 1 FROM JoinTable JOIN Target ON ... WHERE ...)
+        existsClause = _buildManyToManyExistsClause(
+          operator: operator,
+          targetTable: targetTable,
+          joinTable: _quoteIdentifier(relation.joinTable ?? ''),
+          joinColumn: _quoteIdentifier(relation.joinColumn ?? 'A'),
+          inverseJoinColumn: _quoteIdentifier(relation.inverseJoinColumn ?? 'B'),
+          parentRef: parentRef,
+          parentPk: relation.references.first,
+          subWhere: subWhere,
+        );
+    }
+
+    return (existsClause, values, types);
+  }
+
+  /// Build EXISTS clause for one-to-many relations.
+  String _buildOneToManyExistsClause({
+    required String operator,
+    required String targetTable,
+    required String targetFk,
+    required String parentRef,
+    required String parentPk,
+    required String subWhere,
+  }) {
+    final fkCol = _quoteIdentifier(targetFk);
+    final pkCol = _quoteIdentifier(parentPk);
+
+    final joinCondition = '$targetTable.$fkCol = $parentRef.$pkCol';
+    final fullCondition =
+        subWhere.isNotEmpty ? '$joinCondition AND $subWhere' : joinCondition;
+
+    return switch (operator) {
+      'some' => 'EXISTS (SELECT 1 FROM $targetTable WHERE $fullCondition)',
+      'every' => subWhere.isNotEmpty
+          ? 'NOT EXISTS (SELECT 1 FROM $targetTable WHERE $joinCondition AND NOT ($subWhere))'
+          : 'TRUE', // every with no condition is always true
+      'none' => 'NOT EXISTS (SELECT 1 FROM $targetTable WHERE $fullCondition)',
+      _ => throw ArgumentError('Unknown relation operator: $operator'),
+    };
+  }
+
+  /// Build EXISTS clause for many-to-one relations.
+  String _buildManyToOneExistsClause({
+    required String operator,
+    required String targetTable,
+    required String targetPk,
+    required String parentRef,
+    required String parentFk,
+    required String subWhere,
+  }) {
+    final pkCol = _quoteIdentifier(targetPk);
+    final fkCol = _quoteIdentifier(parentFk);
+
+    final joinCondition = '$targetTable.$pkCol = $parentRef.$fkCol';
+    final fullCondition =
+        subWhere.isNotEmpty ? '$joinCondition AND $subWhere' : joinCondition;
+
+    return switch (operator) {
+      'some' => 'EXISTS (SELECT 1 FROM $targetTable WHERE $fullCondition)',
+      'every' => subWhere.isNotEmpty
+          ? 'NOT EXISTS (SELECT 1 FROM $targetTable WHERE $joinCondition AND NOT ($subWhere))'
+          : 'TRUE',
+      'none' => 'NOT EXISTS (SELECT 1 FROM $targetTable WHERE $fullCondition)',
+      _ => throw ArgumentError('Unknown relation operator: $operator'),
+    };
+  }
+
+  /// Build EXISTS clause for many-to-many relations (via junction table).
+  String _buildManyToManyExistsClause({
+    required String operator,
+    required String targetTable,
+    required String joinTable,
+    required String joinColumn,
+    required String inverseJoinColumn,
+    required String parentRef,
+    required String parentPk,
+    required String subWhere,
+  }) {
+    final pkCol = _quoteIdentifier(parentPk);
+
+    // Subquery joins through junction table to target table
+    final joinClause = '''
+SELECT 1 FROM $joinTable
+INNER JOIN $targetTable ON $targetTable."id" = $joinTable.$inverseJoinColumn
+WHERE $joinTable.$joinColumn = $parentRef.$pkCol''';
+
+    final fullCondition =
+        subWhere.isNotEmpty ? '$joinClause AND $subWhere' : joinClause;
+
+    return switch (operator) {
+      'some' => 'EXISTS ($fullCondition)',
+      'every' => subWhere.isNotEmpty
+          ? 'NOT EXISTS ($joinClause AND NOT ($subWhere))'
+          : 'TRUE',
+      'none' => 'NOT EXISTS ($fullCondition)',
+      _ => throw ArgumentError('Unknown relation operator: $operator'),
+    };
   }
 
   /// Build ORDER BY clause.

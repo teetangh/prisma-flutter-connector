@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:prisma_flutter_connector/src/runtime/query/sql_compiler.dart';
 import 'package:prisma_flutter_connector/src/runtime/query/json_protocol.dart';
 import 'package:prisma_flutter_connector/src/runtime/adapters/types.dart';
+import 'package:prisma_flutter_connector/src/runtime/schema/schema_registry.dart';
 
 void main() {
   group('SqlCompiler', () {
@@ -984,13 +985,13 @@ void main() {
 
       test('handles PascalCase table names', () {
         final query = JsonQueryBuilder()
-            .model('ConsultantProfile')
+            .model('ProductCategory')
             .action(QueryAction.findMany)
             .build();
 
         final result = compiler.compile(query);
 
-        expect(result.sql, 'SELECT * FROM "ConsultantProfile"');
+        expect(result.sql, 'SELECT * FROM "ProductCategory"');
       });
 
       test('handles multiple filter operators on same field', () {
@@ -1025,5 +1026,227 @@ void main() {
         expect(result.args, [null]);
       });
     });
+
+    group('Relation Filtering', () {
+      late SqlCompiler compilerWithSchema;
+      late SchemaRegistry schema;
+
+      setUp(() {
+        schema = SchemaRegistry();
+
+        // Register Product model (e-commerce example)
+        schema.registerModel(ModelSchema(
+          name: 'Product',
+          tableName: 'Product',
+          fields: {
+            'id': const FieldInfo(
+              name: 'id',
+              columnName: 'id',
+              type: 'String',
+              isId: true,
+            ),
+            'price': const FieldInfo(
+              name: 'price',
+              columnName: 'price',
+              type: 'double',
+            ),
+            'isActive': const FieldInfo(
+              name: 'isActive',
+              columnName: 'isActive',
+              type: 'bool',
+            ),
+          },
+          relations: {
+            'reviews': RelationInfo.oneToMany(
+              name: 'reviews',
+              targetModel: 'Review',
+              foreignKey: 'productId',
+            ),
+            'categories': RelationInfo.manyToMany(
+              name: 'categories',
+              targetModel: 'Category',
+              joinTable: '_ProductToCategory',
+              joinColumn: 'A',
+              inverseJoinColumn: 'B',
+            ),
+          },
+        ));
+
+        // Register Review model
+        schema.registerModel(ModelSchema(
+          name: 'Review',
+          tableName: 'Review',
+          fields: {
+            'id': const FieldInfo(
+              name: 'id',
+              columnName: 'id',
+              type: 'String',
+              isId: true,
+            ),
+            'rating': const FieldInfo(
+              name: 'rating',
+              columnName: 'rating',
+              type: 'int',
+            ),
+            'productId': const FieldInfo(
+              name: 'productId',
+              columnName: 'productId',
+              type: 'String',
+            ),
+          },
+        ));
+
+        // Register Category model
+        schema.registerModel(ModelSchema(
+          name: 'Category',
+          tableName: 'Category',
+          fields: {
+            'id': const FieldInfo(
+              name: 'id',
+              columnName: 'id',
+              type: 'String',
+              isId: true,
+            ),
+            'name': const FieldInfo(
+              name: 'name',
+              columnName: 'name',
+              type: 'String',
+            ),
+          },
+        ));
+
+        compilerWithSchema = SqlCompiler(
+          provider: 'postgresql',
+          schema: schema,
+        );
+      });
+
+      test('generates EXISTS for one-to-many some filter', () {
+        final query = JsonQueryBuilder()
+            .model('Product')
+            .action(QueryAction.findMany)
+            .where({
+              'reviews': FilterOperators.some({
+                'rating': FilterOperators.gte(4),
+              }),
+            })
+            .build();
+
+        final result = compilerWithSchema.compile(query);
+
+        expect(result.sql, contains('EXISTS'));
+        expect(result.sql, contains('SELECT 1 FROM "Review"'));
+        expect(result.sql, contains('"productId"'));
+        expect(result.sql, contains('rating'));
+        expect(result.args, [4]);
+      });
+
+      test('generates NOT EXISTS for one-to-many none filter', () {
+        final query = JsonQueryBuilder()
+            .model('Product')
+            .action(QueryAction.findMany)
+            .where({
+              'reviews': FilterOperators.noneMatch({
+                'rating': FilterOperators.lt(3),
+              }),
+            })
+            .build();
+
+        final result = compilerWithSchema.compile(query);
+
+        expect(result.sql, contains('NOT EXISTS'));
+        expect(result.sql, contains('SELECT 1 FROM "Review"'));
+        expect(result.args, [3]);
+      });
+
+      test('generates NOT EXISTS for one-to-many every filter', () {
+        final query = JsonQueryBuilder()
+            .model('Product')
+            .action(QueryAction.findMany)
+            .where({
+              'reviews': FilterOperators.every({
+                'rating': FilterOperators.gte(4),
+              }),
+            })
+            .build();
+
+        final result = compilerWithSchema.compile(query);
+
+        // every means: NOT EXISTS where NOT (condition)
+        expect(result.sql, contains('NOT EXISTS'));
+        expect(result.sql, contains('AND NOT'));
+        expect(result.args, [4]);
+      });
+
+      test('generates EXISTS for many-to-many some filter', () {
+        final query = JsonQueryBuilder()
+            .model('Product')
+            .action(QueryAction.findMany)
+            .where({
+              'categories': FilterOperators.some({
+                'id': 'category-electronics',
+              }),
+            })
+            .build();
+
+        final result = compilerWithSchema.compile(query);
+
+        expect(result.sql, contains('EXISTS'));
+        expect(result.sql, contains('"_ProductToCategory"'));
+        expect(result.sql, contains('INNER JOIN "Category"'));
+        expect(result.args, ['category-electronics']);
+      });
+
+      test('generates NOT EXISTS for many-to-many none filter (isEmpty)', () {
+        final query = JsonQueryBuilder()
+            .model('Product')
+            .action(QueryAction.findMany)
+            .where({
+              'categories': FilterOperators.isEmpty(),
+            })
+            .build();
+
+        final result = compilerWithSchema.compile(query);
+
+        expect(result.sql, contains('NOT EXISTS'));
+        expect(result.sql, contains('"_ProductToCategory"'));
+      });
+
+      test('combines relation filter with scalar filters', () {
+        final query = JsonQueryBuilder()
+            .model('Product')
+            .action(QueryAction.findMany)
+            .where({
+              'isActive': true,
+              'reviews': FilterOperators.some({
+                'rating': FilterOperators.gte(4),
+              }),
+            })
+            .build();
+
+        final result = compilerWithSchema.compile(query);
+
+        expect(result.sql, contains('"isActive" = \$1'));
+        expect(result.sql, contains('EXISTS'));
+        expect(result.args, contains(true));
+        expect(result.args, contains(4));
+      });
+
+      test('handles isNotEmpty filter', () {
+        final query = JsonQueryBuilder()
+            .model('Product')
+            .action(QueryAction.findMany)
+            .where({
+              'reviews': FilterOperators.isNotEmpty(),
+            })
+            .build();
+
+        final result = compilerWithSchema.compile(query);
+
+        expect(result.sql, contains('EXISTS'));
+        expect(result.sql, contains('SELECT 1 FROM "Review"'));
+      });
+    });
   });
 }
+
