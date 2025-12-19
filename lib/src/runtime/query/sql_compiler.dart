@@ -241,7 +241,15 @@ class SqlCompiler {
   /// Compile a CREATE MANY query.
   SqlQuery _compileCreateManyQuery(JsonQuery query) {
     final args = query.args.arguments ?? {};
-    final dataList = args['data'] as List<dynamic>?;
+
+    // Handle both direct list and wrapped {'data': [...]} format
+    // The delegate_generator wraps data in {'data': ...}, but sql_compiler
+    // expects a direct list
+    var dataArg = args['data'];
+    if (dataArg is Map && dataArg.containsKey('data')) {
+      dataArg = dataArg['data'];
+    }
+    final dataList = dataArg as List<dynamic>?;
 
     if (dataList == null || dataList.isEmpty) {
       throw ArgumentError('CREATE MANY requires data array');
