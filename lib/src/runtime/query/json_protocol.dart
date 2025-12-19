@@ -325,4 +325,72 @@ class FilterOperators {
       {'OR': conditions};
   static Map<String, dynamic> none(Map<String, dynamic> condition) =>
       {'NOT': condition};
+
+  // ==================== Relation Filters ====================
+  // These are used to filter based on related records.
+  // Use these on relation fields in WHERE clauses.
+
+  /// Filter where at least one related record matches the condition.
+  ///
+  /// Example:
+  /// ```dart
+  /// .where({
+  ///   'consultationPlans': FilterOperators.some({
+  ///     'price': FilterOperators.lte(5000)
+  ///   })
+  /// })
+  /// ```
+  /// Generates: EXISTS (SELECT 1 FROM "ConsultationPlan" WHERE ... AND price <= 5000)
+  static Map<String, dynamic> some(Map<String, dynamic> where) =>
+      {'some': where};
+
+  /// Filter where all related records match the condition.
+  ///
+  /// Example:
+  /// ```dart
+  /// .where({
+  ///   'posts': FilterOperators.every({
+  ///     'published': true
+  ///   })
+  /// })
+  /// ```
+  /// Generates: NOT EXISTS (SELECT 1 FROM "Post" WHERE ... AND NOT (published = true))
+  static Map<String, dynamic> every(Map<String, dynamic> where) =>
+      {'every': where};
+
+  /// Filter where no related records match the condition.
+  ///
+  /// Example:
+  /// ```dart
+  /// .where({
+  ///   'comments': FilterOperators.noneMatch({
+  ///     'spam': true
+  ///   })
+  /// })
+  /// ```
+  /// Generates: NOT EXISTS (SELECT 1 FROM "Comment" WHERE ... AND spam = true)
+  static Map<String, dynamic> noneMatch(Map<String, dynamic> where) =>
+      {'none': where};
+
+  /// Filter where the relation has no related records at all.
+  ///
+  /// Example:
+  /// ```dart
+  /// .where({
+  ///   'comments': FilterOperators.isEmpty()
+  /// })
+  /// ```
+  /// Generates: NOT EXISTS (SELECT 1 FROM "Comment" WHERE ...)
+  static Map<String, dynamic> isEmpty() => {'none': <String, dynamic>{}};
+
+  /// Filter where the relation has at least one related record.
+  ///
+  /// Example:
+  /// ```dart
+  /// .where({
+  ///   'posts': FilterOperators.isNotEmpty()
+  /// })
+  /// ```
+  /// Generates: EXISTS (SELECT 1 FROM "Post" WHERE ...)
+  static Map<String, dynamic> isNotEmpty() => {'some': <String, dynamic>{}};
 }

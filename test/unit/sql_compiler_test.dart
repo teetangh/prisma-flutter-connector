@@ -61,6 +61,51 @@ void main() {
           expect(result.sql, 'SELECT * FROM "User" ORDER BY "name" ASC');
         });
 
+        test('generates ORDER BY with NULLS LAST', () {
+          final query = JsonQueryBuilder()
+              .model('User')
+              .action(QueryAction.findMany)
+              .orderBy({
+            'rating': {'sort': 'desc', 'nulls': 'last'}
+          }).build();
+
+          final result = compiler.compile(query);
+
+          expect(result.sql,
+              'SELECT * FROM "User" ORDER BY "rating" DESC NULLS LAST');
+        });
+
+        test('generates ORDER BY with NULLS FIRST', () {
+          final query = JsonQueryBuilder()
+              .model('User')
+              .action(QueryAction.findMany)
+              .orderBy({
+            'createdAt': {'sort': 'asc', 'nulls': 'first'}
+          }).build();
+
+          final result = compiler.compile(query);
+
+          expect(result.sql,
+              'SELECT * FROM "User" ORDER BY "createdAt" ASC NULLS FIRST');
+        });
+
+        test('generates ORDER BY with multiple fields including NULLS', () {
+          final query = JsonQueryBuilder()
+              .model('User')
+              .action(QueryAction.findMany)
+              .orderBy({
+            'rating': {'sort': 'desc', 'nulls': 'last'},
+            'createdAt': 'desc', // Simple syntax still works
+          }).build();
+
+          final result = compiler.compile(query);
+
+          expect(
+              result.sql,
+              'SELECT * FROM "User" ORDER BY "rating" DESC NULLS LAST, '
+              '"createdAt" DESC');
+        });
+
         test('generates SELECT with LIMIT', () {
           final query = JsonQueryBuilder()
               .model('User')
@@ -757,6 +802,20 @@ void main() {
         // (MySQL LIKE is case-insensitive by default with utf8_general_ci)
         expect(result.sql, 'SELECT * FROM `User` WHERE `name` LIKE ?');
         expect(result.args, ['%John%']);
+      });
+
+      test('ignores NULLS LAST/FIRST (not supported in MySQL)', () {
+        final query = JsonQueryBuilder()
+            .model('User')
+            .action(QueryAction.findMany)
+            .orderBy({
+          'rating': {'sort': 'desc', 'nulls': 'last'}
+        }).build();
+
+        final result = compiler.compile(query);
+
+        // MySQL doesn't support NULLS LAST, it should be silently ignored
+        expect(result.sql, 'SELECT * FROM `User` ORDER BY `rating` DESC');
       });
 
       test('does not add RETURNING clause for INSERT', () {

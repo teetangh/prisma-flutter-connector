@@ -862,6 +862,13 @@ RETURNING *
   }
 
   /// Build ORDER BY clause.
+  ///
+  /// Supports both simple and extended syntax:
+  /// - Simple: `{'field': 'desc'}` or `{'field': 'asc'}`
+  /// - Extended: `{'field': {'sort': 'desc', 'nulls': 'last'}}`
+  ///
+  /// The `nulls` option is only supported on PostgreSQL/Supabase.
+  /// On other databases, it is silently ignored.
   String _buildOrderByClause(Map<String, dynamic>? orderBy) {
     if (orderBy == null || orderBy.isEmpty) return '';
 
@@ -870,11 +877,36 @@ RETURNING *
     for (final entry in orderBy.entries) {
       // Use field name as-is (don't convert to snake_case)
       final field = _quoteIdentifier(entry.key);
-      final direction = entry.value == 'desc' ? 'DESC' : 'ASC';
-      clauses.add('$field $direction');
+
+      String direction;
+      String? nullsPosition;
+
+      if (entry.value is Map) {
+        // Extended syntax: {sort: 'desc', nulls: 'last'}
+        final options = entry.value as Map<String, dynamic>;
+        direction = options['sort'] == 'desc' ? 'DESC' : 'ASC';
+        nullsPosition = options['nulls'] as String?; // 'first' or 'last'
+      } else {
+        // Simple syntax: 'desc' or 'asc'
+        direction = entry.value == 'desc' ? 'DESC' : 'ASC';
+      }
+
+      var clause = '$field $direction';
+
+      // Add NULLS positioning if specified and supported
+      if (nullsPosition != null && _supportsNullsOrdering()) {
+        clause += ' NULLS ${nullsPosition.toUpperCase()}';
+      }
+
+      clauses.add(clause);
     }
 
     return clauses.join(', ');
+  }
+
+  /// Check if the database provider supports NULLS FIRST/LAST ordering.
+  bool _supportsNullsOrdering() {
+    return provider == 'postgresql' || provider == 'supabase';
   }
 
   /// Get placeholder syntax for the database provider.

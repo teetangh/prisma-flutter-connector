@@ -4,6 +4,44 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.2.3] - 2025-12-19
+
+### Added
+- **NULLS LAST/FIRST Ordering** - Extended `orderBy` syntax for null positioning
+  - PostgreSQL and Supabase: Full support for `NULLS LAST` and `NULLS FIRST`
+  - MySQL/SQLite: Gracefully ignored (not supported by these databases)
+  - Backward compatible - simple `{'field': 'desc'}` syntax still works
+
+- **Relation Filter Helpers** - New `FilterOperators` for filtering on relations
+  - `FilterOperators.some(where)` - At least one related record matches
+  - `FilterOperators.every(where)` - All related records match
+  - `FilterOperators.noneMatch(where)` - No related records match
+  - `FilterOperators.isEmpty()` - Relation has no records
+  - `FilterOperators.isNotEmpty()` - Relation has at least one record
+  - *Note: These helpers generate the correct JSON structure. Relation filtering SQL compilation will be added in v0.2.4.*
+
+### Example Usage
+```dart
+// NULLS LAST/FIRST ordering
+final query = JsonQueryBuilder()
+    .model('ConsultantProfile')
+    .action(QueryAction.findMany)
+    .orderBy({
+      'rating': {'sort': 'desc', 'nulls': 'last'},  // Extended syntax
+      'createdAt': 'desc',  // Simple syntax still works
+    })
+    .build();
+
+// Relation filter helpers (SQL support coming in v0.2.4)
+final where = {
+  'posts': FilterOperators.some({
+    'published': true,
+    'views': FilterOperators.gte(100),
+  }),
+  'comments': FilterOperators.isEmpty(),
+};
+```
+
 ## [0.2.2] - 2025-12-19
 
 ### Added

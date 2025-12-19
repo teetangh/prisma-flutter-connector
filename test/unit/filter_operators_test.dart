@@ -325,6 +325,89 @@ void main() {
         });
       });
     });
+
+    group('Relation Filters', () {
+      test('some creates correct structure', () {
+        final result = FilterOperators.some({
+          'price': FilterOperators.lte(5000),
+        });
+
+        expect(result, {
+          'some': {
+            'price': {'lte': 5000}
+          }
+        });
+      });
+
+      test('every creates correct structure', () {
+        final result = FilterOperators.every({
+          'published': true,
+        });
+
+        expect(result, {
+          'every': {'published': true}
+        });
+      });
+
+      test('noneMatch creates correct structure', () {
+        final result = FilterOperators.noneMatch({
+          'spam': true,
+        });
+
+        expect(result, {
+          'none': {'spam': true}
+        });
+      });
+
+      test('isEmpty creates empty none structure', () {
+        final result = FilterOperators.isEmpty();
+
+        expect(result, {'none': <String, dynamic>{}});
+      });
+
+      test('isNotEmpty creates empty some structure', () {
+        final result = FilterOperators.isNotEmpty();
+
+        expect(result, {'some': <String, dynamic>{}});
+      });
+
+      test('can be used in where clause', () {
+        // This simulates the intended usage
+        final whereClause = {
+          'consultationPlans': FilterOperators.some({
+            'price': FilterOperators.lte(5000),
+          }),
+        };
+
+        expect(whereClause, {
+          'consultationPlans': {
+            'some': {
+              'price': {'lte': 5000}
+            }
+          }
+        });
+      });
+
+      test('can combine multiple relation filters', () {
+        final whereClause = {
+          'posts': FilterOperators.some({
+            'published': true,
+          }),
+          'comments': FilterOperators.noneMatch({
+            'spam': true,
+          }),
+        };
+
+        expect(whereClause, {
+          'posts': {
+            'some': {'published': true}
+          },
+          'comments': {
+            'none': {'spam': true}
+          },
+        });
+      });
+    });
   });
 
   group('JsonQueryBuilder', () {
