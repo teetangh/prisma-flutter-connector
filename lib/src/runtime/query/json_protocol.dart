@@ -122,6 +122,7 @@ class JsonQueryBuilder {
   Map<String, dynamic>? _where;
   Map<String, dynamic>? _data;
   Map<String, dynamic>? _select;
+  List<String>? _selectFields;
   Map<String, dynamic>? _include;
   Map<String, dynamic>? _orderBy;
   Map<String, dynamic>? _aggregate;
@@ -152,6 +153,28 @@ class JsonQueryBuilder {
 
   JsonQueryBuilder select(Map<String, dynamic> fields) {
     _select = fields;
+    return this;
+  }
+
+  /// Select specific fields by name.
+  ///
+  /// This is the preferred way to select specific columns instead of SELECT *.
+  /// Supports dot notation for related fields when used with include().
+  ///
+  /// Example:
+  /// ```dart
+  /// // Select specific scalar fields
+  /// .selectFields(['id', 'name', 'price'])
+  ///
+  /// // Select fields from relations (requires include)
+  /// .selectFields(['id', 'name', 'category.name', 'category.id'])
+  /// .include({'category': true})
+  /// ```
+  ///
+  /// Generates: SELECT "id", "name", "price" FROM "Model"
+  /// Or with relations: SELECT t0."id", t0."name", t1."name" AS "category_name"
+  JsonQueryBuilder selectFields(List<String> fields) {
+    _selectFields = fields;
     return this;
   }
 
@@ -220,6 +243,7 @@ class JsonQueryBuilder {
     if (_skip != null) arguments['skip'] = _skip;
     if (_aggregate != null) arguments['_aggregate'] = _aggregate;
     if (_groupBy != null) arguments['by'] = _groupBy;
+    if (_selectFields != null) arguments['selectFields'] = _selectFields;
 
     // Build selection
     JsonSelection? selection;

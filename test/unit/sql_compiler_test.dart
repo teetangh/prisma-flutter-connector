@@ -1247,6 +1247,478 @@ void main() {
         expect(result.sql, contains('SELECT 1 FROM "Review"'));
       });
     });
+
+    group('selectFields (v0.2.5)', () {
+      late SqlCompiler compiler;
+
+      setUp(() {
+        compiler = SqlCompiler(provider: 'postgresql');
+      });
+
+      test('generates SELECT * when no selectFields provided', () {
+        final query = JsonQueryBuilder()
+            .model('Product')
+            .action(QueryAction.findMany)
+            .where({'isActive': true})
+            .build();
+
+        final result = compiler.compile(query);
+
+        expect(result.sql, contains('SELECT *'));
+        expect(result.sql, contains('FROM "Product"'));
+      });
+
+      test('generates specific columns with selectFields', () {
+        final query = JsonQueryBuilder()
+            .model('Product')
+            .action(QueryAction.findMany)
+            .selectFields(['id', 'name', 'price'])
+            .build();
+
+        final result = compiler.compile(query);
+
+        expect(result.sql, contains('SELECT "id", "name", "price"'));
+        expect(result.sql, isNot(contains('SELECT *')));
+        expect(result.sql, contains('FROM "Product"'));
+      });
+
+      test('selectFields works with WHERE clause', () {
+        final query = JsonQueryBuilder()
+            .model('Product')
+            .action(QueryAction.findMany)
+            .selectFields(['id', 'name'])
+            .where({'isActive': true})
+            .build();
+
+        final result = compiler.compile(query);
+
+        expect(result.sql, contains('SELECT "id", "name"'));
+        expect(result.sql, contains('WHERE "isActive" = \$1'));
+        expect(result.args, [true]);
+      });
+
+      test('selectFields works with ORDER BY', () {
+        final query = JsonQueryBuilder()
+            .model('Product')
+            .action(QueryAction.findMany)
+            .selectFields(['id', 'name', 'price'])
+            .orderBy({'price': 'asc'})
+            .build();
+
+        final result = compiler.compile(query);
+
+        expect(result.sql, contains('SELECT "id", "name", "price"'));
+        expect(result.sql, contains('ORDER BY "price" ASC'));
+      });
+
+      test('selectFields works with NULLS LAST ordering', () {
+        final query = JsonQueryBuilder()
+            .model('Product')
+            .action(QueryAction.findMany)
+            .selectFields(['id', 'name', 'rating'])
+            .orderBy({
+              'rating': {'sort': 'desc', 'nulls': 'last'}
+            })
+            .build();
+
+        final result = compiler.compile(query);
+
+        expect(result.sql, contains('SELECT "id", "name", "rating"'));
+        expect(result.sql, contains('ORDER BY "rating" DESC NULLS LAST'));
+      });
+
+      test('selectFields works with pagination', () {
+        final query = JsonQueryBuilder()
+            .model('Product')
+            .action(QueryAction.findMany)
+            .selectFields(['id', 'name'])
+            .take(10)
+            .skip(20)
+            .build();
+
+        final result = compiler.compile(query);
+
+        expect(result.sql, contains('SELECT "id", "name"'));
+        expect(result.sql, contains('LIMIT 10'));
+        expect(result.sql, contains('OFFSET 20'));
+      });
+
+      test('empty selectFields returns SELECT *', () {
+        final query = JsonQueryBuilder()
+            .model('Product')
+            .action(QueryAction.findMany)
+            .selectFields([])
+            .build();
+
+        final result = compiler.compile(query);
+
+        expect(result.sql, contains('SELECT *'));
+      });
+
+      test('selectFields works with findFirst', () {
+        final query = JsonQueryBuilder()
+            .model('Product')
+            .action(QueryAction.findFirst)
+            .selectFields(['id', 'name'])
+            .where({'isActive': true})
+            .build();
+
+        final result = compiler.compile(query);
+
+        expect(result.sql, contains('SELECT "id", "name"'));
+        expect(result.sql, contains('LIMIT 1'));
+      });
+
+      test('selectFields works with findUnique', () {
+        final query = JsonQueryBuilder()
+            .model('Product')
+            .action(QueryAction.findUnique)
+            .selectFields(['id', 'name', 'price'])
+            .where({'id': 'product-123'})
+            .build();
+
+        final result = compiler.compile(query);
+
+        expect(result.sql, contains('SELECT "id", "name", "price"'));
+        expect(result.sql, contains('WHERE "id" = \$1'));
+        expect(result.sql, contains('LIMIT 1'));
+        expect(result.args, ['product-123']);
+      });
+
+      test('selectFields combined with relation filtering', () {
+        // Create a schema for relation filtering
+        final schema = SchemaRegistry();
+        schema.registerModel(ModelSchema(
+          name: 'Product',
+          tableName: 'Product',
+          fields: {
+            'id': FieldInfo(
+                name: 'id', columnName: 'id', type: 'String', isId: true),
+            'name':
+                FieldInfo(name: 'name', columnName: 'name', type: 'String'),
+            'isActive': FieldInfo(
+                name: 'isActive', columnName: 'isActive', type: 'bool'),
+          },
+          relations: {
+            'reviews': RelationInfo(
+              name: 'reviews',
+              type: RelationType.oneToMany,
+              targetModel: 'Review',
+              foreignKey: 'productId',
+              references: ['id'],
+            ),
+          },
+        ));
+        schema.registerModel(ModelSchema(
+          name: 'Review',
+          tableName: 'Review',
+          fields: {
+            'id': FieldInfo(
+                name: 'id', columnName: 'id', type: 'String', isId: true),
+            'rating':
+                FieldInfo(name: 'rating', columnName: 'rating', type: 'int'),
+            'productId': FieldInfo(
+                name: 'productId', columnName: 'productId', type: 'String'),
+          },
+          relations: {},
+        ));
+
+        final compilerWithSchema =
+            SqlCompiler(provider: 'postgresql', schema: schema);
+
+        final query = JsonQueryBuilder()
+            .model('Product')
+            .action(QueryAction.findMany)
+            .selectFields(['id', 'name'])
+            .where({
+              'isActive': true,
+              'reviews': FilterOperators.some({
+                'rating': FilterOperators.gte(4),
+              }),
+            })
+            .build();
+
+        final result = compilerWithSchema.compile(query);
+
+        expect(result.sql, contains('SELECT "id", "name"'));
+        expect(result.sql, contains('EXISTS'));
+        expect(result.sql, contains('"isActive" = \$1'));
+      });
+    });
+
+    group('FILTER clause for aggregations (PostgreSQL)', () {
+      late SqlCompiler compiler;
+
+      setUp(() {
+        compiler = SqlCompiler(provider: 'postgresql');
+      });
+
+      test('generates basic aggregate without FILTER', () {
+        final query = JsonQueryBuilder()
+            .model('ConsultantReview')
+            .action(QueryAction.aggregate)
+            .aggregation({
+              '_count': true,
+              '_avg': {'rating': true},
+            })
+            .where({'consultantProfileId': 'consultant-123'})
+            .build();
+
+        final result = compiler.compile(query);
+
+        expect(result.sql, contains('COUNT(*) AS "_count"'));
+        expect(result.sql, contains('AVG("rating") AS "_avg_rating"'));
+        expect(result.sql, contains('WHERE "consultantProfileId" = \$1'));
+      });
+
+      test('generates COUNT with FILTER clause', () {
+        final query = JsonQueryBuilder()
+            .model('ConsultantReview')
+            .action(QueryAction.aggregate)
+            .aggregation({
+              '_count': true,
+              '_countFiltered': [
+                {'alias': 'fiveStar', 'filter': {'rating': 5}},
+                {'alias': 'fourStar', 'filter': {'rating': 4}},
+              ],
+            })
+            .where({'consultantProfileId': 'consultant-123'})
+            .build();
+
+        final result = compiler.compile(query);
+
+        expect(result.sql, contains('COUNT(*) AS "_count"'));
+        expect(result.sql, contains('COUNT(*) FILTER (WHERE "rating" = \$1000) AS "fiveStar"'));
+        expect(result.sql, contains('COUNT(*) FILTER (WHERE "rating" = \$1001) AS "fourStar"'));
+        // Values should be present
+        expect(result.args, contains('consultant-123'));
+        expect(result.args, contains(5));
+        expect(result.args, contains(4));
+      });
+
+      test('generates all rating distribution with FILTER clause', () {
+        final query = JsonQueryBuilder()
+            .model('ConsultantReview')
+            .action(QueryAction.aggregate)
+            .aggregation({
+              '_count': true,
+              '_avg': {'rating': true},
+              '_countFiltered': [
+                {'alias': 'fiveStar', 'filter': {'rating': 5}},
+                {'alias': 'fourStar', 'filter': {'rating': 4}},
+                {'alias': 'threeStar', 'filter': {'rating': 3}},
+                {'alias': 'twoStar', 'filter': {'rating': 2}},
+                {'alias': 'oneStar', 'filter': {'rating': 1}},
+              ],
+            })
+            .where({'consultantProfileId': 'consultant-123'})
+            .build();
+
+        final result = compiler.compile(query);
+
+        expect(result.sql, contains('COUNT(*) AS "_count"'));
+        expect(result.sql, contains('AVG("rating") AS "_avg_rating"'));
+        expect(result.sql, contains('"fiveStar"'));
+        expect(result.sql, contains('"fourStar"'));
+        expect(result.sql, contains('"threeStar"'));
+        expect(result.sql, contains('"twoStar"'));
+        expect(result.sql, contains('"oneStar"'));
+        expect(result.sql, contains('FILTER'));
+      });
+
+      test('FILTER clause not generated for MySQL (unsupported)', () {
+        final mysqlCompiler = SqlCompiler(provider: 'mysql');
+
+        final query = JsonQueryBuilder()
+            .model('Review')
+            .action(QueryAction.aggregate)
+            .aggregation({
+              '_count': true,
+              '_countFiltered': [
+                {'alias': 'fiveStar', 'filter': {'rating': 5}},
+              ],
+            })
+            .build();
+
+        final result = mysqlCompiler.compile(query);
+
+        // FILTER clause should NOT be generated for MySQL
+        expect(result.sql, isNot(contains('FILTER')));
+        expect(result.sql, contains('COUNT(*) AS "_count"'));
+      });
+
+      test('FILTER clause not generated for SQLite (unsupported)', () {
+        final sqliteCompiler = SqlCompiler(provider: 'sqlite');
+
+        final query = JsonQueryBuilder()
+            .model('Review')
+            .action(QueryAction.aggregate)
+            .aggregation({
+              '_count': true,
+              '_countFiltered': [
+                {'alias': 'fiveStar', 'filter': {'rating': 5}},
+              ],
+            })
+            .build();
+
+        final result = sqliteCompiler.compile(query);
+
+        // FILTER clause should NOT be generated for SQLite
+        expect(result.sql, isNot(contains('FILTER')));
+      });
+    });
+
+    group('Include with select fields', () {
+      late SqlCompiler compilerWithSchema;
+      late SchemaRegistry schema;
+
+      setUp(() {
+        schema = SchemaRegistry();
+
+        // Register ConsultantProfile model
+        schema.registerModel(ModelSchema(
+          name: 'ConsultantProfile',
+          tableName: 'ConsultantProfile',
+          fields: {
+            'id': const FieldInfo(
+              name: 'id',
+              columnName: 'id',
+              type: 'String',
+              isId: true,
+            ),
+            'headline': const FieldInfo(
+              name: 'headline',
+              columnName: 'headline',
+              type: 'String',
+            ),
+            'rating': const FieldInfo(
+              name: 'rating',
+              columnName: 'rating',
+              type: 'double',
+            ),
+            'userId': const FieldInfo(
+              name: 'userId',
+              columnName: 'userId',
+              type: 'String',
+            ),
+            'domainId': const FieldInfo(
+              name: 'domainId',
+              columnName: 'domainId',
+              type: 'String',
+            ),
+          },
+          relations: {
+            'user': RelationInfo.manyToOne(
+              name: 'user',
+              targetModel: 'User',
+              foreignKey: 'userId',
+            ),
+            'domain': RelationInfo.manyToOne(
+              name: 'domain',
+              targetModel: 'Domain',
+              foreignKey: 'domainId',
+            ),
+          },
+        ));
+
+        // Register User model
+        schema.registerModel(ModelSchema(
+          name: 'User',
+          tableName: 'users',
+          fields: {
+            'id': const FieldInfo(
+              name: 'id',
+              columnName: 'id',
+              type: 'String',
+              isId: true,
+            ),
+            'name': const FieldInfo(
+              name: 'name',
+              columnName: 'name',
+              type: 'String',
+            ),
+            'image': const FieldInfo(
+              name: 'image',
+              columnName: 'image',
+              type: 'String',
+            ),
+            'email': const FieldInfo(
+              name: 'email',
+              columnName: 'email',
+              type: 'String',
+            ),
+          },
+        ));
+
+        // Register Domain model
+        schema.registerModel(ModelSchema(
+          name: 'Domain',
+          tableName: 'Domain',
+          fields: {
+            'id': const FieldInfo(
+              name: 'id',
+              columnName: 'id',
+              type: 'String',
+              isId: true,
+            ),
+            'name': const FieldInfo(
+              name: 'name',
+              columnName: 'name',
+              type: 'String',
+            ),
+          },
+        ));
+
+        compilerWithSchema = SqlCompiler(
+          provider: 'postgresql',
+          schema: schema,
+        );
+      });
+
+      test('include with true includes all fields', () {
+        final query = JsonQueryBuilder()
+            .model('ConsultantProfile')
+            .action(QueryAction.findMany)
+            .include({
+              'user': true,
+              'domain': true,
+            })
+            .build();
+
+        final result = compilerWithSchema.compile(query);
+
+        // Should include LEFT JOINs
+        expect(result.sql, contains('LEFT JOIN "users"'));
+        expect(result.sql, contains('LEFT JOIN "Domain"'));
+        // Should have aliased columns
+        expect(result.sql, contains('AS'));
+      });
+
+      test('include with select restricts fields', () {
+        final query = JsonQueryBuilder()
+            .model('ConsultantProfile')
+            .action(QueryAction.findMany)
+            .include({
+              'user': {
+                'select': {'name': true, 'image': true}
+              },
+              'domain': {
+                'select': {'id': true, 'name': true}
+              },
+            })
+            .build();
+
+        final result = compilerWithSchema.compile(query);
+
+        // Should include LEFT JOINs
+        expect(result.sql, contains('LEFT JOIN "users"'));
+        expect(result.sql, contains('LEFT JOIN "Domain"'));
+        // Should select specific columns from relations
+        // The relation compiler will generate aliases like user__name, user__image
+        expect(result.sql, contains('"t0"'));  // Base table alias
+        expect(result.sql, contains('"t1"'));  // First relation alias
+      });
+    });
   });
 }
 

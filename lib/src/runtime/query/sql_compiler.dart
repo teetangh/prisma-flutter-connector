@@ -88,6 +88,11 @@ class SqlCompiler {
     // Prisma schemas can have PascalCase or snake_case table names
     final tableName = query.modelName;
 
+    // Check for selectFields (v0.2.5+)
+    final selectFieldsList = args['selectFields'] as List<dynamic>?;
+    final hasSelectFields =
+        selectFieldsList != null && selectFieldsList.isNotEmpty;
+
     // Check for include directive (relations)
     final include = _extractInclude(query.args.selection);
     final hasRelations = include != null && include.isNotEmpty;
@@ -108,19 +113,36 @@ class SqlCompiler {
       );
 
       if (compiledRelations.isNotEmpty) {
-        selectClause = relationCompiler.generateSelectColumns(
-          compiledRelations.columnAliases,
-        );
+        if (hasSelectFields) {
+          // Use selectFields with relation support
+          selectClause = _buildSelectFieldsWithRelations(
+            selectFieldsList.cast<String>(),
+            baseAlias,
+            compiledRelations,
+          );
+        } else {
+          selectClause = relationCompiler.generateSelectColumns(
+            compiledRelations.columnAliases,
+          );
+        }
         joinClauses = compiledRelations.joinClauses;
       } else {
         // Fall back to simple select
-        final selectFields = _buildSelectFields(query.args.selection);
-        selectClause = selectFields.isEmpty ? '*' : selectFields.join(', ');
+        if (hasSelectFields) {
+          selectClause = _buildSelectFieldsFromList(selectFieldsList.cast<String>());
+        } else {
+          final selectFields = _buildSelectFields(query.args.selection);
+          selectClause = selectFields.isEmpty ? '*' : selectFields.join(', ');
+        }
       }
     } else {
       // Simple select without relations
-      final selectFields = _buildSelectFields(query.args.selection);
-      selectClause = selectFields.isEmpty ? '*' : selectFields.join(', ');
+      if (hasSelectFields) {
+        selectClause = _buildSelectFieldsFromList(selectFieldsList.cast<String>());
+      } else {
+        final selectFields = _buildSelectFields(query.args.selection);
+        selectClause = selectFields.isEmpty ? '*' : selectFields.join(', ');
+      }
     }
 
     // Build WHERE clause
@@ -399,8 +421,9 @@ class SqlCompiler {
 
   /// Compile an AGGREGATE query.
   ///
-  /// Supports: _count, _avg, _sum, _min, _max
-  /// Example:
+  /// Supports: _count, _avg, _sum, _min, _max with optional FILTER clause.
+  ///
+  /// Example (basic):
   /// ```dart
   /// JsonQueryBuilder()
   ///   .model('Product')
@@ -414,6 +437,26 @@ class SqlCompiler {
   ///   })
   ///   .build();
   /// ```
+  ///
+  /// Example (with FILTER clause for conditional aggregations):
+  /// ```dart
+  /// JsonQueryBuilder()
+  ///   .model('ConsultantReview')
+  ///   .action(QueryAction.aggregate)
+  ///   .aggregation({
+  ///     '_count': true,  // Total count
+  ///     '_avg': {'rating': true},
+  ///     '_countFiltered': [
+  ///       {'alias': 'fiveStar', 'filter': {'rating': 5}},
+  ///       {'alias': 'fourStar', 'filter': {'rating': 4}},
+  ///       {'alias': 'threeStar', 'filter': {'rating': 3}},
+  ///     ],
+  ///   })
+  ///   .build();
+  /// // Generates: SELECT COUNT(*), AVG("rating"),
+  /// //   COUNT(*) FILTER (WHERE "rating" = $1) AS "fiveStar",
+  /// //   COUNT(*) FILTER (WHERE "rating" = $2) AS "fourStar", ...
+  /// ```
   SqlQuery _compileAggregateQuery(JsonQuery query) {
     final args = query.args.arguments ?? {};
     final where = args['where'] as Map<String, dynamic>?;
@@ -421,6 +464,9 @@ class SqlCompiler {
 
     final tableName = query.modelName;
     final functions = <String>[];
+    final filterValues = <dynamic>[];
+    final filterTypes = <ArgType>[];
+    var filterParamIndex = 1000; // Start high to avoid conflicts with WHERE
 
     // _count
     if (agg['_count'] == true) {
@@ -437,12 +483,59 @@ class SqlCompiler {
       }
     }
 
+    // _countFiltered - COUNT with FILTER clause (PostgreSQL only)
+    if (agg['_countFiltered'] is List && _supportsFilterClause()) {
+      final countFilters = agg['_countFiltered'] as List<dynamic>;
+      for (final filterSpec in countFilters) {
+        if (filterSpec is Map<String, dynamic>) {
+          final alias = filterSpec['alias'] as String?;
+          final filter = filterSpec['filter'] as Map<String, dynamic>?;
+          if (alias != null && filter != null) {
+            final filterClause = _buildSimpleFilterCondition(
+              filter,
+              filterParamIndex,
+              filterValues,
+              filterTypes,
+            );
+            filterParamIndex += filter.length;
+            functions.add(
+              'COUNT(*) FILTER (WHERE $filterClause) AS ${_quoteIdentifier(alias)}',
+            );
+          }
+        }
+      }
+    }
+
     // _avg
     if (agg['_avg'] is Map) {
       final avgFields = agg['_avg'] as Map<String, dynamic>;
       for (final field in avgFields.keys) {
         if (avgFields[field] == true) {
           functions.add('AVG(${_quoteIdentifier(field)}) AS "_avg_$field"');
+        }
+      }
+    }
+
+    // _avgFiltered - AVG with FILTER clause (PostgreSQL only)
+    if (agg['_avgFiltered'] is List && _supportsFilterClause()) {
+      final avgFilters = agg['_avgFiltered'] as List<dynamic>;
+      for (final filterSpec in avgFilters) {
+        if (filterSpec is Map<String, dynamic>) {
+          final alias = filterSpec['alias'] as String?;
+          final field = filterSpec['field'] as String?;
+          final filter = filterSpec['filter'] as Map<String, dynamic>?;
+          if (alias != null && field != null && filter != null) {
+            final filterClause = _buildSimpleFilterCondition(
+              filter,
+              filterParamIndex,
+              filterValues,
+              filterTypes,
+            );
+            filterParamIndex += filter.length;
+            functions.add(
+              'AVG(${_quoteIdentifier(field)}) FILTER (WHERE $filterClause) AS ${_quoteIdentifier(alias)}',
+            );
+          }
         }
       }
     }
@@ -487,15 +580,47 @@ class SqlCompiler {
       modelName: query.modelName,
     );
 
+    // Combine filter values with where values
+    final allArgs = [...whereArgs, ...filterValues];
+    final allTypes = [...whereTypes, ...filterTypes];
+
     final sql =
         'SELECT ${functions.join(', ')} FROM ${_quoteIdentifier(tableName)}'
         '${whereClause.isNotEmpty ? ' WHERE $whereClause' : ''}';
 
     return SqlQuery(
       sql: sql,
-      args: whereArgs,
-      argTypes: whereTypes,
+      args: allArgs,
+      argTypes: allTypes,
     );
+  }
+
+  /// Build a simple filter condition for FILTER clause.
+  ///
+  /// Returns the condition string and adds values/types to the provided lists.
+  String _buildSimpleFilterCondition(
+    Map<String, dynamic> filter,
+    int startParamIndex,
+    List<dynamic> values,
+    List<ArgType> types,
+  ) {
+    final conditions = <String>[];
+    var paramIndex = startParamIndex;
+
+    for (final entry in filter.entries) {
+      final field = entry.key;
+      final value = entry.value;
+      conditions.add('${_quoteIdentifier(field)} = ${_placeholder(paramIndex++)}');
+      values.add(value);
+      types.add(_inferArgType(value));
+    }
+
+    return conditions.join(' AND ');
+  }
+
+  /// Check if the database provider supports FILTER clause.
+  bool _supportsFilterClause() {
+    return provider == 'postgresql' || provider == 'supabase';
   }
 
   /// Compile a GROUP BY query.
@@ -702,6 +827,83 @@ RETURNING *
     }
 
     return fields;
+  }
+
+  /// Build SELECT clause from a list of field names (v0.2.5+).
+  ///
+  /// This handles the new selectFields(['id', 'name']) syntax.
+  String _buildSelectFieldsFromList(List<String> fields) {
+    if (fields.isEmpty) return '*';
+
+    final columns = <String>[];
+    for (final field in fields) {
+      // Check for dot notation (relation.field)
+      if (field.contains('.')) {
+        // For simple queries without include, dot notation is not supported
+        // The field would just be quoted as-is which would likely fail
+        // This is handled properly by _buildSelectFieldsWithRelations
+        columns.add(_quoteIdentifier(field.replaceAll('.', '_')));
+      } else {
+        columns.add(_quoteIdentifier(field));
+      }
+    }
+
+    return columns.join(', ');
+  }
+
+  /// Build SELECT clause from selectFields with relation support (v0.2.5+).
+  ///
+  /// Handles dot notation for related fields:
+  /// - 'id' -> "t0"."id"
+  /// - 'category.name' -> "t1"."name" AS "category_name"
+  String _buildSelectFieldsWithRelations(
+    List<String> fields,
+    String baseAlias,
+    CompiledRelations relations,
+  ) {
+    if (fields.isEmpty) return '*';
+
+    final columns = <String>[];
+
+    for (final field in fields) {
+      if (field.contains('.')) {
+        // Relation field: category.name -> "t1"."name" AS "category_name"
+        final parts = field.split('.');
+        if (parts.length == 2) {
+          final relationName = parts[0];
+          final relationField = parts[1];
+
+          // Find the alias for this relation from columnAliases
+          String? relationAlias;
+          for (final entry in relations.columnAliases.entries) {
+            final columnAlias = entry.value;
+            // Check if this column belongs to the requested relation
+            if (columnAlias.relationPath == relationName) {
+              relationAlias = columnAlias.tableAlias;
+              break;
+            }
+          }
+
+          if (relationAlias != null) {
+            final aliasName = '${relationName}_$relationField';
+            columns.add(
+                '"$relationAlias".${_quoteIdentifier(relationField)} AS ${_quoteIdentifier(aliasName)}');
+          } else {
+            // Relation not found in include, use placeholder
+            columns.add(
+                'NULL AS ${_quoteIdentifier('${relationName}_$relationField')}');
+          }
+        } else {
+          // Nested relation (e.g., user.profile.bio) - not yet supported
+          columns.add('NULL AS ${_quoteIdentifier(field.replaceAll('.', '_'))}');
+        }
+      } else {
+        // Base model field: id -> "t0"."id"
+        columns.add('"$baseAlias".${_quoteIdentifier(field)}');
+      }
+    }
+
+    return columns.join(', ');
   }
 
   /// Detect if a value contains a relation filter operator.

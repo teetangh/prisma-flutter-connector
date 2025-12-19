@@ -4,6 +4,68 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.2.5] - 2025-12-19
+
+### Added
+- **Select Specific Fields** - New `selectFields()` method to select specific columns instead of `SELECT *`
+  - Reduces network overhead by fetching only needed columns
+  - Supports dot notation for related fields (e.g., `category.name`) when used with `include()`
+  - Works with all query types: `findMany`, `findFirst`, `findUnique`
+  - Compatible with WHERE, ORDER BY, and pagination
+
+- **FILTER Clause for Aggregations** (PostgreSQL/Supabase only)
+  - New `_countFiltered` aggregation for conditional COUNT
+  - Enables rating distributions, conditional stats in single query
+  - Falls back gracefully for MySQL/SQLite (not supported)
+
+- **Include with Select** - Select specific fields from included relations
+  - `include: {'user': {'select': {'name': true, 'image': true}}}`
+  - Only fetches requested columns from related tables
+  - Reduces data transfer for large relations
+
+### Example Usage
+```dart
+// Select specific scalar fields
+final query = JsonQueryBuilder()
+    .model('Product')
+    .action(QueryAction.findMany)
+    .selectFields(['id', 'name', 'price', 'rating'])
+    .where({'isActive': true})
+    .orderBy({'price': 'asc'})
+    .take(10)
+    .build();
+
+// Generates: SELECT "id", "name", "price", "rating" FROM "Product"
+//            WHERE "isActive" = $1 ORDER BY "price" ASC LIMIT 10
+
+// Aggregation with FILTER clause (rating distribution)
+final statsQuery = JsonQueryBuilder()
+    .model('ConsultantReview')
+    .action(QueryAction.aggregate)
+    .aggregation({
+      '_count': true,
+      '_avg': {'rating': true},
+      '_countFiltered': [
+        {'alias': 'fiveStar', 'filter': {'rating': 5}},
+        {'alias': 'fourStar', 'filter': {'rating': 4}},
+        {'alias': 'threeStar', 'filter': {'rating': 3}},
+      ],
+    })
+    .where({'consultantProfileId': 'consultant-123'})
+    .build();
+
+// Generates: SELECT COUNT(*) AS "_count", AVG("rating") AS "_avg_rating",
+//   COUNT(*) FILTER (WHERE "rating" = $1) AS "fiveStar",
+//   COUNT(*) FILTER (WHERE "rating" = $2) AS "fourStar", ...
+```
+
+### Backward Compatibility
+- Existing `.select(Map)` syntax continues to work
+- Default behavior (no selectFields) remains `SELECT *`
+- FILTER clause silently ignored on unsupported providers
+
+---
+
 ## [0.2.4] - 2025-12-19
 
 ### Added

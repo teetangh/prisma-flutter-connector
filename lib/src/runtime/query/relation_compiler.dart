@@ -107,12 +107,28 @@ class RelationCompiler {
   /// [baseModel] - The main model being queried (e.g., 'User').
   /// [baseAlias] - The alias for the base table (e.g., 't0').
   /// [include] - The include map from the query.
+  /// [baseSelectFields] - Optional list of fields to select from base model.
   ///
   /// Returns compiled relations with JOIN clauses and aliases.
+  ///
+  /// Include syntax supports selecting specific fields from relations:
+  /// ```dart
+  /// include: {
+  ///   'user': true,  // Include all fields
+  ///   'domain': {
+  ///     'select': {'id': true, 'name': true}  // Only id and name
+  ///   },
+  ///   'posts': {
+  ///     'select': {'title': true},
+  ///     'include': {'author': true}  // Nested include
+  ///   }
+  /// }
+  /// ```
   CompiledRelations compile({
     required String baseModel,
     required String baseAlias,
     required Map<String, dynamic> include,
+    List<String>? baseSelectFields,
   }) {
     _aliasCounter = 0;
 
@@ -120,12 +136,21 @@ class RelationCompiler {
     final aliases = <String, ColumnAlias>{};
     final includedRelations = <IncludedRelation>[];
 
-    // Add base model columns
-    _addModelColumns(
-      modelName: baseModel,
-      tableAlias: baseAlias,
-      aliases: aliases,
-    );
+    // Add base model columns (either all or selected)
+    if (baseSelectFields != null && baseSelectFields.isNotEmpty) {
+      _addSelectedColumns(
+        modelName: baseModel,
+        tableAlias: baseAlias,
+        aliases: aliases,
+        selectedFields: baseSelectFields,
+      );
+    } else {
+      _addModelColumns(
+        modelName: baseModel,
+        tableAlias: baseAlias,
+        aliases: aliases,
+      );
+    }
 
     // Process each include
     for (final entry in include.entries) {
@@ -199,13 +224,38 @@ class RelationCompiler {
       targetAlias: tableAlias,
     );
 
+    // Check if includeValue has a 'select' directive for field selection
+    List<String>? selectFields;
+    if (includeValue is Map<String, dynamic>) {
+      final select = includeValue['select'];
+      if (select is Map<String, dynamic>) {
+        // Extract field names where value is true
+        selectFields = select.entries
+            .where((e) => e.value == true)
+            .map((e) => e.key)
+            .toList();
+      }
+    }
+
     // Add target model columns with proper aliasing
-    _addModelColumns(
-      modelName: relation.targetModel,
-      tableAlias: tableAlias,
-      aliases: aliases,
-      relationPath: relationName,
-    );
+    if (selectFields != null && selectFields.isNotEmpty) {
+      // Only add selected fields
+      _addSelectedColumns(
+        modelName: relation.targetModel,
+        tableAlias: tableAlias,
+        aliases: aliases,
+        selectedFields: selectFields,
+        relationPath: relationName,
+      );
+    } else {
+      // Add all columns
+      _addModelColumns(
+        modelName: relation.targetModel,
+        tableAlias: tableAlias,
+        aliases: aliases,
+        relationPath: relationName,
+      );
+    }
 
     // Handle nested includes
     final nestedIncludes = <IncludedRelation>[];
@@ -318,6 +368,57 @@ class RelationCompiler {
       aliases[aliasKey] = ColumnAlias(
         tableAlias: tableAlias,
         columnName: field.columnName,
+        modelName: modelName,
+        relationPath: relationPath,
+      );
+    }
+  }
+
+  /// Add only selected columns from a model.
+  ///
+  /// This is used when the include directive specifies which fields to select.
+  void _addSelectedColumns({
+    required String modelName,
+    required String tableAlias,
+    required Map<String, ColumnAlias> aliases,
+    required List<String> selectedFields,
+    String? relationPath,
+  }) {
+    final model = _schema.getModel(modelName);
+    if (model == null) {
+      // Model not in schema, add fields directly by name
+      for (final fieldName in selectedFields) {
+        final aliasKey = relationPath != null
+            ? '${relationPath}__$fieldName'
+            : fieldName;
+
+        aliases[aliasKey] = ColumnAlias(
+          tableAlias: tableAlias,
+          columnName: fieldName,
+          modelName: modelName,
+          relationPath: relationPath,
+        );
+      }
+      return;
+    }
+
+    // Map of field name -> column name for the model
+    final fieldToColumn = <String, String>{};
+    for (final field in model.scalarFields) {
+      fieldToColumn[field.name] = field.columnName;
+    }
+
+    for (final fieldName in selectedFields) {
+      // Get actual column name (may differ from field name)
+      final columnName = fieldToColumn[fieldName] ?? fieldName;
+
+      final aliasKey = relationPath != null
+          ? '${relationPath}__$columnName'
+          : columnName;
+
+      aliases[aliasKey] = ColumnAlias(
+        tableAlias: tableAlias,
+        columnName: columnName,
         modelName: modelName,
         relationPath: relationPath,
       );
