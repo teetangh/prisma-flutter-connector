@@ -804,18 +804,48 @@ RETURNING *
               types.add(_inferArgType(op.value));
               break;
             case 'contains':
-              conditions.add('$columnName LIKE ${_placeholder(paramIndex++)}');
-              values.add('%${op.value}%');
+              // Support mode: 'insensitive' for case-insensitive search
+              final containsInsensitive =
+                  op.value is Map && op.value['mode'] == 'insensitive';
+              final containsValue =
+                  op.value is Map ? op.value['value'] : op.value;
+              final containsOp = containsInsensitive &&
+                      (provider == 'postgresql' || provider == 'supabase')
+                  ? 'ILIKE'
+                  : 'LIKE';
+              conditions
+                  .add('$columnName $containsOp ${_placeholder(paramIndex++)}');
+              values.add('%$containsValue%');
               types.add(ArgType.string);
               break;
             case 'startsWith':
-              conditions.add('$columnName LIKE ${_placeholder(paramIndex++)}');
-              values.add('${op.value}%');
+              // Support mode: 'insensitive' for case-insensitive search
+              final startsWithInsensitive =
+                  op.value is Map && op.value['mode'] == 'insensitive';
+              final startsWithValue =
+                  op.value is Map ? op.value['value'] : op.value;
+              final startsWithOp = startsWithInsensitive &&
+                      (provider == 'postgresql' || provider == 'supabase')
+                  ? 'ILIKE'
+                  : 'LIKE';
+              conditions.add(
+                  '$columnName $startsWithOp ${_placeholder(paramIndex++)}');
+              values.add('$startsWithValue%');
               types.add(ArgType.string);
               break;
             case 'endsWith':
-              conditions.add('$columnName LIKE ${_placeholder(paramIndex++)}');
-              values.add('%${op.value}');
+              // Support mode: 'insensitive' for case-insensitive search
+              final endsWithInsensitive =
+                  op.value is Map && op.value['mode'] == 'insensitive';
+              final endsWithValue =
+                  op.value is Map ? op.value['value'] : op.value;
+              final endsWithOp = endsWithInsensitive &&
+                      (provider == 'postgresql' || provider == 'supabase')
+                  ? 'ILIKE'
+                  : 'LIKE';
+              conditions
+                  .add('$columnName $endsWithOp ${_placeholder(paramIndex++)}');
+              values.add('%$endsWithValue');
               types.add(ArgType.string);
               break;
           }

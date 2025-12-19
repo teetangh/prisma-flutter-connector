@@ -150,6 +150,30 @@ void main() {
 
         expect(result, {'endsWith': 'suffix'});
       });
+
+      test('containsInsensitive creates correct map with mode', () {
+        final result = FilterOperators.containsInsensitive('Test');
+
+        expect(result, {
+          'contains': {'value': 'Test', 'mode': 'insensitive'}
+        });
+      });
+
+      test('startsWithInsensitive creates correct map with mode', () {
+        final result = FilterOperators.startsWithInsensitive('Prefix');
+
+        expect(result, {
+          'startsWith': {'value': 'Prefix', 'mode': 'insensitive'}
+        });
+      });
+
+      test('endsWithInsensitive creates correct map with mode', () {
+        final result = FilterOperators.endsWithInsensitive('Suffix');
+
+        expect(result, {
+          'endsWith': {'value': 'Suffix', 'mode': 'insensitive'}
+        });
+      });
     });
 
     group('Logical Operators', () {

@@ -307,6 +307,18 @@ class FilterOperators {
   static Map<String, dynamic> startsWith(String value) => {'startsWith': value};
   static Map<String, dynamic> endsWith(String value) => {'endsWith': value};
 
+  /// Case-insensitive contains (uses ILIKE on PostgreSQL/Supabase)
+  static Map<String, dynamic> containsInsensitive(String value) =>
+      {'contains': {'value': value, 'mode': 'insensitive'}};
+
+  /// Case-insensitive startsWith (uses ILIKE on PostgreSQL/Supabase)
+  static Map<String, dynamic> startsWithInsensitive(String value) =>
+      {'startsWith': {'value': value, 'mode': 'insensitive'}};
+
+  /// Case-insensitive endsWith (uses ILIKE on PostgreSQL/Supabase)
+  static Map<String, dynamic> endsWithInsensitive(String value) =>
+      {'endsWith': {'value': value, 'mode': 'insensitive'}};
+
   static Map<String, dynamic> and(List<Map<String, dynamic>> conditions) =>
       {'AND': conditions};
   static Map<String, dynamic> or(List<Map<String, dynamic>> conditions) =>

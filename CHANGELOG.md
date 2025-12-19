@@ -4,6 +4,29 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.2.2] - 2025-12-19
+
+### Added
+- **Case-Insensitive Search** - New `mode: 'insensitive'` option for string filters
+  - `FilterOperators.containsInsensitive(value)` - Case-insensitive LIKE search
+  - `FilterOperators.startsWithInsensitive(value)` - Case-insensitive prefix search
+  - `FilterOperators.endsWithInsensitive(value)` - Case-insensitive suffix search
+  - Generates `ILIKE` for PostgreSQL/Supabase (case-insensitive)
+  - Falls back to `LIKE` for MySQL/SQLite (they are already case-insensitive by default)
+  - Backward compatible - existing `contains()`, `startsWith()`, `endsWith()` unchanged
+
+### Example Usage
+```dart
+// Case-insensitive search
+final query = JsonQueryBuilder()
+    .model('User')
+    .action(QueryAction.findMany)
+    .where({
+      'name': FilterOperators.containsInsensitive('john'),  // Matches "John", "JOHN", "john"
+    })
+    .build();
+```
+
 ## [0.2.1] - 2025-12-19
 
 ### Fixed

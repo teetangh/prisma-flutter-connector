@@ -521,6 +521,48 @@ void main() {
           expect(result.sql, 'SELECT * FROM "User" WHERE "email" LIKE \$1');
           expect(result.args, ['%.com']);
         });
+
+        test('compiles containsInsensitive with ILIKE for PostgreSQL', () {
+          final query = JsonQueryBuilder()
+              .model('User')
+              .action(QueryAction.findMany)
+              .where({
+            'name': FilterOperators.containsInsensitive('John')
+          }).build();
+
+          final result = compiler.compile(query);
+
+          expect(result.sql, 'SELECT * FROM "User" WHERE "name" ILIKE \$1');
+          expect(result.args, ['%John%']);
+        });
+
+        test('compiles startsWithInsensitive with ILIKE for PostgreSQL', () {
+          final query = JsonQueryBuilder()
+              .model('User')
+              .action(QueryAction.findMany)
+              .where({
+            'name': FilterOperators.startsWithInsensitive('Dr.')
+          }).build();
+
+          final result = compiler.compile(query);
+
+          expect(result.sql, 'SELECT * FROM "User" WHERE "name" ILIKE \$1');
+          expect(result.args, ['Dr.%']);
+        });
+
+        test('compiles endsWithInsensitive with ILIKE for PostgreSQL', () {
+          final query = JsonQueryBuilder()
+              .model('User')
+              .action(QueryAction.findMany)
+              .where({
+            'email': FilterOperators.endsWithInsensitive('.COM')
+          }).build();
+
+          final result = compiler.compile(query);
+
+          expect(result.sql, 'SELECT * FROM "User" WHERE "email" ILIKE \$1');
+          expect(result.args, ['%.COM']);
+        });
       });
 
       group('Logical Operators', () {
@@ -701,6 +743,22 @@ void main() {
         expect(result.sql, 'SELECT * FROM `User` WHERE `email` = ?');
       });
 
+      test('containsInsensitive uses LIKE (no ILIKE in MySQL)', () {
+        final query = JsonQueryBuilder()
+            .model('User')
+            .action(QueryAction.findMany)
+            .where({
+          'name': FilterOperators.containsInsensitive('John')
+        }).build();
+
+        final result = compiler.compile(query);
+
+        // MySQL doesn't support ILIKE, falls back to LIKE
+        // (MySQL LIKE is case-insensitive by default with utf8_general_ci)
+        expect(result.sql, 'SELECT * FROM `User` WHERE `name` LIKE ?');
+        expect(result.args, ['%John%']);
+      });
+
       test('does not add RETURNING clause for INSERT', () {
         const query = JsonQuery(
           modelName: 'User',
@@ -748,6 +806,22 @@ void main() {
         expect(result.sql, 'SELECT * FROM "User" WHERE "email" = ?');
       });
 
+      test('containsInsensitive uses LIKE (no ILIKE in SQLite)', () {
+        final query = JsonQueryBuilder()
+            .model('User')
+            .action(QueryAction.findMany)
+            .where({
+          'name': FilterOperators.containsInsensitive('John')
+        }).build();
+
+        final result = compiler.compile(query);
+
+        // SQLite doesn't support ILIKE, falls back to LIKE
+        // (SQLite LIKE is case-insensitive for ASCII by default)
+        expect(result.sql, 'SELECT * FROM "User" WHERE "name" LIKE ?');
+        expect(result.args, ['%John%']);
+      });
+
       test('does not add RETURNING clause for INSERT', () {
         const query = JsonQuery(
           modelName: 'User',
@@ -782,6 +856,21 @@ void main() {
         final result = compiler.compile(query);
 
         expect(result.sql, 'SELECT * FROM "User" WHERE "email" = \$1');
+      });
+
+      test('containsInsensitive uses ILIKE (like PostgreSQL)', () {
+        final query = JsonQueryBuilder()
+            .model('User')
+            .action(QueryAction.findMany)
+            .where({
+          'name': FilterOperators.containsInsensitive('John')
+        }).build();
+
+        final result = compiler.compile(query);
+
+        // Supabase uses PostgreSQL, so ILIKE is supported
+        expect(result.sql, 'SELECT * FROM "User" WHERE "name" ILIKE \$1');
+        expect(result.args, ['%John%']);
       });
 
       test('adds RETURNING clause for INSERT', () {
