@@ -145,12 +145,24 @@ class ComputedField {
   }
 
   /// Create a COUNT aggregate computed field.
+  ///
+  /// By default counts all rows (`COUNT(*)`). Optionally specify a [field]
+  /// to count non-null values of that field (`COUNT(field)`).
+  ///
+  /// ```dart
+  /// // COUNT(*) - count all rows
+  /// ComputedField.count(from: 'Review', where: {...})
+  ///
+  /// // COUNT(field) - count non-null values
+  /// ComputedField.count(field: 'rating', from: 'Review', where: {...})
+  /// ```
   factory ComputedField.count({
+    String field = '*',
     required String from,
     Map<String, dynamic>? where,
   }) {
     return ComputedField._(
-      field: '*',
+      field: field,
       operation: AggregateOp.count,
       from: from,
       where: where,

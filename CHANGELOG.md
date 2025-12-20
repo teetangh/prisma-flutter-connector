@@ -12,7 +12,7 @@ All notable changes to the Prisma Flutter Connector.
   - `ComputedField.max()` - MAX aggregate subquery
   - `ComputedField.avg()` - AVG aggregate subquery
   - `ComputedField.sum()` - SUM aggregate subquery
-  - `ComputedField.count()` - COUNT aggregate subquery
+  - `ComputedField.count()` - COUNT aggregate subquery (now accepts optional `field` parameter for `COUNT(field)`)
   - `ComputedField.first()` - Fetch first matching value with ORDER BY
   - `FieldRef` class for referencing parent table columns in subqueries
 
