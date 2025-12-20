@@ -4,6 +4,17 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.2.7] - 2025-12-20
+
+### Fixed
+- **Dependency compatibility** - Upgraded `freezed` to ^3.0.6 to resolve version conflicts with `test` and `flutter_test` packages
+- **Lint compliance** - Added `const` constructors where applicable and fixed package imports
+- **Code formatting** - Applied consistent dart format across all source files
+
+### Notes
+- No functional changes from v0.2.6
+- This release ensures CI compatibility with Flutter 3.27.x
+
 ## [0.2.6] - 2025-12-19
 
 ### Added
