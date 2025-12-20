@@ -94,13 +94,19 @@ class RelationCompiler {
   final SchemaRegistry _schema;
   final String _provider;
 
-  int _aliasCounter = 0;
+  /// Starting counter for table aliases (default 1 since t0 is reserved for base table).
+  final int _startingCounter;
+
+  int _aliasCounter;
 
   RelationCompiler({
     required SchemaRegistry schema,
     String provider = 'postgresql',
+    int startingCounter = 1,
   })  : _schema = schema,
-        _provider = provider;
+        _provider = provider,
+        _startingCounter = startingCounter,
+        _aliasCounter = startingCounter;
 
   /// Compile include directive into JOIN clauses.
   ///
@@ -130,7 +136,8 @@ class RelationCompiler {
     required Map<String, dynamic> include,
     List<String>? baseSelectFields,
   }) {
-    _aliasCounter = 0;
+    // Reset to starting counter (default 1 since t0 is reserved for base table)
+    _aliasCounter = _startingCounter;
 
     final joins = <String>[];
     final aliases = <String, ColumnAlias>{};

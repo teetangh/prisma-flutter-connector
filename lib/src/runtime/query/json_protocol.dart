@@ -10,6 +10,8 @@ library;
 
 import 'dart:convert';
 
+import 'computed_field.dart';
+
 /// Represents a complete JSON query in Prisma's format.
 class JsonQuery {
   final String modelName;
@@ -127,6 +129,7 @@ class JsonQueryBuilder {
   Map<String, dynamic>? _orderBy;
   Map<String, dynamic>? _aggregate;
   List<String>? _groupBy;
+  Map<String, ComputedField>? _computed;
   int? _take;
   int? _skip;
   final bool _selectScalars = true;
@@ -226,6 +229,39 @@ class JsonQueryBuilder {
     return this;
   }
 
+  /// Add computed fields (correlated subqueries) to the query.
+  ///
+  /// Computed fields generate subqueries in the SELECT clause that reference
+  /// the parent row. This is useful for aggregating related data inline.
+  ///
+  /// Example:
+  /// ```dart
+  /// .computed({
+  ///   'minPrice': ComputedField.min('price',
+  ///     from: 'ConsultationPlan',
+  ///     where: {'consultantProfileId': FieldRef('id')}),
+  ///   'priceCurrency': ComputedField.first('priceCurrency',
+  ///     from: 'ConsultationPlan',
+  ///     where: {'consultantProfileId': FieldRef('id')},
+  ///     orderBy: {'price': 'asc'}),
+  /// })
+  /// ```
+  ///
+  /// Generates SQL like:
+  /// ```sql
+  /// SELECT *,
+  ///   (SELECT MIN("price") FROM "ConsultationPlan"
+  ///    WHERE "consultantProfileId" = t0."id") AS "minPrice",
+  ///   (SELECT "priceCurrency" FROM "ConsultationPlan"
+  ///    WHERE "consultantProfileId" = t0."id"
+  ///    ORDER BY "price" ASC LIMIT 1) AS "priceCurrency"
+  /// FROM "ConsultantProfile" t0
+  /// ```
+  JsonQueryBuilder computed(Map<String, ComputedField> fields) {
+    _computed = fields;
+    return this;
+  }
+
   JsonQuery build() {
     if (_modelName == null) {
       throw StateError('Model name is required');
@@ -244,6 +280,11 @@ class JsonQueryBuilder {
     if (_aggregate != null) arguments['_aggregate'] = _aggregate;
     if (_groupBy != null) arguments['by'] = _groupBy;
     if (_selectFields != null) arguments['selectFields'] = _selectFields;
+    if (_computed != null) {
+      arguments['_computed'] = _computed!.map(
+        (key, value) => MapEntry(key, value.toJson()),
+      );
+    }
 
     // Build selection
     JsonSelection? selection;

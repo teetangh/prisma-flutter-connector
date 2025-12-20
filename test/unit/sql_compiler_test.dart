@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:prisma_flutter_connector/src/runtime/query/sql_compiler.dart';
 import 'package:prisma_flutter_connector/src/runtime/query/json_protocol.dart';
+import 'package:prisma_flutter_connector/src/runtime/query/computed_field.dart';
 import 'package:prisma_flutter_connector/src/runtime/adapters/types.dart';
 import 'package:prisma_flutter_connector/src/runtime/schema/schema_registry.dart';
 
@@ -1488,12 +1489,12 @@ void main() {
         final result = compiler.compile(query);
 
         expect(result.sql, contains('COUNT(*) AS "_count"'));
-        expect(result.sql, contains('COUNT(*) FILTER (WHERE "rating" = \$1000) AS "fiveStar"'));
-        expect(result.sql, contains('COUNT(*) FILTER (WHERE "rating" = \$1001) AS "fourStar"'));
-        // Values should be present
-        expect(result.args, contains('consultant-123'));
-        expect(result.args, contains(5));
-        expect(result.args, contains(4));
+        // FILTER params continue after WHERE params ($1 = consultantProfileId)
+        expect(result.sql, contains('COUNT(*) FILTER (WHERE "rating" = \$2) AS "fiveStar"'));
+        expect(result.sql, contains('COUNT(*) FILTER (WHERE "rating" = \$3) AS "fourStar"'));
+        // Values should be present in correct order: WHERE args first, then FILTER args
+        expect(result.args, equals(['consultant-123', 5, 4]));
+        expect(result.argTypes.length, equals(3));
       });
 
       test('generates all rating distribution with FILTER clause', () {
@@ -1717,6 +1718,366 @@ void main() {
         // The relation compiler will generate aliases like user__name, user__image
         expect(result.sql, contains('"t0"'));  // Base table alias
         expect(result.sql, contains('"t1"'));  // First relation alias
+      });
+    });
+
+    group('Computed Fields (v0.2.6)', () {
+      late SqlCompiler compiler;
+
+      setUp(() {
+        compiler = SqlCompiler(provider: 'postgresql');
+      });
+
+      test('generates MIN subquery for computed field', () {
+        final query = JsonQueryBuilder()
+            .model('ConsultantProfile')
+            .action(QueryAction.findMany)
+            .computed({
+              'minPrice': ComputedField.min('price',
+                from: 'ConsultationPlan',
+                where: {'consultantProfileId': FieldRef('id')}),
+            })
+            .build();
+
+        final result = compiler.compile(query);
+
+        // Should have table alias
+        expect(result.sql, contains('"t0".*'));
+        expect(result.sql, contains('FROM "ConsultantProfile" "t0"'));
+
+        // Should have correlated subquery
+        expect(result.sql, contains('(SELECT MIN("price") FROM "ConsultationPlan"'));
+        expect(result.sql, contains('WHERE "consultantProfileId" = "t0"."id"'));
+        expect(result.sql, contains('AS "minPrice"'));
+      });
+
+      test('generates MAX subquery for computed field', () {
+        final query = JsonQueryBuilder()
+            .model('Product')
+            .action(QueryAction.findMany)
+            .computed({
+              'maxRating': ComputedField.max('rating',
+                from: 'Review',
+                where: {'productId': FieldRef('id')}),
+            })
+            .build();
+
+        final result = compiler.compile(query);
+
+        expect(result.sql, contains('(SELECT MAX("rating") FROM "Review"'));
+        expect(result.sql, contains('WHERE "productId" = "t0"."id"'));
+        expect(result.sql, contains('AS "maxRating"'));
+      });
+
+      test('generates AVG subquery for computed field', () {
+        final query = JsonQueryBuilder()
+            .model('Product')
+            .action(QueryAction.findMany)
+            .computed({
+              'avgRating': ComputedField.avg('rating',
+                from: 'Review',
+                where: {'productId': FieldRef('id')}),
+            })
+            .build();
+
+        final result = compiler.compile(query);
+
+        expect(result.sql, contains('(SELECT AVG("rating") FROM "Review"'));
+        expect(result.sql, contains('AS "avgRating"'));
+      });
+
+      test('generates SUM subquery for computed field', () {
+        final query = JsonQueryBuilder()
+            .model('Order')
+            .action(QueryAction.findMany)
+            .computed({
+              'totalAmount': ComputedField.sum('amount',
+                from: 'OrderItem',
+                where: {'orderId': FieldRef('id')}),
+            })
+            .build();
+
+        final result = compiler.compile(query);
+
+        expect(result.sql, contains('(SELECT SUM("amount") FROM "OrderItem"'));
+        expect(result.sql, contains('AS "totalAmount"'));
+      });
+
+      test('generates COUNT subquery for computed field', () {
+        final query = JsonQueryBuilder()
+            .model('User')
+            .action(QueryAction.findMany)
+            .computed({
+              'postCount': ComputedField.count(
+                from: 'Post',
+                where: {'userId': FieldRef('id')}),
+            })
+            .build();
+
+        final result = compiler.compile(query);
+
+        expect(result.sql, contains('(SELECT COUNT(*) FROM "Post"'));
+        expect(result.sql, contains('WHERE "userId" = "t0"."id"'));
+        expect(result.sql, contains('AS "postCount"'));
+      });
+
+      test('generates FIRST subquery with ORDER BY and LIMIT', () {
+        final query = JsonQueryBuilder()
+            .model('ConsultantProfile')
+            .action(QueryAction.findMany)
+            .computed({
+              'priceCurrency': ComputedField.first('priceCurrency',
+                from: 'ConsultationPlan',
+                where: {'consultantProfileId': FieldRef('id')},
+                orderBy: {'price': 'asc'}),
+            })
+            .build();
+
+        final result = compiler.compile(query);
+
+        expect(result.sql, contains('(SELECT "priceCurrency" FROM "ConsultationPlan"'));
+        expect(result.sql, contains('WHERE "consultantProfileId" = "t0"."id"'));
+        expect(result.sql, contains('ORDER BY "price" ASC LIMIT 1'));
+        expect(result.sql, contains('AS "priceCurrency"'));
+      });
+
+      test('supports multiple computed fields', () {
+        final query = JsonQueryBuilder()
+            .model('ConsultantProfile')
+            .action(QueryAction.findMany)
+            .computed({
+              'minPrice': ComputedField.min('price',
+                from: 'ConsultationPlan',
+                where: {'consultantProfileId': FieldRef('id')}),
+              'maxPrice': ComputedField.max('price',
+                from: 'ConsultationPlan',
+                where: {'consultantProfileId': FieldRef('id')}),
+            })
+            .build();
+
+        final result = compiler.compile(query);
+
+        expect(result.sql, contains('MIN("price")'));
+        expect(result.sql, contains('MAX("price")'));
+        expect(result.sql, contains('AS "minPrice"'));
+        expect(result.sql, contains('AS "maxPrice"'));
+      });
+
+      test('computed fields work with WHERE clause', () {
+        final query = JsonQueryBuilder()
+            .model('ConsultantProfile')
+            .action(QueryAction.findMany)
+            .where({'isVerified': true})
+            .computed({
+              'minPrice': ComputedField.min('price',
+                from: 'ConsultationPlan',
+                where: {'consultantProfileId': FieldRef('id')}),
+            })
+            .build();
+
+        final result = compiler.compile(query);
+
+        // With computed fields, columns are prefixed with table alias
+        expect(result.sql, contains('WHERE "t0"."isVerified" = \$1'));
+        expect(result.sql, contains('AS "minPrice"'));
+        expect(result.args, [true]);
+      });
+
+      test('computed fields work with ORDER BY and LIMIT', () {
+        final query = JsonQueryBuilder()
+            .model('ConsultantProfile')
+            .action(QueryAction.findMany)
+            .computed({
+              'minPrice': ComputedField.min('price',
+                from: 'ConsultationPlan',
+                where: {'consultantProfileId': FieldRef('id')}),
+            })
+            .orderBy({'rating': 'desc'})
+            .take(10)
+            .build();
+
+        final result = compiler.compile(query);
+
+        expect(result.sql, contains('AS "minPrice"'));
+        // With computed fields, ORDER BY columns are prefixed with table alias
+        expect(result.sql, contains('ORDER BY "t0"."rating" DESC'));
+        expect(result.sql, contains('LIMIT 10'));
+      });
+
+      test('computed fields work with selectFields', () {
+        final query = JsonQueryBuilder()
+            .model('ConsultantProfile')
+            .action(QueryAction.findMany)
+            .selectFields(['id', 'headline', 'rating'])
+            .computed({
+              'minPrice': ComputedField.min('price',
+                from: 'ConsultationPlan',
+                where: {'consultantProfileId': FieldRef('id')}),
+            })
+            .build();
+
+        final result = compiler.compile(query);
+
+        // selectFields with computed should use alias prefix
+        expect(result.sql, contains('"t0"."id"'));
+        expect(result.sql, contains('"t0"."headline"'));
+        expect(result.sql, contains('"t0"."rating"'));
+        expect(result.sql, contains('AS "minPrice"'));
+      });
+
+      test('computed field with static where condition', () {
+        final query = JsonQueryBuilder()
+            .model('User')
+            .action(QueryAction.findMany)
+            .computed({
+              'activePostCount': ComputedField.count(
+                from: 'Post',
+                where: {
+                  'userId': FieldRef('id'),
+                  'isPublished': true,
+                }),
+            })
+            .build();
+
+        final result = compiler.compile(query);
+
+        expect(result.sql, contains('WHERE "userId" = "t0"."id"'));
+        // Static values are now parameterized for security
+        expect(result.sql, contains('"isPublished" = \$1'));
+        expect(result.args, contains(true));
+      });
+
+      test('first operation with descending order', () {
+        final query = JsonQueryBuilder()
+            .model('Consultant')
+            .action(QueryAction.findMany)
+            .computed({
+              'latestPlanPrice': ComputedField.first('price',
+                from: 'Plan',
+                where: {'consultantId': FieldRef('id')},
+                orderBy: {'createdAt': 'desc'}),
+            })
+            .build();
+
+        final result = compiler.compile(query);
+
+        expect(result.sql, contains('ORDER BY "createdAt" DESC LIMIT 1'));
+        expect(result.sql, contains('AS "latestPlanPrice"'));
+      });
+
+      test('include() and computed() work together without alias conflict', () {
+        // This test verifies the fix for the t0 alias conflict issue
+        // When using include() + computed() together, relation compiler
+        // must start at t1 since t0 is reserved for the base table.
+        final schema = SchemaRegistry();
+
+        // Register ConsultantProfile with relations
+        schema.registerModel(ModelSchema(
+          name: 'ConsultantProfile',
+          tableName: 'ConsultantProfile',
+          fields: {
+            'id': const FieldInfo(
+              name: 'id',
+              columnName: 'id',
+              type: 'String',
+              isId: true,
+            ),
+            'userId': const FieldInfo(
+              name: 'userId',
+              columnName: 'userId',
+              type: 'String',
+            ),
+          },
+          relations: {
+            'user': RelationInfo.oneToOne(
+              name: 'user',
+              targetModel: 'User',
+              foreignKey: 'userId',
+            ),
+          },
+        ));
+
+        // Register User model
+        schema.registerModel(ModelSchema(
+          name: 'User',
+          tableName: 'users',
+          fields: {
+            'id': const FieldInfo(
+              name: 'id',
+              columnName: 'id',
+              type: 'String',
+              isId: true,
+            ),
+            'name': const FieldInfo(
+              name: 'name',
+              columnName: 'name',
+              type: 'String',
+            ),
+          },
+        ));
+
+        // Register ConsultationPlan for computed field
+        schema.registerModel(ModelSchema(
+          name: 'ConsultationPlan',
+          tableName: 'ConsultationPlan',
+          fields: {
+            'id': const FieldInfo(
+              name: 'id',
+              columnName: 'id',
+              type: 'String',
+              isId: true,
+            ),
+            'price': const FieldInfo(
+              name: 'price',
+              columnName: 'price',
+              type: 'double',
+            ),
+            'consultantProfileId': const FieldInfo(
+              name: 'consultantProfileId',
+              columnName: 'consultantProfileId',
+              type: 'String',
+            ),
+          },
+        ));
+
+        final compilerWithSchema = SqlCompiler(
+          provider: 'postgresql',
+          schema: schema,
+        );
+
+        final query = JsonQueryBuilder()
+            .model('ConsultantProfile')
+            .action(QueryAction.findMany)
+            .include({'user': true})
+            .computed({
+              'minPrice': ComputedField.min(
+                'price',
+                from: 'ConsultationPlan',
+                where: {'consultantProfileId': FieldRef('id')},
+              ),
+            })
+            .build();
+
+        final result = compilerWithSchema.compile(query);
+
+        // Base table should be t0
+        expect(result.sql, contains('FROM "ConsultantProfile" "t0"'));
+
+        // Relation should use t1 (not t0!)
+        expect(result.sql, contains('LEFT JOIN "users" "t1"'));
+
+        // Computed field should reference t0
+        expect(result.sql, contains('WHERE "consultantProfileId" = "t0"."id"'));
+
+        // Should NOT have duplicate t0
+        final t0Count = 't0'.allMatches(result.sql).length;
+        // t0 appears in: FROM table t0, computed WHERE t0.id, and SELECT t0.*
+        expect(t0Count, greaterThan(0));
+
+        // Verify no SQL syntax error would occur (t0 only defined once in FROM)
+        final fromClause =
+            RegExp(r'FROM\s+"ConsultantProfile"\s+"t0"').hasMatch(result.sql);
+        expect(fromClause, isTrue);
       });
     });
   });
