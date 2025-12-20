@@ -10,7 +10,7 @@ library;
 
 import 'dart:convert';
 
-import 'computed_field.dart';
+import 'package:prisma_flutter_connector/src/runtime/query/computed_field.dart';
 
 /// Represents a complete JSON query in Prisma's format.
 class JsonQuery {

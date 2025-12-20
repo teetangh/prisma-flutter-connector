@@ -1074,22 +1074,22 @@ void main() {
         ));
 
         // Register Review model
-        schema.registerModel(ModelSchema(
+        schema.registerModel(const ModelSchema(
           name: 'Review',
           tableName: 'Review',
           fields: {
-            'id': const FieldInfo(
+            'id': FieldInfo(
               name: 'id',
               columnName: 'id',
               type: 'String',
               isId: true,
             ),
-            'rating': const FieldInfo(
+            'rating': FieldInfo(
               name: 'rating',
               columnName: 'rating',
               type: 'int',
             ),
-            'productId': const FieldInfo(
+            'productId': FieldInfo(
               name: 'productId',
               columnName: 'productId',
               type: 'String',
@@ -1098,17 +1098,17 @@ void main() {
         ));
 
         // Register Category model
-        schema.registerModel(ModelSchema(
+        schema.registerModel(const ModelSchema(
           name: 'Category',
           tableName: 'Category',
           fields: {
-            'id': const FieldInfo(
+            'id': FieldInfo(
               name: 'id',
               columnName: 'id',
               type: 'String',
               isId: true,
             ),
-            'name': const FieldInfo(
+            'name': FieldInfo(
               name: 'name',
               columnName: 'name',
               type: 'String',
@@ -1389,7 +1389,7 @@ void main() {
       test('selectFields combined with relation filtering', () {
         // Create a schema for relation filtering
         final schema = SchemaRegistry();
-        schema.registerModel(ModelSchema(
+        schema.registerModel(const ModelSchema(
           name: 'Product',
           tableName: 'Product',
           fields: {
@@ -1410,7 +1410,7 @@ void main() {
             ),
           },
         ));
-        schema.registerModel(ModelSchema(
+        schema.registerModel(const ModelSchema(
           name: 'Review',
           tableName: 'Review',
           fields: {
@@ -1623,27 +1623,27 @@ void main() {
         ));
 
         // Register User model
-        schema.registerModel(ModelSchema(
+        schema.registerModel(const ModelSchema(
           name: 'User',
           tableName: 'users',
           fields: {
-            'id': const FieldInfo(
+            'id': FieldInfo(
               name: 'id',
               columnName: 'id',
               type: 'String',
               isId: true,
             ),
-            'name': const FieldInfo(
+            'name': FieldInfo(
               name: 'name',
               columnName: 'name',
               type: 'String',
             ),
-            'image': const FieldInfo(
+            'image': FieldInfo(
               name: 'image',
               columnName: 'image',
               type: 'String',
             ),
-            'email': const FieldInfo(
+            'email': FieldInfo(
               name: 'email',
               columnName: 'email',
               type: 'String',
@@ -1652,17 +1652,17 @@ void main() {
         ));
 
         // Register Domain model
-        schema.registerModel(ModelSchema(
+        schema.registerModel(const ModelSchema(
           name: 'Domain',
           tableName: 'Domain',
           fields: {
-            'id': const FieldInfo(
+            'id': FieldInfo(
               name: 'id',
               columnName: 'id',
               type: 'String',
               isId: true,
             ),
-            'name': const FieldInfo(
+            'name': FieldInfo(
               name: 'name',
               columnName: 'name',
               type: 'String',
@@ -1735,7 +1735,7 @@ void main() {
             .computed({
               'minPrice': ComputedField.min('price',
                 from: 'ConsultationPlan',
-                where: {'consultantProfileId': FieldRef('id')}),
+                where: {'consultantProfileId': const FieldRef('id')}),
             })
             .build();
 
@@ -1758,7 +1758,7 @@ void main() {
             .computed({
               'maxRating': ComputedField.max('rating',
                 from: 'Review',
-                where: {'productId': FieldRef('id')}),
+                where: {'productId': const FieldRef('id')}),
             })
             .build();
 
@@ -1776,7 +1776,7 @@ void main() {
             .computed({
               'avgRating': ComputedField.avg('rating',
                 from: 'Review',
-                where: {'productId': FieldRef('id')}),
+                where: {'productId': const FieldRef('id')}),
             })
             .build();
 
@@ -1793,7 +1793,7 @@ void main() {
             .computed({
               'totalAmount': ComputedField.sum('amount',
                 from: 'OrderItem',
-                where: {'orderId': FieldRef('id')}),
+                where: {'orderId': const FieldRef('id')}),
             })
             .build();
 
@@ -1810,7 +1810,7 @@ void main() {
             .computed({
               'postCount': ComputedField.count(
                 from: 'Post',
-                where: {'userId': FieldRef('id')}),
+                where: {'userId': const FieldRef('id')}),
             })
             .build();
 
@@ -1828,7 +1828,7 @@ void main() {
             .computed({
               'priceCurrency': ComputedField.first('priceCurrency',
                 from: 'ConsultationPlan',
-                where: {'consultantProfileId': FieldRef('id')},
+                where: {'consultantProfileId': const FieldRef('id')},
                 orderBy: {'price': 'asc'}),
             })
             .build();
@@ -1848,10 +1848,10 @@ void main() {
             .computed({
               'minPrice': ComputedField.min('price',
                 from: 'ConsultationPlan',
-                where: {'consultantProfileId': FieldRef('id')}),
+                where: {'consultantProfileId': const FieldRef('id')}),
               'maxPrice': ComputedField.max('price',
                 from: 'ConsultationPlan',
-                where: {'consultantProfileId': FieldRef('id')}),
+                where: {'consultantProfileId': const FieldRef('id')}),
             })
             .build();
 
@@ -1871,7 +1871,7 @@ void main() {
             .computed({
               'minPrice': ComputedField.min('price',
                 from: 'ConsultationPlan',
-                where: {'consultantProfileId': FieldRef('id')}),
+                where: {'consultantProfileId': const FieldRef('id')}),
             })
             .build();
 
@@ -1890,7 +1890,7 @@ void main() {
             .computed({
               'minPrice': ComputedField.min('price',
                 from: 'ConsultationPlan',
-                where: {'consultantProfileId': FieldRef('id')}),
+                where: {'consultantProfileId': const FieldRef('id')}),
             })
             .orderBy({'rating': 'desc'})
             .take(10)
@@ -1912,7 +1912,7 @@ void main() {
             .computed({
               'minPrice': ComputedField.min('price',
                 from: 'ConsultationPlan',
-                where: {'consultantProfileId': FieldRef('id')}),
+                where: {'consultantProfileId': const FieldRef('id')}),
             })
             .build();
 
@@ -1933,7 +1933,7 @@ void main() {
               'activePostCount': ComputedField.count(
                 from: 'Post',
                 where: {
-                  'userId': FieldRef('id'),
+                  'userId': const FieldRef('id'),
                   'isPublished': true,
                 }),
             })
@@ -1954,7 +1954,7 @@ void main() {
             .computed({
               'latestPlanPrice': ComputedField.first('price',
                 from: 'Plan',
-                where: {'consultantId': FieldRef('id')},
+                where: {'consultantId': const FieldRef('id')},
                 orderBy: {'createdAt': 'desc'}),
             })
             .build();
@@ -1998,17 +1998,17 @@ void main() {
         ));
 
         // Register User model
-        schema.registerModel(ModelSchema(
+        schema.registerModel(const ModelSchema(
           name: 'User',
           tableName: 'users',
           fields: {
-            'id': const FieldInfo(
+            'id': FieldInfo(
               name: 'id',
               columnName: 'id',
               type: 'String',
               isId: true,
             ),
-            'name': const FieldInfo(
+            'name': FieldInfo(
               name: 'name',
               columnName: 'name',
               type: 'String',
@@ -2017,22 +2017,22 @@ void main() {
         ));
 
         // Register ConsultationPlan for computed field
-        schema.registerModel(ModelSchema(
+        schema.registerModel(const ModelSchema(
           name: 'ConsultationPlan',
           tableName: 'ConsultationPlan',
           fields: {
-            'id': const FieldInfo(
+            'id': FieldInfo(
               name: 'id',
               columnName: 'id',
               type: 'String',
               isId: true,
             ),
-            'price': const FieldInfo(
+            'price': FieldInfo(
               name: 'price',
               columnName: 'price',
               type: 'double',
             ),
-            'consultantProfileId': const FieldInfo(
+            'consultantProfileId': FieldInfo(
               name: 'consultantProfileId',
               columnName: 'consultantProfileId',
               type: 'String',
@@ -2053,7 +2053,7 @@ void main() {
               'minPrice': ComputedField.min(
                 'price',
                 from: 'ConsultationPlan',
-                where: {'consultantProfileId': FieldRef('id')},
+                where: {'consultantProfileId': const FieldRef('id')},
               ),
             })
             .build();
