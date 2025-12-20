@@ -4,6 +4,62 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.2.6] - 2025-12-19
+
+### Added
+- **Computed Fields (Correlated Subqueries)** - Add computed fields via correlated subqueries in SELECT
+  - `ComputedField.min()` - MIN aggregate subquery
+  - `ComputedField.max()` - MAX aggregate subquery
+  - `ComputedField.avg()` - AVG aggregate subquery
+  - `ComputedField.sum()` - SUM aggregate subquery
+  - `ComputedField.count()` - COUNT aggregate subquery
+  - `ComputedField.first()` - Fetch first matching value with ORDER BY
+  - `FieldRef` class for referencing parent table columns in subqueries
+
+### Example Usage
+```dart
+// Computed fields for inline aggregations
+final query = JsonQueryBuilder()
+    .model('ConsultantProfile')
+    .action(QueryAction.findMany)
+    .computed({
+      'minPrice': ComputedField.min('price',
+        from: 'ConsultationPlan',
+        where: {'consultantProfileId': FieldRef('id')}),
+      'priceCurrency': ComputedField.first('priceCurrency',
+        from: 'ConsultationPlan',
+        where: {'consultantProfileId': FieldRef('id')},
+        orderBy: {'price': 'asc'}),
+    })
+    .where({'isVerified': true})
+    .orderBy({'rating': 'desc'})
+    .build();
+
+// Generates:
+// SELECT "t0".*,
+//   (SELECT MIN("price") FROM "ConsultationPlan"
+//    WHERE "consultantProfileId" = "t0"."id") AS "minPrice",
+//   (SELECT "priceCurrency" FROM "ConsultationPlan"
+//    WHERE "consultantProfileId" = "t0"."id"
+//    ORDER BY "price" ASC LIMIT 1) AS "priceCurrency"
+// FROM "ConsultantProfile" "t0"
+// WHERE "isVerified" = $1
+// ORDER BY "rating" DESC
+```
+
+### Fixed
+- **Alias conflict with include + computed** - Fixed "table name 't0' specified more than once" error by adding `startingCounter` parameter to RelationCompiler
+- **Missing relation columns in SELECT** - Relations now correctly included in query results when using `include()` with computed fields
+- **Ambiguous column names with JOINs** - Added table alias prefix to WHERE and ORDER BY clauses when JOINs are present
+- **Aggregate FILTER parameter numbering** - Fixed "could not determine data type of parameter" error by using sequential parameter numbering instead of hardcoded offset
+
+### Backward Compatibility
+- All existing query features remain unchanged
+- Computed fields are optional - queries without `.computed()` work exactly as before
+- Works with `selectFields()`, `where()`, `orderBy()`, and pagination
+
+---
+
 ## [0.2.5] - 2025-12-19
 
 ### Added

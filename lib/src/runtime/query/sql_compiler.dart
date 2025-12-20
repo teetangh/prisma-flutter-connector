@@ -28,10 +28,12 @@ class SqlCompiler {
   });
 
   /// Get or create relation compiler.
+  /// Uses startingCounter: 1 since t0 is reserved for the base table.
   RelationCompiler get relationCompiler =>
       _relationCompiler ??= RelationCompiler(
         schema: schema ?? schemaRegistry,
         provider: provider,
+        startingCounter: 1,
       );
 
   /// Compile a JSON query to SQL.
@@ -93,9 +95,17 @@ class SqlCompiler {
     final hasSelectFields =
         selectFieldsList != null && selectFieldsList.isNotEmpty;
 
+    // Check for computed fields (v0.2.6+)
+    final computedFields = args['_computed'] as Map<String, dynamic>?;
+    final hasComputedFields = computedFields != null && computedFields.isNotEmpty;
+
     // Check for include directive (relations)
     final include = _extractInclude(query.args.selection);
     final hasRelations = include != null && include.isNotEmpty;
+
+    // Determine if we need a table alias (for computed fields or relations)
+    final needsAlias = hasComputedFields || hasRelations;
+    const baseAlias = 't0';
 
     // Build SELECT clause and JOIN clauses if relations are included
     String selectClause;
@@ -105,7 +115,6 @@ class SqlCompiler {
     if (hasRelations &&
         (schema != null || schemaRegistry.hasModel(query.modelName))) {
       // Use relation compiler for JOINs
-      const baseAlias = 't0';
       compiledRelations = relationCompiler.compile(
         baseModel: query.modelName,
         baseAlias: baseAlias,
@@ -138,23 +147,51 @@ class SqlCompiler {
     } else {
       // Simple select without relations
       if (hasSelectFields) {
-        selectClause = _buildSelectFieldsFromList(selectFieldsList.cast<String>());
+        if (needsAlias) {
+          selectClause = _buildSelectFieldsWithAlias(
+            selectFieldsList.cast<String>(),
+            baseAlias,
+          );
+        } else {
+          selectClause = _buildSelectFieldsFromList(selectFieldsList.cast<String>());
+        }
       } else {
-        final selectFields = _buildSelectFields(query.args.selection);
-        selectClause = selectFields.isEmpty ? '*' : selectFields.join(', ');
+        if (needsAlias) {
+          selectClause = '"$baseAlias".*';
+        } else {
+          final selectFields = _buildSelectFields(query.args.selection);
+          selectClause = selectFields.isEmpty ? '*' : selectFields.join(', ');
+        }
+      }
+    }
+
+    // Append computed fields to SELECT clause
+    if (hasComputedFields) {
+      final computedClauses = _buildComputedFieldsClauses(
+        computedFields,
+        baseAlias,
+      );
+      if (computedClauses.isNotEmpty) {
+        selectClause = '$selectClause, $computedClauses';
       }
     }
 
     // Build WHERE clause
+    // Pass baseAlias when JOINs are present to disambiguate column names
     final where = args['where'] as Map<String, dynamic>?;
     final (whereClause, whereArgs, whereTypes) = _buildWhereClause(
       where,
       modelName: query.modelName,
+      baseAlias: needsAlias ? baseAlias : null,
     );
 
     // Build ORDER BY clause
+    // Pass baseAlias when JOINs are present to disambiguate column names
     final orderBy = args['orderBy'] as Map<String, dynamic>?;
-    final orderByClause = _buildOrderByClause(orderBy);
+    final orderByClause = _buildOrderByClause(
+      orderBy,
+      baseAlias: needsAlias ? baseAlias : null,
+    );
 
     // Build LIMIT/OFFSET
     final take = args['take'] as int?;
@@ -162,12 +199,12 @@ class SqlCompiler {
 
     // Construct SQL with optional table alias
     final sql = StringBuffer();
-    if (hasRelations &&
-        compiledRelations != null &&
-        compiledRelations.isNotEmpty) {
+    if (needsAlias) {
       sql.write(
-          'SELECT $selectClause FROM ${_quoteIdentifier(tableName)} "t0"');
-      sql.write(' $joinClauses');
+          'SELECT $selectClause FROM ${_quoteIdentifier(tableName)} "$baseAlias"');
+      if (joinClauses.isNotEmpty) {
+        sql.write(' $joinClauses');
+      }
     } else {
       sql.write('SELECT $selectClause FROM ${_quoteIdentifier(tableName)}');
     }
@@ -466,7 +503,15 @@ class SqlCompiler {
     final functions = <String>[];
     final filterValues = <dynamic>[];
     final filterTypes = <ArgType>[];
-    var filterParamIndex = 1000; // Start high to avoid conflicts with WHERE
+
+    // Build WHERE clause first to determine parameter offset for FILTER clauses
+    final (whereClause, whereArgs, whereTypes) = _buildWhereClause(
+      where,
+      modelName: query.modelName,
+    );
+
+    // FILTER parameters start after WHERE parameters
+    var filterParamIndex = whereArgs.length + 1;
 
     // _count
     if (agg['_count'] == true) {
@@ -574,11 +619,6 @@ class SqlCompiler {
     if (functions.isEmpty) {
       functions.add('COUNT(*) AS "_count"');
     }
-
-    final (whereClause, whereArgs, whereTypes) = _buildWhereClause(
-      where,
-      modelName: query.modelName,
-    );
 
     // Combine filter values with where values
     final allArgs = [...whereArgs, ...filterValues];
@@ -856,6 +896,8 @@ RETURNING *
   /// Handles dot notation for related fields:
   /// - 'id' -> "t0"."id"
   /// - 'category.name' -> "t1"."name" AS "category_name"
+  ///
+  /// Also appends all relation columns from the include() directive.
   String _buildSelectFieldsWithRelations(
     List<String> fields,
     String baseAlias,
@@ -903,7 +945,177 @@ RETURNING *
       }
     }
 
+    // Append all relation columns from include() directive
+    // These are columns with a non-null relationPath in columnAliases
+    for (final entry in relations.columnAliases.entries) {
+      final aliasKey = entry.key;
+      final info = entry.value;
+
+      // Only add columns that belong to relations (have a relationPath)
+      if (info.relationPath != null) {
+        columns.add(
+          '"${info.tableAlias}".${_quoteIdentifier(info.columnName)} AS ${_quoteIdentifier(aliasKey)}',
+        );
+      }
+    }
+
     return columns.join(', ');
+  }
+
+  /// Build SELECT clause with table alias prefix (v0.2.6+).
+  ///
+  /// Simple version for when we need an alias but don't have relations.
+  /// Used primarily with computed fields.
+  ///
+  /// Example:
+  /// - 'id', 'name' -> "t0"."id", "t0"."name"
+  String _buildSelectFieldsWithAlias(
+    List<String> fields,
+    String alias,
+  ) {
+    if (fields.isEmpty) return '"$alias".*';
+
+    return fields.map((field) => '"$alias".${_quoteIdentifier(field)}').join(', ');
+  }
+
+  /// Build computed fields clauses for correlated subqueries (v0.2.6+).
+  ///
+  /// Generates SQL like:
+  /// ```sql
+  /// (SELECT MIN("price") FROM "ConsultationPlan" WHERE "consultantProfileId" = "t0"."id") AS "minPrice"
+  /// ```
+  ///
+  /// [computedFields] is a map from alias name to computed field definition.
+  /// [baseAlias] is the alias of the parent table (e.g., "t0").
+  String _buildComputedFieldsClauses(
+    Map<String, dynamic> computedFields,
+    String baseAlias,
+  ) {
+    final clauses = <String>[];
+
+    for (final entry in computedFields.entries) {
+      final aliasName = entry.key;
+      final fieldDef = entry.value as Map<String, dynamic>;
+
+      final clause = _buildSingleComputedFieldClause(fieldDef, baseAlias, aliasName);
+      if (clause != null) {
+        clauses.add(clause);
+      }
+    }
+
+    return clauses.join(', ');
+  }
+
+  /// Build a single computed field subquery clause.
+  ///
+  /// Returns null if the field definition is invalid.
+  String? _buildSingleComputedFieldClause(
+    Map<String, dynamic> fieldDef,
+    String baseAlias,
+    String aliasName,
+  ) {
+    final type = fieldDef['_type'];
+    if (type != 'computedField') return null;
+
+    final field = fieldDef['field'] as String?;
+    final operation = fieldDef['operation'] as String?;
+    final from = fieldDef['from'] as String?;
+    final where = fieldDef['where'] as Map<String, dynamic>?;
+    final orderBy = fieldDef['orderBy'] as Map<String, dynamic>?;
+
+    if (field == null || operation == null || from == null) return null;
+
+    // Build the SELECT expression based on operation
+    final selectExpr = switch (operation) {
+      'min' => 'MIN(${_quoteIdentifier(field)})',
+      'max' => 'MAX(${_quoteIdentifier(field)})',
+      'avg' => 'AVG(${_quoteIdentifier(field)})',
+      'sum' => 'SUM(${_quoteIdentifier(field)})',
+      'count' => field == '*' ? 'COUNT(*)' : 'COUNT(${_quoteIdentifier(field)})',
+      'first' => _quoteIdentifier(field),
+      _ => null,
+    };
+
+    if (selectExpr == null) return null;
+
+    // Build the subquery
+    final sql = StringBuffer();
+    sql.write('(SELECT $selectExpr FROM ${_quoteIdentifier(from)}');
+
+    // Build WHERE clause with field references
+    if (where != null && where.isNotEmpty) {
+      final whereConditions = _buildComputedFieldWhere(where, baseAlias);
+      if (whereConditions.isNotEmpty) {
+        sql.write(' WHERE $whereConditions');
+      }
+    }
+
+    // Add ORDER BY for 'first' operation
+    if (operation == 'first' && orderBy != null && orderBy.isNotEmpty) {
+      final orderClauses = orderBy.entries
+          .map((e) => '${_quoteIdentifier(e.key)} ${e.value.toUpperCase()}')
+          .join(', ');
+      sql.write(' ORDER BY $orderClauses LIMIT 1');
+    }
+
+    sql.write(') AS ${_quoteIdentifier(aliasName)}');
+
+    return sql.toString();
+  }
+
+  /// Build WHERE clause for computed field subquery, resolving field references.
+  ///
+  /// Handles FieldRef objects that reference parent table columns.
+  String _buildComputedFieldWhere(
+    Map<String, dynamic> where,
+    String baseAlias,
+  ) {
+    final conditions = <String>[];
+
+    for (final entry in where.entries) {
+      final field = entry.key;
+      final value = entry.value;
+
+      if (value is Map<String, dynamic>) {
+        // Check if this is a FieldRef
+        if (value['_type'] == 'fieldRef') {
+          final refField = value['field'] as String;
+          conditions.add(
+            '${_quoteIdentifier(field)} = "$baseAlias".${_quoteIdentifier(refField)}',
+          );
+        } else if (value.containsKey('equals')) {
+          // Handle equals operator
+          final eqValue = value['equals'];
+          if (eqValue == null) {
+            conditions.add('${_quoteIdentifier(field)} IS NULL');
+          } else if (eqValue is String) {
+            final escaped = eqValue.replaceAll("'", "''");
+            conditions.add('${_quoteIdentifier(field)} = \'$escaped\'');
+          } else if (eqValue is bool) {
+            conditions.add('${_quoteIdentifier(field)} = ${eqValue ? 'TRUE' : 'FALSE'}');
+          } else {
+            conditions.add('${_quoteIdentifier(field)} = $eqValue');
+          }
+        }
+        // For other operators in computed field WHERE, skip for now
+        // (computed fields typically just need FK equality)
+      } else {
+        // Simple equality
+        if (value == null) {
+          conditions.add('${_quoteIdentifier(field)} IS NULL');
+        } else if (value is String) {
+          // Quote string values
+          final escaped = value.replaceAll("'", "''");
+          conditions.add('${_quoteIdentifier(field)} = \'$escaped\'');
+        } else if (value is bool) {
+          conditions.add('${_quoteIdentifier(field)} = ${value ? 'TRUE' : 'FALSE'}');
+        } else {
+          conditions.add('${_quoteIdentifier(field)} = $value');
+        }
+      }
+    }
+
+    return conditions.join(' AND ');
   }
 
   /// Detect if a value contains a relation filter operator.
@@ -920,11 +1132,14 @@ RETURNING *
   ///
   /// [modelName] is optional but required for relation filtering.
   /// [parentAlias] is the table alias for the parent in EXISTS subqueries.
+  /// [baseAlias] is the table alias for the base table (e.g., 't0') to
+  ///   disambiguate column names when JOINs are present.
   (String, List<dynamic>, List<ArgType>) _buildWhereClause(
     Map<String, dynamic>? where, {
     int startIndex = 1,
     String? modelName,
     String parentAlias = '',
+    String? baseAlias,
   }) {
     if (where == null || where.isEmpty) {
       return ('', [], []);
@@ -948,6 +1163,7 @@ RETURNING *
             startIndex: paramIndex,
             modelName: modelName,
             parentAlias: parentAlias,
+            baseAlias: baseAlias,
           );
           subConditions.add('($clause)');
           values.addAll(vals);
@@ -966,6 +1182,7 @@ RETURNING *
             startIndex: paramIndex,
             modelName: modelName,
             parentAlias: parentAlias,
+            baseAlias: baseAlias,
           );
           subConditions.add('($clause)');
           values.addAll(vals);
@@ -982,6 +1199,7 @@ RETURNING *
           startIndex: paramIndex,
           modelName: modelName,
           parentAlias: parentAlias,
+          baseAlias: baseAlias,
         );
         conditions.add('NOT ($clause)');
         values.addAll(vals);
@@ -1018,7 +1236,10 @@ RETURNING *
 
       // Handle field conditions
       // Use field name as-is (don't convert to snake_case)
-      final columnName = _quoteIdentifier(field);
+      // Prefix with table alias if baseAlias is provided (for disambiguating JOINs)
+      final columnName = baseAlias != null
+          ? '"$baseAlias".${_quoteIdentifier(field)}'
+          : _quoteIdentifier(field);
 
       if (value is Map<String, dynamic>) {
         // Filter operators
@@ -1332,14 +1553,20 @@ WHERE $joinTable.$joinColumn = $parentRef.$pkCol''';
   ///
   /// The `nulls` option is only supported on PostgreSQL/Supabase.
   /// On other databases, it is silently ignored.
-  String _buildOrderByClause(Map<String, dynamic>? orderBy) {
+  ///
+  /// [baseAlias] - If provided, column names are prefixed with this alias
+  ///   to disambiguate when JOINs are present.
+  String _buildOrderByClause(Map<String, dynamic>? orderBy, {String? baseAlias}) {
     if (orderBy == null || orderBy.isEmpty) return '';
 
     final clauses = <String>[];
 
     for (final entry in orderBy.entries) {
       // Use field name as-is (don't convert to snake_case)
-      final field = _quoteIdentifier(entry.key);
+      // Prefix with table alias if baseAlias is provided
+      final field = baseAlias != null
+          ? '"$baseAlias".${_quoteIdentifier(entry.key)}'
+          : _quoteIdentifier(entry.key);
 
       String direction;
       String? nullsPosition;

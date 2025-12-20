@@ -44,17 +44,23 @@ class QueryExecutor implements BaseExecutor {
   final SqlDriverAdapter adapter;
   final SqlCompiler compiler;
 
+  /// Optional schema registry for relation information.
+  /// When provided, enables includes with automatic JOINs.
+  final SchemaRegistry? schema;
+
   /// Optional query logger for debugging and monitoring.
   final QueryLogger? logger;
 
   QueryExecutor({
     required this.adapter,
     SqlCompiler? compiler,
+    this.schema,
     this.logger,
   }) : compiler = compiler ??
             SqlCompiler(
               provider: adapter.provider,
               schemaName: adapter.getConnectionInfo()?.schemaName,
+              schema: schema,
             );
 
   /// Execute a query and return raw results.
@@ -291,12 +297,15 @@ class QueryExecutor implements BaseExecutor {
       execute: () => adapter.queryRaw(sqlQuery),
     );
 
-    // Convert to maps (flat results)
-    final flatMaps = _resultSetToMaps(result);
-
     // Check if we need to deserialize relations
-    if (sqlQuery.hasRelations &&
-        sqlQuery.relationMetadata is CompiledRelations) {
+    final hasRelations = sqlQuery.hasRelations &&
+        sqlQuery.relationMetadata is CompiledRelations;
+
+    // Convert to maps - preserve aliases when relations are present so
+    // the RelationDeserializer can match column aliases like "user__name"
+    final flatMaps = _resultSetToMaps(result, preserveAliases: hasRelations);
+
+    if (hasRelations) {
       final compiledRelations = sqlQuery.relationMetadata as CompiledRelations;
 
       // Use relation deserializer to nest flat JOIN results
@@ -304,12 +313,14 @@ class QueryExecutor implements BaseExecutor {
         schema: compiler.schema ?? schemaRegistry,
       );
 
-      return deserializer.deserialize(
+      final deserialized = deserializer.deserialize(
         rows: flatMaps,
         baseModel: query.modelName,
         columnAliases: compiledRelations.columnAliases,
         includedRelations: compiledRelations.includedRelations,
       );
+
+      return deserialized;
     }
 
     return flatMaps;
@@ -364,7 +375,14 @@ class QueryExecutor implements BaseExecutor {
   }
 
   /// Convert SqlResultSet to list of maps.
-  List<Map<String, dynamic>> _resultSetToMaps(SqlResultSet result) {
+  ///
+  /// [preserveAliases] - If true, preserves column aliases as-is without
+  /// camelCase conversion. Used when relations are present and the
+  /// RelationDeserializer needs to match aliases.
+  List<Map<String, dynamic>> _resultSetToMaps(
+    SqlResultSet result, {
+    bool preserveAliases = false,
+  }) {
     if (result.rows.isEmpty) return [];
 
     final maps = <Map<String, dynamic>>[];
@@ -376,10 +394,10 @@ class QueryExecutor implements BaseExecutor {
         final columnName = result.columnNames[i];
         final value = i < row.length ? row[i] : null;
 
-        // Convert snake_case column names to camelCase
-        final camelCaseName = _toCamelCase(columnName);
+        // Convert snake_case column names to camelCase (unless preserving aliases)
+        final key = preserveAliases ? columnName : _toCamelCase(columnName);
 
-        map[camelCaseName] = _deserializeValue(value, result.columnTypes[i]);
+        map[key] = _deserializeValue(value, result.columnTypes[i]);
       }
 
       maps.add(map);
