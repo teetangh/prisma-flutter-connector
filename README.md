@@ -32,6 +32,7 @@ A type-safe, database-agnostic Flutter connector that generates type-safe Dart c
 - [Quick Start](#quick-start)
 - [Code Generation](#code-generation)
 - [Usage](#usage)
+- [Advanced Features](#advanced-features)
 - [Backend Setup](#backend-setup)
 - [Database Setup](#database-setup)
 - [Architecture](#architecture)
@@ -45,7 +46,7 @@ Add to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  prisma_flutter_connector: ^0.1.0
+  prisma_flutter_connector: ^0.2.7
 ```
 
 Run:
@@ -371,6 +372,143 @@ try {
 } on PrismaException catch (e) {
   print('Error: ${e.message}');
 }
+```
+
+## Advanced Features
+
+### Computed Fields (Correlated Subqueries)
+
+Add inline aggregations to your queries using correlated subqueries:
+
+```dart
+import 'package:prisma_flutter_connector/runtime.dart';
+
+final query = JsonQueryBuilder()
+    .model('ConsultantProfile')
+    .action(QueryAction.findMany)
+    .computed({
+      'minPrice': ComputedField.min('price',
+        from: 'ConsultationPlan',
+        where: {'consultantProfileId': FieldRef('id')}),
+      'maxPrice': ComputedField.max('price',
+        from: 'ConsultationPlan',
+        where: {'consultantProfileId': FieldRef('id')}),
+      'reviewCount': ComputedField.count(
+        from: 'Review',
+        where: {'consultantProfileId': FieldRef('id')}),
+      'priceCurrency': ComputedField.first('priceCurrency',
+        from: 'ConsultationPlan',
+        where: {'consultantProfileId': FieldRef('id')},
+        orderBy: {'price': 'asc'}),
+    })
+    .where({'isVerified': true})
+    .orderBy({'rating': 'desc'})
+    .build();
+
+// Generates SQL like:
+// SELECT "t0".*,
+//   (SELECT MIN("price") FROM "ConsultationPlan" WHERE "consultantProfileId" = "t0"."id") AS "minPrice",
+//   (SELECT MAX("price") FROM "ConsultationPlan" WHERE "consultantProfileId" = "t0"."id") AS "maxPrice",
+//   (SELECT COUNT(*) FROM "Review" WHERE "consultantProfileId" = "t0"."id") AS "reviewCount",
+//   (SELECT "priceCurrency" FROM "ConsultationPlan" WHERE "consultantProfileId" = "t0"."id" ORDER BY "price" ASC LIMIT 1) AS "priceCurrency"
+// FROM "ConsultantProfile" "t0"
+// WHERE "isVerified" = $1
+// ORDER BY "rating" DESC
+```
+
+**Available Computed Field Types:**
+- `ComputedField.min(field, from:, where:)` - MIN aggregate
+- `ComputedField.max(field, from:, where:)` - MAX aggregate
+- `ComputedField.avg(field, from:, where:)` - AVG aggregate
+- `ComputedField.sum(field, from:, where:)` - SUM aggregate
+- `ComputedField.count(from:, where:, field:)` - COUNT aggregate (optional field for COUNT(field))
+- `ComputedField.first(field, from:, where:, orderBy:)` - First matching value
+
+### Select Specific Fields
+
+Reduce network overhead by selecting only the columns you need:
+
+```dart
+final query = JsonQueryBuilder()
+    .model('Product')
+    .action(QueryAction.findMany)
+    .selectFields(['id', 'name', 'price', 'rating'])
+    .where({'isActive': true})
+    .orderBy({'price': 'asc'})
+    .take(10)
+    .build();
+
+// Generates: SELECT "id", "name", "price", "rating" FROM "Product"
+//            WHERE "isActive" = $1 ORDER BY "price" ASC LIMIT 10
+```
+
+### Relation Filtering
+
+Filter records based on related data using EXISTS subqueries:
+
+```dart
+final query = JsonQueryBuilder()
+    .model('Product')
+    .action(QueryAction.findMany)
+    .where({
+      'isActive': true,
+      // Products with at least one review rated >= 4
+      'reviews': FilterOperators.some({
+        'rating': FilterOperators.gte(4),
+      }),
+      // Products in the electronics category
+      'categories': FilterOperators.some({
+        'id': 'category-electronics',
+      }),
+    })
+    .orderBy({'price': {'sort': 'asc', 'nulls': 'last'}})
+    .build();
+```
+
+**Relation Filter Operators:**
+- `FilterOperators.some(where)` - At least one related record matches
+- `FilterOperators.every(where)` - All related records match
+- `FilterOperators.noneMatch(where)` - No related records match
+- `FilterOperators.isEmpty()` - Relation has no records
+- `FilterOperators.isNotEmpty()` - Relation has at least one record
+
+### FILTER Clause for Aggregations (PostgreSQL/Supabase)
+
+Get conditional counts in a single query:
+
+```dart
+final statsQuery = JsonQueryBuilder()
+    .model('Review')
+    .action(QueryAction.aggregate)
+    .aggregation({
+      '_count': true,
+      '_avg': {'rating': true},
+      '_countFiltered': [
+        {'alias': 'fiveStar', 'filter': {'rating': 5}},
+        {'alias': 'fourStar', 'filter': {'rating': 4}},
+        {'alias': 'threeStar', 'filter': {'rating': 3}},
+      ],
+    })
+    .where({'consultantId': 'consultant-123'})
+    .build();
+
+// Generates: SELECT COUNT(*) AS "_count", AVG("rating") AS "_avg_rating",
+//   COUNT(*) FILTER (WHERE "rating" = $1) AS "fiveStar",
+//   COUNT(*) FILTER (WHERE "rating" = $2) AS "fourStar", ...
+```
+
+### Case-Insensitive Search
+
+Search with case-insensitive matching (uses `ILIKE` on PostgreSQL):
+
+```dart
+final query = JsonQueryBuilder()
+    .model('User')
+    .action(QueryAction.findMany)
+    .where({
+      'name': FilterOperators.containsInsensitive('john'),  // Matches "John", "JOHN", "john"
+    })
+    .build();
 ```
 
 ## Backend Setup

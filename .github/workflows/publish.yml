@@ -1,22 +1,28 @@
-# Publishes the package to pub.dev when a version tag is pushed.
+# Release workflow: Tests + Publish to pub.dev
+#
+# This workflow runs on version tags and:
+#   1. Runs code quality checks (lint, format, analyze)
+#   2. Runs all unit tests
+#   3. Verifies package is publishable (dry-run)
+#   4. Only publishes to pub.dev if ALL checks pass
 #
 # Usage:
 #   1. Update version in pubspec.yaml
 #   2. Update CHANGELOG.md
 #   3. Commit: git commit -m "chore: bump version to X.Y.Z"
-#   4. Tag and push: git tag vX.Y.Z && git push origin vX.Y.Z
+#   4. Tag and push: git tag vX.Y.Z && git push origin main && git push origin vX.Y.Z
 #
 # Prerequisites:
 #   1. First version must be published manually: dart pub publish
 #   2. Enable automated publishing at: https://pub.dev/packages/prisma_flutter_connector/admin
-#   3. Create 'pub.dev' environment in GitHub repo settings
+#   3. Create 'pub.dev' environment in GitHub repo settings (optional: add required reviewers)
 #
 # Security:
 #   - Uses OIDC authentication (no secrets needed)
 #   - Requires 'pub.dev' environment (protection rules apply)
-#   - Only triggered by version tags (v*.*.*)
+#   - Only publishes after all tests pass
 
-name: Publish to pub.dev
+name: Release
 
 on:
   push:
@@ -24,9 +30,77 @@ on:
       - 'v[0-9]+.[0-9]+.[0-9]+*'  # v1.0.0, v1.0.0-beta.1, etc.
 
 jobs:
+  # Job 1: Code Quality (lint, format, analyze)
+  quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.0'
+          channel: 'stable'
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Check formatting
+        run: dart format --set-exit-if-changed .
+
+      - name: Run analyzer
+        run: flutter analyze --fatal-infos
+
+  # Job 2: Unit Tests
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.0'
+          channel: 'stable'
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Run unit tests
+        run: flutter test test/unit/ --coverage
+
+  # Job 3: Verify publishable (dry-run)
+  verify:
+    name: Verify Publishable
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Dart
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Get dependencies
+        run: dart pub get
+
+      - name: Dry-run publish
+        run: dart pub publish --dry-run
+
+  # Job 4: Publish to pub.dev (only if all checks pass)
   publish:
+    name: Publish to pub.dev
+    needs: [quality, test, verify]  # Wait for all checks to pass
+    if: success()  # Only run if all previous jobs succeeded
     permissions:
       id-token: write  # Required for OIDC authentication with pub.dev
     uses: dart-lang/setup-dart/.github/workflows/publish.yml@v1
     with:
-      environment: pub.dev  # Requires GitHub environment protection
+      environment: pub.dev  # Requires GitHub environment (optional: add required reviewers)

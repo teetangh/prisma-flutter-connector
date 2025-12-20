@@ -23,257 +23,41 @@ All notable changes to the Prisma Flutter Connector.
   - `ComputedField.max()` - MAX aggregate subquery
   - `ComputedField.avg()` - AVG aggregate subquery
   - `ComputedField.sum()` - SUM aggregate subquery
-  - `ComputedField.count()` - COUNT aggregate subquery (now accepts optional `field` parameter for `COUNT(field)`)
+  - `ComputedField.count()` - COUNT aggregate subquery (accepts optional `field` parameter)
   - `ComputedField.first()` - Fetch first matching value with ORDER BY
   - `FieldRef` class for referencing parent table columns in subqueries
 
-### Example Usage
-```dart
-// Computed fields for inline aggregations
-final query = JsonQueryBuilder()
-    .model('ConsultantProfile')
-    .action(QueryAction.findMany)
-    .computed({
-      'minPrice': ComputedField.min('price',
-        from: 'ConsultationPlan',
-        where: {'consultantProfileId': FieldRef('id')}),
-      'priceCurrency': ComputedField.first('priceCurrency',
-        from: 'ConsultationPlan',
-        where: {'consultantProfileId': FieldRef('id')},
-        orderBy: {'price': 'asc'}),
-    })
-    .where({'isVerified': true})
-    .orderBy({'rating': 'desc'})
-    .build();
-
-// Generates:
-// SELECT "t0".*,
-//   (SELECT MIN("price") FROM "ConsultationPlan"
-//    WHERE "consultantProfileId" = "t0"."id") AS "minPrice",
-//   (SELECT "priceCurrency" FROM "ConsultationPlan"
-//    WHERE "consultantProfileId" = "t0"."id"
-//    ORDER BY "price" ASC LIMIT 1) AS "priceCurrency"
-// FROM "ConsultantProfile" "t0"
-// WHERE "isVerified" = $1
-// ORDER BY "rating" DESC
-```
-
 ### Fixed
-- **Alias conflict with include + computed** - Fixed "table name 't0' specified more than once" error by adding `startingCounter` parameter to RelationCompiler
-- **Missing relation columns in SELECT** - Relations now correctly included in query results when using `include()` with computed fields
-- **Ambiguous column names with JOINs** - Added table alias prefix to WHERE and ORDER BY clauses when JOINs are present
-- **Aggregate FILTER parameter numbering** - Fixed "could not determine data type of parameter" error by using sequential parameter numbering instead of hardcoded offset
-- **Computed field WHERE clause parameterization** - Values in computed field subqueries now use parameterized queries instead of direct interpolation for improved security
-- **selectFields respects dot notation** - When using `selectFields(['user.name'])`, only explicitly requested relation columns are fetched instead of all columns
-
-### Backward Compatibility
-- All existing query features remain unchanged
-- Computed fields are optional - queries without `.computed()` work exactly as before
-- Works with `selectFields()`, `where()`, `orderBy()`, and pagination
-
----
+- **Alias conflict with include + computed** - Fixed "table name 't0' specified more than once" error
+- **Missing relation columns in SELECT** - Relations now correctly included when using `include()` with computed fields
+- **Ambiguous column names with JOINs** - Added table alias prefix to WHERE and ORDER BY clauses
+- **Aggregate FILTER parameter numbering** - Fixed "could not determine data type of parameter" error
+- **Computed field WHERE clause parameterization** - Improved security with parameterized queries
+- **selectFields respects dot notation** - Only explicitly requested relation columns are fetched
 
 ## [0.2.5] - 2025-12-19
 
 ### Added
 - **Select Specific Fields** - New `selectFields()` method to select specific columns instead of `SELECT *`
-  - Reduces network overhead by fetching only needed columns
-  - Supports dot notation for related fields (e.g., `category.name`) when used with `include()`
-  - Works with all query types: `findMany`, `findFirst`, `findUnique`
-  - Compatible with WHERE, ORDER BY, and pagination
-
-- **FILTER Clause for Aggregations** (PostgreSQL/Supabase only)
-  - New `_countFiltered` aggregation for conditional COUNT
-  - Enables rating distributions, conditional stats in single query
-  - Falls back gracefully for MySQL/SQLite (not supported)
-
+- **FILTER Clause for Aggregations** (PostgreSQL/Supabase) - Conditional COUNT with `_countFiltered`
 - **Include with Select** - Select specific fields from included relations
-  - `include: {'user': {'select': {'name': true, 'image': true}}}`
-  - Only fetches requested columns from related tables
-  - Reduces data transfer for large relations
-
-### Example Usage
-```dart
-// Select specific scalar fields
-final query = JsonQueryBuilder()
-    .model('Product')
-    .action(QueryAction.findMany)
-    .selectFields(['id', 'name', 'price', 'rating'])
-    .where({'isActive': true})
-    .orderBy({'price': 'asc'})
-    .take(10)
-    .build();
-
-// Generates: SELECT "id", "name", "price", "rating" FROM "Product"
-//            WHERE "isActive" = $1 ORDER BY "price" ASC LIMIT 10
-
-// Aggregation with FILTER clause (rating distribution)
-final statsQuery = JsonQueryBuilder()
-    .model('ConsultantReview')
-    .action(QueryAction.aggregate)
-    .aggregation({
-      '_count': true,
-      '_avg': {'rating': true},
-      '_countFiltered': [
-        {'alias': 'fiveStar', 'filter': {'rating': 5}},
-        {'alias': 'fourStar', 'filter': {'rating': 4}},
-        {'alias': 'threeStar', 'filter': {'rating': 3}},
-      ],
-    })
-    .where({'consultantProfileId': 'consultant-123'})
-    .build();
-
-// Generates: SELECT COUNT(*) AS "_count", AVG("rating") AS "_avg_rating",
-//   COUNT(*) FILTER (WHERE "rating" = $1) AS "fiveStar",
-//   COUNT(*) FILTER (WHERE "rating" = $2) AS "fourStar", ...
-```
-
-### Backward Compatibility
-- Existing `.select(Map)` syntax continues to work
-- Default behavior (no selectFields) remains `SELECT *`
-- FILTER clause silently ignored on unsupported providers
-
----
 
 ## [0.2.4] - 2025-12-19
 
 ### Added
 - **Relation Filtering SQL Compilation** - Compile `some`/`every`/`none` operators to EXISTS subqueries
-  - **One-to-Many**: `EXISTS (SELECT 1 FROM related WHERE related.fk = parent.id AND ...)`
-  - **Many-to-Many**: `EXISTS (SELECT 1 FROM junction INNER JOIN target ON ... WHERE junction.A = parent.id AND ...)`
-  - **One-to-One**: Handles both owner and non-owner sides correctly
-  - All providers supported (PostgreSQL, Supabase, MySQL, SQLite)
-
-- **Relation Filter Operators**
-  - `some` → `EXISTS (...)` - At least one match
-  - `none` → `NOT EXISTS (...)` - No matches
-  - `every` → `NOT EXISTS (... AND NOT condition)` - All match
-  - `isEmpty()` → `NOT EXISTS (...)` with no condition
-  - `isNotEmpty()` → `EXISTS (...)` with no condition
-
-### Example Usage
-```dart
-// Register schema with relation metadata
-final schema = SchemaRegistry();
-schema.registerModel(ModelSchema(
-  name: 'Product',
-  tableName: 'Product',
-  fields: {...},
-  relations: {
-    'reviews': RelationInfo(
-      name: 'reviews',
-      type: RelationType.oneToMany,
-      targetModel: 'Review',
-      foreignKey: 'productId',
-      references: ['id'],
-    ),
-    'categories': RelationInfo(
-      name: 'categories',
-      type: RelationType.manyToMany,
-      targetModel: 'Category',
-      joinTable: '_ProductToCategory',
-      joinColumn: 'A',
-      inverseJoinColumn: 'B',
-      foreignKey: '',
-      references: ['id'],
-    ),
-  },
-));
-
-// Query with relation filters
-final query = JsonQueryBuilder()
-    .model('Product')
-    .action(QueryAction.findMany)
-    .where({
-      'isActive': true,
-      'reviews': FilterOperators.some({
-        'rating': FilterOperators.gte(4),
-      }),
-      'categories': FilterOperators.some({
-        'id': 'category-electronics',
-      }),
-    })
-    .orderBy({
-      'price': {'sort': 'asc', 'nulls': 'last'},
-    })
-    .build();
-
-final compiler = SqlCompiler(provider: 'postgresql', schema: schema);
-final sql = compiler.compile(query);
-// Generates:
-// SELECT * FROM "Product" WHERE "isActive" = $1
-// AND EXISTS (SELECT 1 FROM "Review" WHERE "Review"."productId" = "Product"."id" AND "rating" >= $2)
-// AND EXISTS (SELECT 1 FROM "_ProductToCategory" INNER JOIN "Category" ON "Category"."id" = "_ProductToCategory"."B" WHERE "_ProductToCategory"."A" = "Product"."id" AND "id" = $3)
-// ORDER BY "price" ASC NULLS LAST
-```
-
-### Why This Matters
-Previously, filtering on relations required raw SQL with manual EXISTS subqueries. Now you can:
-- Use the same type-safe `FilterOperators` API for relation filters
-- Automatically generate correct JOIN patterns for M:N relations
-- Combine scalar filters with relation filters in a single query
-- Support all relation types (1:N, N:1, 1:1, M:N)
+- **Relation Filter Operators** - `some`, `none`, `every`, `isEmpty()`, `isNotEmpty()`
 
 ## [0.2.3] - 2025-12-19
 
 ### Added
 - **NULLS LAST/FIRST Ordering** - Extended `orderBy` syntax for null positioning
-  - PostgreSQL and Supabase: Full support for `NULLS LAST` and `NULLS FIRST`
-  - MySQL/SQLite: Gracefully ignored (not supported by these databases)
-  - Backward compatible - simple `{'field': 'desc'}` syntax still works
-
 - **Relation Filter Helpers** - New `FilterOperators` for filtering on relations
-  - `FilterOperators.some(where)` - At least one related record matches
-  - `FilterOperators.every(where)` - All related records match
-  - `FilterOperators.noneMatch(where)` - No related records match
-  - `FilterOperators.isEmpty()` - Relation has no records
-  - `FilterOperators.isNotEmpty()` - Relation has at least one record
-  - *Note: These helpers generate the correct JSON structure. SQL compilation added in v0.2.4.*
-
-### Example Usage
-```dart
-// NULLS LAST/FIRST ordering
-final query = JsonQueryBuilder()
-    .model('Product')
-    .action(QueryAction.findMany)
-    .orderBy({
-      'price': {'sort': 'asc', 'nulls': 'last'},  // Extended syntax
-      'createdAt': 'desc',  // Simple syntax still works
-    })
-    .build();
-
-// Relation filter helpers (SQL compilation added in v0.2.4)
-final where = {
-  'reviews': FilterOperators.some({
-    'rating': FilterOperators.gte(4),
-    'verified': true,
-  }),
-  'tags': FilterOperators.isEmpty(),
-};
-```
 
 ## [0.2.2] - 2025-12-19
 
 ### Added
-- **Case-Insensitive Search** - New `mode: 'insensitive'` option for string filters
-  - `FilterOperators.containsInsensitive(value)` - Case-insensitive LIKE search
-  - `FilterOperators.startsWithInsensitive(value)` - Case-insensitive prefix search
-  - `FilterOperators.endsWithInsensitive(value)` - Case-insensitive suffix search
-  - Generates `ILIKE` for PostgreSQL/Supabase (case-insensitive)
-  - Falls back to `LIKE` for MySQL/SQLite (they are already case-insensitive by default)
-  - Backward compatible - existing `contains()`, `startsWith()`, `endsWith()` unchanged
-
-### Example Usage
-```dart
-// Case-insensitive search
-final query = JsonQueryBuilder()
-    .model('User')
-    .action(QueryAction.findMany)
-    .where({
-      'name': FilterOperators.containsInsensitive('john'),  // Matches "John", "JOHN", "john"
-    })
-    .build();
-```
+- **Case-Insensitive Search** - `containsInsensitive()`, `startsWithInsensitive()`, `endsWithInsensitive()`
 
 ## [0.2.1] - 2025-12-19
 
