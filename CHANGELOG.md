@@ -52,6 +52,8 @@ final query = JsonQueryBuilder()
 - **Missing relation columns in SELECT** - Relations now correctly included in query results when using `include()` with computed fields
 - **Ambiguous column names with JOINs** - Added table alias prefix to WHERE and ORDER BY clauses when JOINs are present
 - **Aggregate FILTER parameter numbering** - Fixed "could not determine data type of parameter" error by using sequential parameter numbering instead of hardcoded offset
+- **Computed field WHERE clause parameterization** - Values in computed field subqueries now use parameterized queries instead of direct interpolation for improved security
+- **selectFields respects dot notation** - When using `selectFields(['user.name'])`, only explicitly requested relation columns are fetched instead of all columns
 
 ### Backward Compatibility
 - All existing query features remain unchanged

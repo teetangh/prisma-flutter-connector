@@ -1942,7 +1942,9 @@ void main() {
         final result = compiler.compile(query);
 
         expect(result.sql, contains('WHERE "userId" = "t0"."id"'));
-        expect(result.sql, contains('"isPublished" = TRUE'));
+        // Static values are now parameterized for security
+        expect(result.sql, contains('"isPublished" = \$1'));
+        expect(result.args, contains(true));
       });
 
       test('first operation with descending order', () {

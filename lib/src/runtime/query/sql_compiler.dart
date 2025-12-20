@@ -165,12 +165,16 @@ class SqlCompiler {
       }
     }
 
-    // Append computed fields to SELECT clause
+    // Append computed fields to SELECT clause and collect their parameters
+    var computedArgs = <dynamic>[];
+    var computedTypes = <ArgType>[];
     if (hasComputedFields) {
-      final computedClauses = _buildComputedFieldsClauses(
+      final (computedClauses, cArgs, cTypes) = _buildComputedFieldsClauses(
         computedFields,
         baseAlias,
       );
+      computedArgs = cArgs;
+      computedTypes = cTypes;
       if (computedClauses.isNotEmpty) {
         selectClause = '$selectClause, $computedClauses';
       }
@@ -178,11 +182,13 @@ class SqlCompiler {
 
     // Build WHERE clause
     // Pass baseAlias when JOINs are present to disambiguate column names
+    // Start param index after computed field params
     final where = args['where'] as Map<String, dynamic>?;
     final (whereClause, whereArgs, whereTypes) = _buildWhereClause(
       where,
       modelName: query.modelName,
       baseAlias: needsAlias ? baseAlias : null,
+      startIndex: computedArgs.length + 1,
     );
 
     // Build ORDER BY clause
@@ -227,10 +233,14 @@ class SqlCompiler {
       sql.write(' OFFSET $skip');
     }
 
+    // Combine computed field args (first) with WHERE args (second)
+    final allArgs = [...computedArgs, ...whereArgs];
+    final allTypes = [...computedTypes, ...whereTypes];
+
     return SqlQuery(
       sql: sql.toString(),
-      args: whereArgs,
-      argTypes: whereTypes,
+      args: allArgs,
+      argTypes: allTypes,
       relationMetadata: compiledRelations,
     );
   }
@@ -945,17 +955,41 @@ RETURNING *
       }
     }
 
-    // Append all relation columns from include() directive
-    // These are columns with a non-null relationPath in columnAliases
+    // Collect which relation columns are explicitly requested via dot notation
+    final explicitRelationColumns = <String>{};
+    for (final field in fields) {
+      if (field.contains('.')) {
+        final parts = field.split('.');
+        if (parts.length == 2) {
+          // e.g., 'user.name' -> 'user_name' (the alias format)
+          explicitRelationColumns.add('${parts[0]}_${parts[1]}');
+        }
+      }
+    }
+    final hasExplicitRelationFields = explicitRelationColumns.isNotEmpty;
+
+    // Append relation columns from include() directive
+    // If selectFields has dot notation, only add explicitly requested columns
+    // Otherwise, add all relation columns (original behavior)
     for (final entry in relations.columnAliases.entries) {
       final aliasKey = entry.key;
       final info = entry.value;
 
       // Only add columns that belong to relations (have a relationPath)
       if (info.relationPath != null) {
-        columns.add(
-          '"${info.tableAlias}".${_quoteIdentifier(info.columnName)} AS ${_quoteIdentifier(aliasKey)}',
-        );
+        if (hasExplicitRelationFields) {
+          // Only add columns that were explicitly requested
+          if (explicitRelationColumns.contains(aliasKey)) {
+            columns.add(
+              '"${info.tableAlias}".${_quoteIdentifier(info.columnName)} AS ${_quoteIdentifier(aliasKey)}',
+            );
+          }
+        } else {
+          // No dot notation in selectFields -> add all relation columns
+          columns.add(
+            '"${info.tableAlias}".${_quoteIdentifier(info.columnName)} AS ${_quoteIdentifier(aliasKey)}',
+          );
+        }
       }
     }
 
@@ -987,32 +1021,47 @@ RETURNING *
   ///
   /// [computedFields] is a map from alias name to computed field definition.
   /// [baseAlias] is the alias of the parent table (e.g., "t0").
-  String _buildComputedFieldsClauses(
+  ///
+  /// Returns a tuple of (sql, args, argTypes) where args contains any parameterized values.
+  (String, List<dynamic>, List<ArgType>) _buildComputedFieldsClauses(
     Map<String, dynamic> computedFields,
     String baseAlias,
   ) {
     final clauses = <String>[];
+    final allArgs = <dynamic>[];
+    final allTypes = <ArgType>[];
 
     for (final entry in computedFields.entries) {
       final aliasName = entry.key;
       final fieldDef = entry.value as Map<String, dynamic>;
 
-      final clause = _buildSingleComputedFieldClause(fieldDef, baseAlias, aliasName);
-      if (clause != null) {
-        clauses.add(clause);
+      final result = _buildSingleComputedFieldClause(
+        fieldDef,
+        baseAlias,
+        aliasName,
+        allArgs.length + 1, // Starting param index (1-based)
+        allArgs,
+        allTypes,
+      );
+      if (result != null) {
+        clauses.add(result);
       }
     }
 
-    return clauses.join(', ');
+    return (clauses.join(', '), allArgs, allTypes);
   }
 
   /// Build a single computed field subquery clause.
   ///
   /// Returns null if the field definition is invalid.
+  /// Adds any parameterized values to [args] and [argTypes].
   String? _buildSingleComputedFieldClause(
     Map<String, dynamic> fieldDef,
     String baseAlias,
     String aliasName,
+    int startParamIndex,
+    List<dynamic> args,
+    List<ArgType> argTypes,
   ) {
     final type = fieldDef['_type'];
     if (type != 'computedField') return null;
@@ -1042,9 +1091,15 @@ RETURNING *
     final sql = StringBuffer();
     sql.write('(SELECT $selectExpr FROM ${_quoteIdentifier(from)}');
 
-    // Build WHERE clause with field references
+    // Build WHERE clause with field references (parameterized)
     if (where != null && where.isNotEmpty) {
-      final whereConditions = _buildComputedFieldWhere(where, baseAlias);
+      final whereConditions = _buildComputedFieldWhere(
+        where,
+        baseAlias,
+        startParamIndex,
+        args,
+        argTypes,
+      );
       if (whereConditions.isNotEmpty) {
         sql.write(' WHERE $whereConditions');
       }
@@ -1066,9 +1121,13 @@ RETURNING *
   /// Build WHERE clause for computed field subquery, resolving field references.
   ///
   /// Handles FieldRef objects that reference parent table columns.
+  /// Uses parameterized queries for safety - values are added to [args] and [argTypes].
   String _buildComputedFieldWhere(
     Map<String, dynamic> where,
     String baseAlias,
+    int startParamIndex,
+    List<dynamic> args,
+    List<ArgType> argTypes,
   ) {
     final conditions = <String>[];
 
@@ -1084,33 +1143,28 @@ RETURNING *
             '${_quoteIdentifier(field)} = "$baseAlias".${_quoteIdentifier(refField)}',
           );
         } else if (value.containsKey('equals')) {
-          // Handle equals operator
+          // Handle equals operator with parameterized values
           final eqValue = value['equals'];
           if (eqValue == null) {
             conditions.add('${_quoteIdentifier(field)} IS NULL');
-          } else if (eqValue is String) {
-            final escaped = eqValue.replaceAll("'", "''");
-            conditions.add('${_quoteIdentifier(field)} = \'$escaped\'');
-          } else if (eqValue is bool) {
-            conditions.add('${_quoteIdentifier(field)} = ${eqValue ? 'TRUE' : 'FALSE'}');
           } else {
-            conditions.add('${_quoteIdentifier(field)} = $eqValue');
+            args.add(eqValue);
+            argTypes.add(_inferArgType(eqValue));
+            final paramIndex = startParamIndex + args.length - 1;
+            conditions.add('${_quoteIdentifier(field)} = \$$paramIndex');
           }
         }
         // For other operators in computed field WHERE, skip for now
         // (computed fields typically just need FK equality)
       } else {
-        // Simple equality
+        // Simple equality with parameterized values
         if (value == null) {
           conditions.add('${_quoteIdentifier(field)} IS NULL');
-        } else if (value is String) {
-          // Quote string values
-          final escaped = value.replaceAll("'", "''");
-          conditions.add('${_quoteIdentifier(field)} = \'$escaped\'');
-        } else if (value is bool) {
-          conditions.add('${_quoteIdentifier(field)} = ${value ? 'TRUE' : 'FALSE'}');
         } else {
-          conditions.add('${_quoteIdentifier(field)} = $value');
+          args.add(value);
+          argTypes.add(_inferArgType(value));
+          final paramIndex = startParamIndex + args.length - 1;
+          conditions.add('${_quoteIdentifier(field)} = \$$paramIndex');
         }
       }
     }
