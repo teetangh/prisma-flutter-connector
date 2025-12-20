@@ -16,7 +16,8 @@ Current status and future plans for the Prisma Flutter Connector.
 - [x] PostgreSQL adapter
 - [x] Supabase adapter
 - [x] SQLite adapter
-- [x] SQL compiler (PostgreSQL, SQLite dialects)
+- [x] MySQL adapter
+- [x] SQL compiler (PostgreSQL, SQLite, MySQL dialects)
 - [x] JSON query protocol
 - [x] Filter operators
 - [x] Transaction support
@@ -61,10 +62,6 @@ await prisma.user.create(
 );
 ```
 
-#### MySQL Adapter
-
-Full MySQL/MariaDB support with the `mysql1` package.
-
 ### Medium Priority
 
 #### Aggregations
@@ -99,7 +96,8 @@ final grouped = await prisma.order.groupBy(
 
 ### Low Priority
 
-- MongoDB adapter
+- MongoDB adapter (requires new DocumentDriverAdapter interface)
+- Couchbase adapter (requires new DocumentDriverAdapter interface)
 - Migrations system
 - Connection pooling improvements
 - Result streaming for large datasets
@@ -111,8 +109,9 @@ final grouped = await prisma.order.groupBy(
 | PostgreSQL | ✅ Supported |
 | Supabase | ✅ Supported |
 | SQLite | ✅ Supported |
-| MySQL | 🚧 Planned |
+| MySQL | ✅ Supported |
 | MongoDB | 📋 Backlog |
+| Couchbase | 📋 Backlog |
 
 ## Contributing
 

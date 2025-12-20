@@ -8,9 +8,10 @@ A type-safe, database-agnostic Flutter connector that generates type-safe Dart c
 
 ## Features
 
-- **Database Agnostic** - PostgreSQL, MySQL, MongoDB, SQLite, Supabase
+- **Multi-Database** - PostgreSQL, MySQL, SQLite, Supabase (MongoDB/Couchbase planned)
 - **Type-Safe** - End-to-end type safety from database to UI
 - **Code Generation** - Auto-generate Dart models and APIs from Prisma schema
+- **Transaction Support** - Full ACID transactions with isolation levels
 - **GraphQL-Based** - Efficient queries with Pothos + Apollo Server
 - **Freezed Models** - Immutable models with JSON serialization
 - **Real-time** - WebSocket subscriptions for live updates
@@ -20,11 +21,14 @@ A type-safe, database-agnostic Flutter connector that generates type-safe Dart c
 
 ## Supported Databases
 
-- **PostgreSQL** - Full support with UUID, JSON, arrays
-- **MySQL** - Full support with auto-increment, decimals
-- **MongoDB** - Full support with ObjectId, embedded documents
-- **SQLite** - Full support with file-based storage
-- **Supabase** - Full support with PostgreSQL + Auth integration
+| Database | Status | Features |
+|----------|--------|----------|
+| PostgreSQL | ✅ Supported | UUID, JSON, arrays, transactions |
+| MySQL | ✅ Supported | Auto-increment, decimals, transactions |
+| SQLite | ✅ Supported | File-based, offline-first, mobile |
+| Supabase | ✅ Supported | PostgreSQL + Auth integration |
+| MongoDB | 📋 Planned | Requires DocumentDriverAdapter |
+| Couchbase | 📋 Planned | Requires DocumentDriverAdapter |
 
 ## Table of Contents
 
@@ -609,7 +613,9 @@ docker run -d \
   mysql:8.0
 ```
 
-### MongoDB
+### MongoDB (Planned)
+
+> **Note:** MongoDB adapter is planned for v0.3.0. It requires a new `DocumentDriverAdapter` interface for document-native operations. The Prisma schema setup below is for backend reference only.
 
 ```prisma
 datasource db {
@@ -908,33 +914,48 @@ See [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md) for contribution guidelin
 
 ### v0.1.0 (Current)
 
-- Code generation from Prisma schema
-- Multi-database support (PostgreSQL, MySQL, MongoDB, SQLite, Supabase)
-- Type-safe Freezed models
-- GraphQL-based API clients
-- Basic CRUD operations
-- Real-time subscriptions
-- Error handling
-- Comprehensive test suite
-- CI/CD with GitHub Actions
+**Completed:**
+- [x] Prisma schema parser
+- [x] Freezed model generation
+- [x] Type-safe input types (WhereInput, CreateInput, etc.)
+- [x] Delegate generation with CRUD methods
+- [x] PostgreSQL adapter
+- [x] Supabase adapter
+- [x] SQLite adapter
+- [x] MySQL adapter
+- [x] SQL compiler (PostgreSQL, SQLite, MySQL dialects)
+- [x] JSON query protocol
+- [x] Filter operators
+- [x] Transaction support (all isolation levels)
+- [x] Reserved keyword auto-rename
+- [x] CI/CD with GitHub Actions
+
+**In Progress:**
+- [ ] Unit test coverage (target: 80%+)
+- [ ] Integration tests for all adapters
+- [ ] Documentation improvements
 
 ### v0.2.0 (Planned)
 
-- Offline support with Drift
-- Cache-first queries
-- Optimistic UI updates
-- Pagination (cursor-based)
-- Aggregations (count, sum, avg)
-- Relations loading (include/select)
+**High Priority:**
+- [ ] Relation loading (include/select)
+- [ ] Nested writes (create/update related records)
+- [ ] Aggregations (count, sum, avg)
+- [ ] Raw SQL queries
+- [ ] Group by operations
+
+**Medium Priority:**
+- [ ] Pagination (cursor-based)
+- [ ] Cache-first queries
+- [ ] Optimistic UI updates
 
 ### v0.3.0 (Future)
 
-- Batch operations
-- File uploads
-- Advanced filters (full-text search)
-- Transaction support
-- Query builder API
-- Middleware support
+- [ ] MongoDB adapter (requires new DocumentDriverAdapter interface)
+- [ ] Couchbase adapter (requires new DocumentDriverAdapter interface)
+- [ ] Batch operations
+- [ ] Connection pooling improvements
+- [ ] Result streaming for large datasets
 
 ### v1.0.0 (Future)
 
@@ -989,4 +1010,4 @@ Special thanks to:
 
 ---
 
-**Note:** This is v0.1.0 - the initial release. Offline caching and advanced features are planned for future versions.
+**Note:** This is v0.1.0. Currently supports PostgreSQL, MySQL, SQLite, and Supabase with full transaction support. MongoDB and Couchbase adapters are planned for v0.3.0 with a new DocumentDriverAdapter interface.
