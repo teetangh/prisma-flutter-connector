@@ -97,7 +97,8 @@ class SqlCompiler {
 
     // Check for computed fields (v0.2.6+)
     final computedFields = args['_computed'] as Map<String, dynamic>?;
-    final hasComputedFields = computedFields != null && computedFields.isNotEmpty;
+    final hasComputedFields =
+        computedFields != null && computedFields.isNotEmpty;
 
     // Check for include directive (relations)
     final include = _extractInclude(query.args.selection);
@@ -138,7 +139,8 @@ class SqlCompiler {
       } else {
         // Fall back to simple select
         if (hasSelectFields) {
-          selectClause = _buildSelectFieldsFromList(selectFieldsList.cast<String>());
+          selectClause =
+              _buildSelectFieldsFromList(selectFieldsList.cast<String>());
         } else {
           final selectFields = _buildSelectFields(query.args.selection);
           selectClause = selectFields.isEmpty ? '*' : selectFields.join(', ');
@@ -153,7 +155,8 @@ class SqlCompiler {
             baseAlias,
           );
         } else {
-          selectClause = _buildSelectFieldsFromList(selectFieldsList.cast<String>());
+          selectClause =
+              _buildSelectFieldsFromList(selectFieldsList.cast<String>());
         }
       } else {
         if (needsAlias) {
@@ -660,7 +663,8 @@ class SqlCompiler {
     for (final entry in filter.entries) {
       final field = entry.key;
       final value = entry.value;
-      conditions.add('${_quoteIdentifier(field)} = ${_placeholder(paramIndex++)}');
+      conditions
+          .add('${_quoteIdentifier(field)} = ${_placeholder(paramIndex++)}');
       values.add(value);
       types.add(_inferArgType(value));
     }
@@ -947,7 +951,8 @@ RETURNING *
           }
         } else {
           // Nested relation (e.g., user.profile.bio) - not yet supported
-          columns.add('NULL AS ${_quoteIdentifier(field.replaceAll('.', '__'))}');
+          columns
+              .add('NULL AS ${_quoteIdentifier(field.replaceAll('.', '__'))}');
         }
       } else {
         // Base model field: id -> "t0"."id"
@@ -1009,7 +1014,9 @@ RETURNING *
   ) {
     if (fields.isEmpty) return '"$alias".*';
 
-    return fields.map((field) => '"$alias".${_quoteIdentifier(field)}').join(', ');
+    return fields
+        .map((field) => '"$alias".${_quoteIdentifier(field)}')
+        .join(', ');
   }
 
   /// Build computed fields clauses for correlated subqueries (v0.2.6+).
@@ -1080,7 +1087,8 @@ RETURNING *
       'max' => 'MAX(${_quoteIdentifier(field)})',
       'avg' => 'AVG(${_quoteIdentifier(field)})',
       'sum' => 'SUM(${_quoteIdentifier(field)})',
-      'count' => field == '*' ? 'COUNT(*)' : 'COUNT(${_quoteIdentifier(field)})',
+      'count' =>
+        field == '*' ? 'COUNT(*)' : 'COUNT(${_quoteIdentifier(field)})',
       'first' => _quoteIdentifier(field),
       _ => null,
     };
@@ -1505,7 +1513,8 @@ RETURNING *
           targetTable: targetTable,
           joinTable: _quoteIdentifier(relation.joinTable ?? ''),
           joinColumn: _quoteIdentifier(relation.joinColumn ?? 'A'),
-          inverseJoinColumn: _quoteIdentifier(relation.inverseJoinColumn ?? 'B'),
+          inverseJoinColumn:
+              _quoteIdentifier(relation.inverseJoinColumn ?? 'B'),
           parentRef: parentRef,
           parentPk: relation.references.first,
           subWhere: subWhere,
@@ -1610,7 +1619,8 @@ WHERE $joinTable.$joinColumn = $parentRef.$pkCol''';
   ///
   /// [baseAlias] - If provided, column names are prefixed with this alias
   ///   to disambiguate when JOINs are present.
-  String _buildOrderByClause(Map<String, dynamic>? orderBy, {String? baseAlias}) {
+  String _buildOrderByClause(Map<String, dynamic>? orderBy,
+      {String? baseAlias}) {
     if (orderBy == null || orderBy.isEmpty) return '';
 
     final clauses = <String>[];

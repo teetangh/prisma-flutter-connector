@@ -395,9 +395,8 @@ class RelationCompiler {
     if (model == null) {
       // Model not in schema, add fields directly by name
       for (final fieldName in selectedFields) {
-        final aliasKey = relationPath != null
-            ? '${relationPath}__$fieldName'
-            : fieldName;
+        final aliasKey =
+            relationPath != null ? '${relationPath}__$fieldName' : fieldName;
 
         aliases[aliasKey] = ColumnAlias(
           tableAlias: tableAlias,
@@ -419,9 +418,8 @@ class RelationCompiler {
       // Get actual column name (may differ from field name)
       final columnName = fieldToColumn[fieldName] ?? fieldName;
 
-      final aliasKey = relationPath != null
-          ? '${relationPath}__$columnName'
-          : columnName;
+      final aliasKey =
+          relationPath != null ? '${relationPath}__$columnName' : columnName;
 
       aliases[aliasKey] = ColumnAlias(
         tableAlias: tableAlias,

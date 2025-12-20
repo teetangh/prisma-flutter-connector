@@ -794,9 +794,8 @@ void main() {
         final query = JsonQueryBuilder()
             .model('User')
             .action(QueryAction.findMany)
-            .where({
-          'name': FilterOperators.containsInsensitive('John')
-        }).build();
+            .where(
+                {'name': FilterOperators.containsInsensitive('John')}).build();
 
         final result = compiler.compile(query);
 
@@ -871,9 +870,8 @@ void main() {
         final query = JsonQueryBuilder()
             .model('User')
             .action(QueryAction.findMany)
-            .where({
-          'name': FilterOperators.containsInsensitive('John')
-        }).build();
+            .where(
+                {'name': FilterOperators.containsInsensitive('John')}).build();
 
         final result = compiler.compile(query);
 
@@ -923,9 +921,8 @@ void main() {
         final query = JsonQueryBuilder()
             .model('User')
             .action(QueryAction.findMany)
-            .where({
-          'name': FilterOperators.containsInsensitive('John')
-        }).build();
+            .where(
+                {'name': FilterOperators.containsInsensitive('John')}).build();
 
         final result = compiler.compile(query);
 
@@ -1127,11 +1124,10 @@ void main() {
             .model('Product')
             .action(QueryAction.findMany)
             .where({
-              'reviews': FilterOperators.some({
-                'rating': FilterOperators.gte(4),
-              }),
-            })
-            .build();
+          'reviews': FilterOperators.some({
+            'rating': FilterOperators.gte(4),
+          }),
+        }).build();
 
         final result = compilerWithSchema.compile(query);
 
@@ -1147,11 +1143,10 @@ void main() {
             .model('Product')
             .action(QueryAction.findMany)
             .where({
-              'reviews': FilterOperators.noneMatch({
-                'rating': FilterOperators.lt(3),
-              }),
-            })
-            .build();
+          'reviews': FilterOperators.noneMatch({
+            'rating': FilterOperators.lt(3),
+          }),
+        }).build();
 
         final result = compilerWithSchema.compile(query);
 
@@ -1165,11 +1160,10 @@ void main() {
             .model('Product')
             .action(QueryAction.findMany)
             .where({
-              'reviews': FilterOperators.every({
-                'rating': FilterOperators.gte(4),
-              }),
-            })
-            .build();
+          'reviews': FilterOperators.every({
+            'rating': FilterOperators.gte(4),
+          }),
+        }).build();
 
         final result = compilerWithSchema.compile(query);
 
@@ -1184,11 +1178,10 @@ void main() {
             .model('Product')
             .action(QueryAction.findMany)
             .where({
-              'categories': FilterOperators.some({
-                'id': 'category-electronics',
-              }),
-            })
-            .build();
+          'categories': FilterOperators.some({
+            'id': 'category-electronics',
+          }),
+        }).build();
 
         final result = compilerWithSchema.compile(query);
 
@@ -1203,9 +1196,8 @@ void main() {
             .model('Product')
             .action(QueryAction.findMany)
             .where({
-              'categories': FilterOperators.isEmpty(),
-            })
-            .build();
+          'categories': FilterOperators.isEmpty(),
+        }).build();
 
         final result = compilerWithSchema.compile(query);
 
@@ -1218,12 +1210,11 @@ void main() {
             .model('Product')
             .action(QueryAction.findMany)
             .where({
-              'isActive': true,
-              'reviews': FilterOperators.some({
-                'rating': FilterOperators.gte(4),
-              }),
-            })
-            .build();
+          'isActive': true,
+          'reviews': FilterOperators.some({
+            'rating': FilterOperators.gte(4),
+          }),
+        }).build();
 
         final result = compilerWithSchema.compile(query);
 
@@ -1238,9 +1229,8 @@ void main() {
             .model('Product')
             .action(QueryAction.findMany)
             .where({
-              'reviews': FilterOperators.isNotEmpty(),
-            })
-            .build();
+          'reviews': FilterOperators.isNotEmpty(),
+        }).build();
 
         final result = compilerWithSchema.compile(query);
 
@@ -1260,8 +1250,7 @@ void main() {
         final query = JsonQueryBuilder()
             .model('Product')
             .action(QueryAction.findMany)
-            .where({'isActive': true})
-            .build();
+            .where({'isActive': true}).build();
 
         final result = compiler.compile(query);
 
@@ -1273,8 +1262,7 @@ void main() {
         final query = JsonQueryBuilder()
             .model('Product')
             .action(QueryAction.findMany)
-            .selectFields(['id', 'name', 'price'])
-            .build();
+            .selectFields(['id', 'name', 'price']).build();
 
         final result = compiler.compile(query);
 
@@ -1287,9 +1275,7 @@ void main() {
         final query = JsonQueryBuilder()
             .model('Product')
             .action(QueryAction.findMany)
-            .selectFields(['id', 'name'])
-            .where({'isActive': true})
-            .build();
+            .selectFields(['id', 'name']).where({'isActive': true}).build();
 
         final result = compiler.compile(query);
 
@@ -1302,9 +1288,8 @@ void main() {
         final query = JsonQueryBuilder()
             .model('Product')
             .action(QueryAction.findMany)
-            .selectFields(['id', 'name', 'price'])
-            .orderBy({'price': 'asc'})
-            .build();
+            .selectFields(['id', 'name', 'price']).orderBy(
+                {'price': 'asc'}).build();
 
         final result = compiler.compile(query);
 
@@ -1316,11 +1301,9 @@ void main() {
         final query = JsonQueryBuilder()
             .model('Product')
             .action(QueryAction.findMany)
-            .selectFields(['id', 'name', 'rating'])
-            .orderBy({
-              'rating': {'sort': 'desc', 'nulls': 'last'}
-            })
-            .build();
+            .selectFields(['id', 'name', 'rating']).orderBy({
+          'rating': {'sort': 'desc', 'nulls': 'last'}
+        }).build();
 
         final result = compiler.compile(query);
 
@@ -1348,8 +1331,7 @@ void main() {
         final query = JsonQueryBuilder()
             .model('Product')
             .action(QueryAction.findMany)
-            .selectFields([])
-            .build();
+            .selectFields([]).build();
 
         final result = compiler.compile(query);
 
@@ -1360,9 +1342,7 @@ void main() {
         final query = JsonQueryBuilder()
             .model('Product')
             .action(QueryAction.findFirst)
-            .selectFields(['id', 'name'])
-            .where({'isActive': true})
-            .build();
+            .selectFields(['id', 'name']).where({'isActive': true}).build();
 
         final result = compiler.compile(query);
 
@@ -1374,9 +1354,8 @@ void main() {
         final query = JsonQueryBuilder()
             .model('Product')
             .action(QueryAction.findUnique)
-            .selectFields(['id', 'name', 'price'])
-            .where({'id': 'product-123'})
-            .build();
+            .selectFields(['id', 'name', 'price']).where(
+                {'id': 'product-123'}).build();
 
         final result = compiler.compile(query);
 
@@ -1395,8 +1374,7 @@ void main() {
           fields: {
             'id': FieldInfo(
                 name: 'id', columnName: 'id', type: 'String', isId: true),
-            'name':
-                FieldInfo(name: 'name', columnName: 'name', type: 'String'),
+            'name': FieldInfo(name: 'name', columnName: 'name', type: 'String'),
             'isActive': FieldInfo(
                 name: 'isActive', columnName: 'isActive', type: 'bool'),
           },
@@ -1430,14 +1408,12 @@ void main() {
         final query = JsonQueryBuilder()
             .model('Product')
             .action(QueryAction.findMany)
-            .selectFields(['id', 'name'])
-            .where({
-              'isActive': true,
-              'reviews': FilterOperators.some({
-                'rating': FilterOperators.gte(4),
-              }),
-            })
-            .build();
+            .selectFields(['id', 'name']).where({
+          'isActive': true,
+          'reviews': FilterOperators.some({
+            'rating': FilterOperators.gte(4),
+          }),
+        }).build();
 
         final result = compilerWithSchema.compile(query);
 
@@ -1459,11 +1435,9 @@ void main() {
             .model('ConsultantReview')
             .action(QueryAction.aggregate)
             .aggregation({
-              '_count': true,
-              '_avg': {'rating': true},
-            })
-            .where({'consultantProfileId': 'consultant-123'})
-            .build();
+          '_count': true,
+          '_avg': {'rating': true},
+        }).where({'consultantProfileId': 'consultant-123'}).build();
 
         final result = compiler.compile(query);
 
@@ -1477,21 +1451,27 @@ void main() {
             .model('ConsultantReview')
             .action(QueryAction.aggregate)
             .aggregation({
-              '_count': true,
-              '_countFiltered': [
-                {'alias': 'fiveStar', 'filter': {'rating': 5}},
-                {'alias': 'fourStar', 'filter': {'rating': 4}},
-              ],
-            })
-            .where({'consultantProfileId': 'consultant-123'})
-            .build();
+          '_count': true,
+          '_countFiltered': [
+            {
+              'alias': 'fiveStar',
+              'filter': {'rating': 5}
+            },
+            {
+              'alias': 'fourStar',
+              'filter': {'rating': 4}
+            },
+          ],
+        }).where({'consultantProfileId': 'consultant-123'}).build();
 
         final result = compiler.compile(query);
 
         expect(result.sql, contains('COUNT(*) AS "_count"'));
         // FILTER params continue after WHERE params ($1 = consultantProfileId)
-        expect(result.sql, contains('COUNT(*) FILTER (WHERE "rating" = \$2) AS "fiveStar"'));
-        expect(result.sql, contains('COUNT(*) FILTER (WHERE "rating" = \$3) AS "fourStar"'));
+        expect(result.sql,
+            contains('COUNT(*) FILTER (WHERE "rating" = \$2) AS "fiveStar"'));
+        expect(result.sql,
+            contains('COUNT(*) FILTER (WHERE "rating" = \$3) AS "fourStar"'));
         // Values should be present in correct order: WHERE args first, then FILTER args
         expect(result.args, equals(['consultant-123', 5, 4]));
         expect(result.argTypes.length, equals(3));
@@ -1502,18 +1482,31 @@ void main() {
             .model('ConsultantReview')
             .action(QueryAction.aggregate)
             .aggregation({
-              '_count': true,
-              '_avg': {'rating': true},
-              '_countFiltered': [
-                {'alias': 'fiveStar', 'filter': {'rating': 5}},
-                {'alias': 'fourStar', 'filter': {'rating': 4}},
-                {'alias': 'threeStar', 'filter': {'rating': 3}},
-                {'alias': 'twoStar', 'filter': {'rating': 2}},
-                {'alias': 'oneStar', 'filter': {'rating': 1}},
-              ],
-            })
-            .where({'consultantProfileId': 'consultant-123'})
-            .build();
+          '_count': true,
+          '_avg': {'rating': true},
+          '_countFiltered': [
+            {
+              'alias': 'fiveStar',
+              'filter': {'rating': 5}
+            },
+            {
+              'alias': 'fourStar',
+              'filter': {'rating': 4}
+            },
+            {
+              'alias': 'threeStar',
+              'filter': {'rating': 3}
+            },
+            {
+              'alias': 'twoStar',
+              'filter': {'rating': 2}
+            },
+            {
+              'alias': 'oneStar',
+              'filter': {'rating': 1}
+            },
+          ],
+        }).where({'consultantProfileId': 'consultant-123'}).build();
 
         final result = compiler.compile(query);
 
@@ -1534,12 +1527,14 @@ void main() {
             .model('Review')
             .action(QueryAction.aggregate)
             .aggregation({
-              '_count': true,
-              '_countFiltered': [
-                {'alias': 'fiveStar', 'filter': {'rating': 5}},
-              ],
-            })
-            .build();
+          '_count': true,
+          '_countFiltered': [
+            {
+              'alias': 'fiveStar',
+              'filter': {'rating': 5}
+            },
+          ],
+        }).build();
 
         final result = mysqlCompiler.compile(query);
 
@@ -1555,12 +1550,14 @@ void main() {
             .model('Review')
             .action(QueryAction.aggregate)
             .aggregation({
-              '_count': true,
-              '_countFiltered': [
-                {'alias': 'fiveStar', 'filter': {'rating': 5}},
-              ],
-            })
-            .build();
+          '_count': true,
+          '_countFiltered': [
+            {
+              'alias': 'fiveStar',
+              'filter': {'rating': 5}
+            },
+          ],
+        }).build();
 
         final result = sqliteCompiler.compile(query);
 
@@ -1681,10 +1678,9 @@ void main() {
             .model('ConsultantProfile')
             .action(QueryAction.findMany)
             .include({
-              'user': true,
-              'domain': true,
-            })
-            .build();
+          'user': true,
+          'domain': true,
+        }).build();
 
         final result = compilerWithSchema.compile(query);
 
@@ -1700,14 +1696,13 @@ void main() {
             .model('ConsultantProfile')
             .action(QueryAction.findMany)
             .include({
-              'user': {
-                'select': {'name': true, 'image': true}
-              },
-              'domain': {
-                'select': {'id': true, 'name': true}
-              },
-            })
-            .build();
+          'user': {
+            'select': {'name': true, 'image': true}
+          },
+          'domain': {
+            'select': {'id': true, 'name': true}
+          },
+        }).build();
 
         final result = compilerWithSchema.compile(query);
 
@@ -1716,8 +1711,8 @@ void main() {
         expect(result.sql, contains('LEFT JOIN "Domain"'));
         // Should select specific columns from relations
         // The relation compiler will generate aliases like user__name, user__image
-        expect(result.sql, contains('"t0"'));  // Base table alias
-        expect(result.sql, contains('"t1"'));  // First relation alias
+        expect(result.sql, contains('"t0"')); // Base table alias
+        expect(result.sql, contains('"t1"')); // First relation alias
       });
     });
 
@@ -1733,11 +1728,10 @@ void main() {
             .model('ConsultantProfile')
             .action(QueryAction.findMany)
             .computed({
-              'minPrice': ComputedField.min('price',
-                from: 'ConsultationPlan',
-                where: {'consultantProfileId': const FieldRef('id')}),
-            })
-            .build();
+          'minPrice': ComputedField.min('price',
+              from: 'ConsultationPlan',
+              where: {'consultantProfileId': const FieldRef('id')}),
+        }).build();
 
         final result = compiler.compile(query);
 
@@ -1746,7 +1740,8 @@ void main() {
         expect(result.sql, contains('FROM "ConsultantProfile" "t0"'));
 
         // Should have correlated subquery
-        expect(result.sql, contains('(SELECT MIN("price") FROM "ConsultationPlan"'));
+        expect(result.sql,
+            contains('(SELECT MIN("price") FROM "ConsultationPlan"'));
         expect(result.sql, contains('WHERE "consultantProfileId" = "t0"."id"'));
         expect(result.sql, contains('AS "minPrice"'));
       });
@@ -1756,11 +1751,9 @@ void main() {
             .model('Product')
             .action(QueryAction.findMany)
             .computed({
-              'maxRating': ComputedField.max('rating',
-                from: 'Review',
-                where: {'productId': const FieldRef('id')}),
-            })
-            .build();
+          'maxRating': ComputedField.max('rating',
+              from: 'Review', where: {'productId': const FieldRef('id')}),
+        }).build();
 
         final result = compiler.compile(query);
 
@@ -1774,11 +1767,9 @@ void main() {
             .model('Product')
             .action(QueryAction.findMany)
             .computed({
-              'avgRating': ComputedField.avg('rating',
-                from: 'Review',
-                where: {'productId': const FieldRef('id')}),
-            })
-            .build();
+          'avgRating': ComputedField.avg('rating',
+              from: 'Review', where: {'productId': const FieldRef('id')}),
+        }).build();
 
         final result = compiler.compile(query);
 
@@ -1791,11 +1782,9 @@ void main() {
             .model('Order')
             .action(QueryAction.findMany)
             .computed({
-              'totalAmount': ComputedField.sum('amount',
-                from: 'OrderItem',
-                where: {'orderId': const FieldRef('id')}),
-            })
-            .build();
+          'totalAmount': ComputedField.sum('amount',
+              from: 'OrderItem', where: {'orderId': const FieldRef('id')}),
+        }).build();
 
         final result = compiler.compile(query);
 
@@ -1808,11 +1797,9 @@ void main() {
             .model('User')
             .action(QueryAction.findMany)
             .computed({
-              'postCount': ComputedField.count(
-                from: 'Post',
-                where: {'userId': const FieldRef('id')}),
-            })
-            .build();
+          'postCount': ComputedField.count(
+              from: 'Post', where: {'userId': const FieldRef('id')}),
+        }).build();
 
         final result = compiler.compile(query);
 
@@ -1826,16 +1813,16 @@ void main() {
             .model('ConsultantProfile')
             .action(QueryAction.findMany)
             .computed({
-              'priceCurrency': ComputedField.first('priceCurrency',
-                from: 'ConsultationPlan',
-                where: {'consultantProfileId': const FieldRef('id')},
-                orderBy: {'price': 'asc'}),
-            })
-            .build();
+          'priceCurrency': ComputedField.first('priceCurrency',
+              from: 'ConsultationPlan',
+              where: {'consultantProfileId': const FieldRef('id')},
+              orderBy: {'price': 'asc'}),
+        }).build();
 
         final result = compiler.compile(query);
 
-        expect(result.sql, contains('(SELECT "priceCurrency" FROM "ConsultationPlan"'));
+        expect(result.sql,
+            contains('(SELECT "priceCurrency" FROM "ConsultationPlan"'));
         expect(result.sql, contains('WHERE "consultantProfileId" = "t0"."id"'));
         expect(result.sql, contains('ORDER BY "price" ASC LIMIT 1'));
         expect(result.sql, contains('AS "priceCurrency"'));
@@ -1846,14 +1833,13 @@ void main() {
             .model('ConsultantProfile')
             .action(QueryAction.findMany)
             .computed({
-              'minPrice': ComputedField.min('price',
-                from: 'ConsultationPlan',
-                where: {'consultantProfileId': const FieldRef('id')}),
-              'maxPrice': ComputedField.max('price',
-                from: 'ConsultationPlan',
-                where: {'consultantProfileId': const FieldRef('id')}),
-            })
-            .build();
+          'minPrice': ComputedField.min('price',
+              from: 'ConsultationPlan',
+              where: {'consultantProfileId': const FieldRef('id')}),
+          'maxPrice': ComputedField.max('price',
+              from: 'ConsultationPlan',
+              where: {'consultantProfileId': const FieldRef('id')}),
+        }).build();
 
         final result = compiler.compile(query);
 
@@ -1867,13 +1853,11 @@ void main() {
         final query = JsonQueryBuilder()
             .model('ConsultantProfile')
             .action(QueryAction.findMany)
-            .where({'isVerified': true})
-            .computed({
-              'minPrice': ComputedField.min('price',
-                from: 'ConsultationPlan',
-                where: {'consultantProfileId': const FieldRef('id')}),
-            })
-            .build();
+            .where({'isVerified': true}).computed({
+          'minPrice': ComputedField.min('price',
+              from: 'ConsultationPlan',
+              where: {'consultantProfileId': const FieldRef('id')}),
+        }).build();
 
         final result = compiler.compile(query);
 
@@ -1889,8 +1873,8 @@ void main() {
             .action(QueryAction.findMany)
             .computed({
               'minPrice': ComputedField.min('price',
-                from: 'ConsultationPlan',
-                where: {'consultantProfileId': const FieldRef('id')}),
+                  from: 'ConsultationPlan',
+                  where: {'consultantProfileId': const FieldRef('id')}),
             })
             .orderBy({'rating': 'desc'})
             .take(10)
@@ -1908,13 +1892,11 @@ void main() {
         final query = JsonQueryBuilder()
             .model('ConsultantProfile')
             .action(QueryAction.findMany)
-            .selectFields(['id', 'headline', 'rating'])
-            .computed({
-              'minPrice': ComputedField.min('price',
-                from: 'ConsultationPlan',
-                where: {'consultantProfileId': const FieldRef('id')}),
-            })
-            .build();
+            .selectFields(['id', 'headline', 'rating']).computed({
+          'minPrice': ComputedField.min('price',
+              from: 'ConsultationPlan',
+              where: {'consultantProfileId': const FieldRef('id')}),
+        }).build();
 
         final result = compiler.compile(query);
 
@@ -1930,14 +1912,11 @@ void main() {
             .model('User')
             .action(QueryAction.findMany)
             .computed({
-              'activePostCount': ComputedField.count(
-                from: 'Post',
-                where: {
-                  'userId': const FieldRef('id'),
-                  'isPublished': true,
-                }),
-            })
-            .build();
+          'activePostCount': ComputedField.count(from: 'Post', where: {
+            'userId': const FieldRef('id'),
+            'isPublished': true,
+          }),
+        }).build();
 
         final result = compiler.compile(query);
 
@@ -1952,12 +1931,11 @@ void main() {
             .model('Consultant')
             .action(QueryAction.findMany)
             .computed({
-              'latestPlanPrice': ComputedField.first('price',
-                from: 'Plan',
-                where: {'consultantId': const FieldRef('id')},
-                orderBy: {'createdAt': 'desc'}),
-            })
-            .build();
+          'latestPlanPrice': ComputedField.first('price',
+              from: 'Plan',
+              where: {'consultantId': const FieldRef('id')},
+              orderBy: {'createdAt': 'desc'}),
+        }).build();
 
         final result = compiler.compile(query);
 
@@ -2048,15 +2026,13 @@ void main() {
         final query = JsonQueryBuilder()
             .model('ConsultantProfile')
             .action(QueryAction.findMany)
-            .include({'user': true})
-            .computed({
-              'minPrice': ComputedField.min(
-                'price',
-                from: 'ConsultationPlan',
-                where: {'consultantProfileId': const FieldRef('id')},
-              ),
-            })
-            .build();
+            .include({'user': true}).computed({
+          'minPrice': ComputedField.min(
+            'price',
+            from: 'ConsultationPlan',
+            where: {'consultantProfileId': const FieldRef('id')},
+          ),
+        }).build();
 
         final result = compilerWithSchema.compile(query);
 
@@ -2082,4 +2058,3 @@ void main() {
     });
   });
 }
-

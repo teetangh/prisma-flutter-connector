@@ -298,8 +298,8 @@ class QueryExecutor implements BaseExecutor {
     );
 
     // Check if we need to deserialize relations
-    final hasRelations = sqlQuery.hasRelations &&
-        sqlQuery.relationMetadata is CompiledRelations;
+    final hasRelations =
+        sqlQuery.hasRelations && sqlQuery.relationMetadata is CompiledRelations;
 
     // Convert to maps - preserve aliases when relations are present so
     // the RelationDeserializer can match column aliases like "user__name"
