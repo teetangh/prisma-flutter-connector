@@ -937,17 +937,17 @@ RETURNING *
           }
 
           if (relationAlias != null) {
-            final aliasName = '${relationName}_$relationField';
+            final aliasName = '${relationName}__$relationField';
             columns.add(
                 '"$relationAlias".${_quoteIdentifier(relationField)} AS ${_quoteIdentifier(aliasName)}');
           } else {
             // Relation not found in include, use placeholder
             columns.add(
-                'NULL AS ${_quoteIdentifier('${relationName}_$relationField')}');
+                'NULL AS ${_quoteIdentifier('${relationName}__$relationField')}');
           }
         } else {
           // Nested relation (e.g., user.profile.bio) - not yet supported
-          columns.add('NULL AS ${_quoteIdentifier(field.replaceAll('.', '_'))}');
+          columns.add('NULL AS ${_quoteIdentifier(field.replaceAll('.', '__'))}');
         }
       } else {
         // Base model field: id -> "t0"."id"
@@ -961,8 +961,8 @@ RETURNING *
       if (field.contains('.')) {
         final parts = field.split('.');
         if (parts.length == 2) {
-          // e.g., 'user.name' -> 'user_name' (the alias format)
-          explicitRelationColumns.add('${parts[0]}_${parts[1]}');
+          // e.g., 'user.name' -> 'user__name' (the alias format, matches RelationCompiler)
+          explicitRelationColumns.add('${parts[0]}__${parts[1]}');
         }
       }
     }

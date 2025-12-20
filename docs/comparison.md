@@ -222,6 +222,130 @@ model Post {
 
 ---
 
+## What We're Rebuilding
+
+We're essentially building a "Prisma Engine" from scratch in Dart. Here's what the original Prisma stack looks like vs what we're building:
+
+### Original Prisma Stack
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    ORIGINAL PRISMA STACK                            │
+│                                                                     │
+│  ┌─────────────────┐                                               │
+│  │ Schema Parser   │  Rust + TypeScript                            │
+│  └────────┬────────┘                                               │
+│           ▼                                                         │
+│  ┌─────────────────┐                                               │
+│  │ Code Generators │  TypeScript (generates TS client)             │
+│  └────────┬────────┘                                               │
+│           ▼                                                         │
+│  ┌─────────────────┐                                               │
+│  │  QUERY ENGINE   │  Rust binary (~15-40MB!)                      │
+│  │  - HTTP Server  │  Runs as separate process                     │
+│  │  - SQL Compiler │  Prisma Client talks to it over HTTP          │
+│  │  - Conn Pool    │                                               │
+│  └─────────────────┘                                               │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Our Dart Implementation
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    OUR DART CONNECTOR                               │
+│                                                                     │
+│  ┌─────────────────┐                                               │
+│  │ Schema Parser   │  Dart (reimplemented)                         │
+│  └────────┬────────┘                                               │
+│           ▼                                                         │
+│  ┌─────────────────┐                                               │
+│  │ Code Generators │  Dart (reimplemented)                         │
+│  └────────┬────────┘                                               │
+│           ▼                                                         │
+│  ┌─────────────────┐                                               │
+│  │  SQL COMPILER   │  Dart (reimplemented, but simpler)            │
+│  │  - No HTTP      │  Runs IN-PROCESS (no separate binary)         │
+│  │  - No Conn Pool │  Uses existing Dart DB drivers                │
+│  └─────────────────┘                                               │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Key Difference: No Separate Engine Binary
+
+Original Prisma:
+```
+Your App  ──HTTP──→  Query Engine (Rust binary)  ──→  Database
+              ↑
+        Separate process!
+        15-40MB binary
+```
+
+Our Connector:
+```
+Your App  ──(in-process)──→  SQL Compiler (Dart)  ──→  Database
+              ↑
+        Same process!
+        Just Dart code
+```
+
+### Component-by-Component Comparison
+
+| Component | Original Prisma | Our Connector |
+|-----------|----------------|----------------|
+| Schema Parser | Rust + TS | Dart ✅ Built |
+| Model Generator | TypeScript | Dart ✅ Built |
+| Filter Generator | TypeScript | Dart ✅ Built |
+| Client Generator | TypeScript | Dart ✅ Built |
+| JSON Query Protocol | Rust | Dart ✅ Built |
+| SQL Compiler | Rust (complex) | Dart ✅ Built (simpler) |
+| Connection Pooling | Rust | ❌ Skipped (use DB driver's) |
+| HTTP Server Layer | Rust | ❌ Skipped (not needed) |
+| Migrations | Rust + TS | ❌ Skipped |
+| Introspection | Rust | ❌ Skipped |
+| Studio | Web App | ❌ Skipped |
+
+### Why This Approach is Better for Flutter
+
+```
+Original Prisma in Flutter would require:
+┌──────────────────────────────────────────────────┐
+│  Flutter App                                     │
+│       │                                          │
+│       ▼                                          │
+│  FFI Bridge to Rust? (complex)                   │
+│       │                                          │
+│       ▼                                          │
+│  Prisma Query Engine (Rust)                      │
+│  - Would need to compile for iOS, Android, etc.  │
+│  - Huge binary size                              │
+│  - Complex FFI bindings                          │
+└──────────────────────────────────────────────────┘
+
+Our approach:
+┌──────────────────────────────────────────────────┐
+│  Flutter App                                     │
+│       │                                          │
+│       ▼                                          │
+│  Pure Dart SQL Compiler (tiny, fast)             │
+│       │                                          │
+│       ▼                                          │
+│  Existing Dart DB packages (postgres, sqflite)   │
+└──────────────────────────────────────────────────┘
+```
+
+### The Result
+
+We're essentially asking: *"What if Prisma was built for Dart from day one?"*
+
+Our implementation is:
+- **Simpler** - No HTTP layer, no connection pooling logic
+- **Lighter** - Just Dart code, no 15-40MB Rust binary
+- **Native** - Runs in-process, no FFI or separate processes
+- **Focused** - Query compilation only, skip migrations/introspection
+
+---
+
 ## Possible Limitations
 
 ### 1. Feature Parity with Original Prisma
