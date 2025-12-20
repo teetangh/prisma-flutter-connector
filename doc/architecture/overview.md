@@ -272,4 +272,4 @@ Database errors are mapped to typed exceptions:
 
 ## Next Steps
 
-See [STUDY_GUIDE.md](./STUDY_GUIDE.md) for a recommended learning path through the codebase.
+See [study-guide.md](./study-guide.md) for a recommended learning path through the codebase.
