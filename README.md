@@ -384,35 +384,35 @@ Add inline aggregations to your queries using correlated subqueries:
 import 'package:prisma_flutter_connector/runtime.dart';
 
 final query = JsonQueryBuilder()
-    .model('ConsultantProfile')
+    .model('Product')
     .action(QueryAction.findMany)
     .computed({
-      'minPrice': ComputedField.min('price',
-        from: 'ConsultationPlan',
-        where: {'consultantProfileId': FieldRef('id')}),
-      'maxPrice': ComputedField.max('price',
-        from: 'ConsultationPlan',
-        where: {'consultantProfileId': FieldRef('id')}),
+      'minVariantPrice': ComputedField.min('price',
+        from: 'ProductVariant',
+        where: {'productId': FieldRef('id')}),
+      'maxVariantPrice': ComputedField.max('price',
+        from: 'ProductVariant',
+        where: {'productId': FieldRef('id')}),
       'reviewCount': ComputedField.count(
         from: 'Review',
-        where: {'consultantProfileId': FieldRef('id')}),
-      'priceCurrency': ComputedField.first('priceCurrency',
-        from: 'ConsultationPlan',
-        where: {'consultantProfileId': FieldRef('id')},
-        orderBy: {'price': 'asc'}),
+        where: {'productId': FieldRef('id')}),
+      'topCategory': ComputedField.first('name',
+        from: 'Category',
+        where: {'productId': FieldRef('id')},
+        orderBy: {'priority': 'asc'}),
     })
-    .where({'isVerified': true})
+    .where({'isActive': true})
     .orderBy({'rating': 'desc'})
     .build();
 
 // Generates SQL like:
 // SELECT "t0".*,
-//   (SELECT MIN("price") FROM "ConsultationPlan" WHERE "consultantProfileId" = "t0"."id") AS "minPrice",
-//   (SELECT MAX("price") FROM "ConsultationPlan" WHERE "consultantProfileId" = "t0"."id") AS "maxPrice",
-//   (SELECT COUNT(*) FROM "Review" WHERE "consultantProfileId" = "t0"."id") AS "reviewCount",
-//   (SELECT "priceCurrency" FROM "ConsultationPlan" WHERE "consultantProfileId" = "t0"."id" ORDER BY "price" ASC LIMIT 1) AS "priceCurrency"
-// FROM "ConsultantProfile" "t0"
-// WHERE "isVerified" = $1
+//   (SELECT MIN("price") FROM "ProductVariant" WHERE "productId" = "t0"."id") AS "minVariantPrice",
+//   (SELECT MAX("price") FROM "ProductVariant" WHERE "productId" = "t0"."id") AS "maxVariantPrice",
+//   (SELECT COUNT(*) FROM "Review" WHERE "productId" = "t0"."id") AS "reviewCount",
+//   (SELECT "name" FROM "Category" WHERE "productId" = "t0"."id" ORDER BY "priority" ASC LIMIT 1) AS "topCategory"
+// FROM "Product" "t0"
+// WHERE "isActive" = $1
 // ORDER BY "rating" DESC
 ```
 
@@ -489,7 +489,7 @@ final statsQuery = JsonQueryBuilder()
         {'alias': 'threeStar', 'filter': {'rating': 3}},
       ],
     })
-    .where({'consultantId': 'consultant-123'})
+    .where({'productId': 'product-123'})
     .build();
 
 // Generates: SELECT COUNT(*) AS "_count", AVG("rating") AS "_avg_rating",
