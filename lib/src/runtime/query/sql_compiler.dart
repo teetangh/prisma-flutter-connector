@@ -36,6 +36,15 @@ class SqlCompiler {
         startingCounter: 1,
       );
 
+  /// Resolve a model name to its actual database table name.
+  ///
+  /// Uses SchemaRegistry if available, otherwise returns the model name as-is.
+  /// This handles @@map directives transparently.
+  String _resolveTableName(String modelName) {
+    final effectiveSchema = schema ?? schemaRegistry;
+    return effectiveSchema.getTableName(modelName) ?? modelName;
+  }
+
   /// Compile a JSON query to SQL.
   SqlQuery compile(JsonQuery query) {
     switch (query.action) {
@@ -88,7 +97,7 @@ class SqlCompiler {
     final args = query.args.arguments ?? {};
     // Use model name as-is (don't convert to snake_case)
     // Prisma schemas can have PascalCase or snake_case table names
-    final tableName = query.modelName;
+    final tableName = _resolveTableName(query.modelName);
 
     // Check for selectFields (v0.2.5+)
     final selectFieldsList = args['selectFields'] as List<dynamic>?;
@@ -281,7 +290,7 @@ class SqlCompiler {
       throw ArgumentError('CREATE requires data');
     }
 
-    final tableName = query.modelName;
+    final tableName = _resolveTableName(query.modelName);
     final columns = <String>[];
     final placeholders = <String>[];
     final values = <dynamic>[];
@@ -330,7 +339,7 @@ class SqlCompiler {
       throw ArgumentError('CREATE MANY requires data array');
     }
 
-    final tableName = query.modelName;
+    final tableName = _resolveTableName(query.modelName);
     final firstRow = dataList.first as Map<String, dynamic>;
     // Use field names as-is (don't convert to snake_case)
     final columns = firstRow.keys.map((k) => _quoteIdentifier(k)).toList();
@@ -374,7 +383,7 @@ class SqlCompiler {
       throw ArgumentError('UPDATE requires data');
     }
 
-    final tableName = query.modelName;
+    final tableName = _resolveTableName(query.modelName);
 
     // Build SET clause
     final setClauses = <String>[];
@@ -427,7 +436,7 @@ class SqlCompiler {
     final args = query.args.arguments ?? {};
     final where = args['where'] as Map<String, dynamic>?;
 
-    final tableName = query.modelName;
+    final tableName = _resolveTableName(query.modelName);
     final (whereClause, whereArgs, whereTypes) = _buildWhereClause(
       where,
       modelName: query.modelName,
@@ -453,7 +462,7 @@ class SqlCompiler {
     final args = query.args.arguments ?? {};
     final where = args['where'] as Map<String, dynamic>?;
 
-    final tableName = query.modelName;
+    final tableName = _resolveTableName(query.modelName);
     final (whereClause, whereArgs, whereTypes) = _buildWhereClause(
       where,
       modelName: query.modelName,
@@ -512,7 +521,7 @@ class SqlCompiler {
     final where = args['where'] as Map<String, dynamic>?;
     final agg = args['_aggregate'] as Map<String, dynamic>? ?? {};
 
-    final tableName = query.modelName;
+    final tableName = _resolveTableName(query.modelName);
     final functions = <String>[];
     final filterValues = <dynamic>[];
     final filterTypes = <ArgType>[];
@@ -700,7 +709,7 @@ class SqlCompiler {
     // final having = args['having'] as Map<String, dynamic>?;
     final orderBy = args['orderBy'] as Map<String, dynamic>?;
 
-    final tableName = query.modelName;
+    final tableName = _resolveTableName(query.modelName);
 
     // Build SELECT clause with group by fields and aggregations
     final selectParts = <String>[];
@@ -789,7 +798,7 @@ class SqlCompiler {
     final createData = data['create'] as Map<String, dynamic>? ?? {};
     final updateData = data['update'] as Map<String, dynamic>? ?? {};
 
-    final tableName = query.modelName;
+    final tableName = _resolveTableName(query.modelName);
 
     // Get the conflict key(s) from the where clause
     final conflictKeys = where.keys.toList();

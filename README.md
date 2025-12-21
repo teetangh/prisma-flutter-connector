@@ -46,7 +46,7 @@ Add to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  prisma_flutter_connector: ^0.2.7
+  prisma_flutter_connector: ^0.2.8
 ```
 
 Run:

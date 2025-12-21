@@ -4,6 +4,20 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.2.8] - 2025-12-21
+
+### Fixed
+- **@@map directive support** - Model names now correctly resolve to database table names when using `JsonQueryBuilder` directly
+- `SqlCompiler` now consults `SchemaRegistry` to resolve model-to-table mappings via `@@map` directives
+
+### Added
+- `SqlCompiler._resolveTableName()` helper method for transparent model-to-table name resolution
+- Comprehensive test suite for `@@map` directive support
+
+### Notes
+- Backward compatible: If no `SchemaRegistry` is provided or model is not registered, model names are used as-is
+- Generated delegates (from code generation) continue to work as before
+
 ## [0.2.7] - 2025-12-20
 
 ### Fixed

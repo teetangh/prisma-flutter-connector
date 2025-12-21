@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:prisma_flutter_connector/src/runtime/query/sql_compiler.dart';
 import 'package:prisma_flutter_connector/src/runtime/query/json_protocol.dart';
 import 'package:prisma_flutter_connector/src/runtime/query/computed_field.dart';
@@ -2054,6 +2054,177 @@ void main() {
         final fromClause =
             RegExp(r'FROM\s+"ConsultantProfile"\s+"t0"').hasMatch(result.sql);
         expect(fromClause, isTrue);
+      });
+    });
+
+    group('@@map directive support', () {
+      late SqlCompiler compilerWithSchema;
+      late SchemaRegistry testSchema;
+
+      setUp(() {
+        testSchema = SchemaRegistry();
+
+        // Register User model with @@map("users")
+        testSchema.registerModel(const ModelSchema(
+          name: 'User',
+          tableName: 'users', // @@map("users")
+          fields: {
+            'id': FieldInfo(
+              name: 'id',
+              columnName: 'id',
+              type: 'String',
+              isId: true,
+            ),
+            'email': FieldInfo(
+              name: 'email',
+              columnName: 'email',
+              type: 'String',
+            ),
+          },
+        ));
+
+        compilerWithSchema = SqlCompiler(
+          provider: 'postgresql',
+          schema: testSchema,
+        );
+      });
+
+      test('resolves model name to table name via @@map for findMany', () {
+        final query = JsonQueryBuilder()
+            .model('User') // Model name (PascalCase)
+            .action(QueryAction.findMany)
+            .build();
+
+        final result = compilerWithSchema.compile(query);
+
+        // Should use "users" table name, not "User"
+        expect(result.sql, contains('FROM "users"'));
+        expect(result.sql, isNot(contains('FROM "User"')));
+      });
+
+      test('resolves model name to table name for findUnique', () {
+        final query = JsonQueryBuilder()
+            .model('User')
+            .action(QueryAction.findUnique)
+            .where({'id': '123'}).build();
+
+        final result = compilerWithSchema.compile(query);
+
+        expect(result.sql, contains('FROM "users"'));
+      });
+
+      test('resolves model name to table name for create', () {
+        final query = JsonQueryBuilder()
+            .model('User')
+            .action(QueryAction.create)
+            .data({'email': 'test@example.com'}).build();
+
+        final result = compilerWithSchema.compile(query);
+
+        expect(result.sql, contains('INSERT INTO "users"'));
+      });
+
+      test('resolves model name to table name for createMany', () {
+        const query = JsonQuery(
+          modelName: 'User',
+          action: 'createMany',
+          args: JsonQueryArgs(arguments: {
+            'data': [
+              {'email': 'test1@example.com'},
+              {'email': 'test2@example.com'},
+            ]
+          }),
+        );
+
+        final result = compilerWithSchema.compile(query);
+
+        expect(result.sql, contains('INSERT INTO "users"'));
+      });
+
+      test('resolves model name to table name for update', () {
+        final query = JsonQueryBuilder()
+            .model('User')
+            .action(QueryAction.update)
+            .where({'id': '123'}).data({'email': 'new@example.com'}).build();
+
+        final result = compilerWithSchema.compile(query);
+
+        expect(result.sql, contains('UPDATE "users"'));
+      });
+
+      test('resolves model name to table name for delete', () {
+        final query = JsonQueryBuilder()
+            .model('User')
+            .action(QueryAction.delete)
+            .where({'id': '123'}).build();
+
+        final result = compilerWithSchema.compile(query);
+
+        expect(result.sql, contains('DELETE FROM "users"'));
+      });
+
+      test('resolves model name to table name for count', () {
+        final query =
+            JsonQueryBuilder().model('User').action(QueryAction.count).build();
+
+        final result = compilerWithSchema.compile(query);
+
+        expect(result.sql, contains('FROM "users"'));
+      });
+
+      test('resolves model name to table name for groupBy', () {
+        final query = JsonQueryBuilder()
+            .model('User')
+            .action(QueryAction.groupBy)
+            .groupByFields(['email']).build();
+
+        final result = compilerWithSchema.compile(query);
+
+        expect(result.sql, contains('FROM "users"'));
+      });
+
+      test('resolves model name to table name for upsert', () {
+        const query = JsonQuery(
+          modelName: 'User',
+          action: 'upsert',
+          args: JsonQueryArgs(arguments: {
+            'where': {'id': '123'},
+            'data': {
+              'create': {'id': '123', 'email': 'test@example.com'},
+              'update': {'email': 'updated@example.com'},
+            },
+          }),
+        );
+
+        final result = compilerWithSchema.compile(query);
+
+        expect(result.sql, contains('INSERT INTO "users"'));
+      });
+
+      test('works without SchemaRegistry (backward compatible)', () {
+        final compilerNoSchema = SqlCompiler(provider: 'postgresql');
+
+        final query = JsonQueryBuilder()
+            .model('User')
+            .action(QueryAction.findMany)
+            .build();
+
+        final result = compilerNoSchema.compile(query);
+
+        // Should use model name as-is when no schema registered
+        expect(result.sql, contains('FROM "User"'));
+      });
+
+      test('uses model name when table not registered in schema', () {
+        final query = JsonQueryBuilder()
+            .model('UnknownModel') // Not registered
+            .action(QueryAction.findMany)
+            .build();
+
+        final result = compilerWithSchema.compile(query);
+
+        // Should fallback to model name
+        expect(result.sql, contains('FROM "UnknownModel"'));
       });
     });
   });
