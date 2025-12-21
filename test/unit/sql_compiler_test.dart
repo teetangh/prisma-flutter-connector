@@ -2065,17 +2065,17 @@ void main() {
         testSchema = SchemaRegistry();
 
         // Register User model with @@map("users")
-        testSchema.registerModel(ModelSchema(
+        testSchema.registerModel(const ModelSchema(
           name: 'User',
           tableName: 'users', // @@map("users")
           fields: {
-            'id': const FieldInfo(
+            'id': FieldInfo(
               name: 'id',
               columnName: 'id',
               type: 'String',
               isId: true,
             ),
-            'email': const FieldInfo(
+            'email': FieldInfo(
               name: 'email',
               columnName: 'email',
               type: 'String',
@@ -2106,8 +2106,7 @@ void main() {
         final query = JsonQueryBuilder()
             .model('User')
             .action(QueryAction.findUnique)
-            .where({'id': '123'})
-            .build();
+            .where({'id': '123'}).build();
 
         final result = compilerWithSchema.compile(query);
 
@@ -2118,8 +2117,7 @@ void main() {
         final query = JsonQueryBuilder()
             .model('User')
             .action(QueryAction.create)
-            .data({'email': 'test@example.com'})
-            .build();
+            .data({'email': 'test@example.com'}).build();
 
         final result = compilerWithSchema.compile(query);
 
@@ -2130,9 +2128,7 @@ void main() {
         final query = JsonQueryBuilder()
             .model('User')
             .action(QueryAction.update)
-            .where({'id': '123'})
-            .data({'email': 'new@example.com'})
-            .build();
+            .where({'id': '123'}).data({'email': 'new@example.com'}).build();
 
         final result = compilerWithSchema.compile(query);
 
@@ -2143,8 +2139,7 @@ void main() {
         final query = JsonQueryBuilder()
             .model('User')
             .action(QueryAction.delete)
-            .where({'id': '123'})
-            .build();
+            .where({'id': '123'}).build();
 
         final result = compilerWithSchema.compile(query);
 
@@ -2152,10 +2147,8 @@ void main() {
       });
 
       test('resolves model name to table name for count', () {
-        final query = JsonQueryBuilder()
-            .model('User')
-            .action(QueryAction.count)
-            .build();
+        final query =
+            JsonQueryBuilder().model('User').action(QueryAction.count).build();
 
         final result = compilerWithSchema.compile(query);
 
