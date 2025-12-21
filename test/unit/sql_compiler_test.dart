@@ -2124,6 +2124,23 @@ void main() {
         expect(result.sql, contains('INSERT INTO "users"'));
       });
 
+      test('resolves model name to table name for createMany', () {
+        const query = JsonQuery(
+          modelName: 'User',
+          action: 'createMany',
+          args: JsonQueryArgs(arguments: {
+            'data': [
+              {'email': 'test1@example.com'},
+              {'email': 'test2@example.com'},
+            ]
+          }),
+        );
+
+        final result = compilerWithSchema.compile(query);
+
+        expect(result.sql, contains('INSERT INTO "users"'));
+      });
+
       test('resolves model name to table name for update', () {
         final query = JsonQueryBuilder()
             .model('User')
@@ -2153,6 +2170,35 @@ void main() {
         final result = compilerWithSchema.compile(query);
 
         expect(result.sql, contains('FROM "users"'));
+      });
+
+      test('resolves model name to table name for groupBy', () {
+        final query = JsonQueryBuilder()
+            .model('User')
+            .action(QueryAction.groupBy)
+            .groupByFields(['email']).build();
+
+        final result = compilerWithSchema.compile(query);
+
+        expect(result.sql, contains('FROM "users"'));
+      });
+
+      test('resolves model name to table name for upsert', () {
+        const query = JsonQuery(
+          modelName: 'User',
+          action: 'upsert',
+          args: JsonQueryArgs(arguments: {
+            'where': {'id': '123'},
+            'data': {
+              'create': {'id': '123', 'email': 'test@example.com'},
+              'update': {'email': 'updated@example.com'},
+            },
+          }),
+        );
+
+        final result = compilerWithSchema.compile(query);
+
+        expect(result.sql, contains('INSERT INTO "users"'));
       });
 
       test('works without SchemaRegistry (backward compatible)', () {
