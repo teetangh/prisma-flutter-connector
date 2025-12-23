@@ -117,8 +117,13 @@ class SqlCompiler {
     final include = _extractInclude(query.args.selection);
     final hasRelations = include != null && include.isNotEmpty;
 
-    // Determine if we need a table alias (for computed fields or relations)
-    final needsAlias = hasComputedFields || hasRelations;
+    // Check if WHERE clause contains relationPath filters (v0.2.9+)
+    final where = args['where'] as Map<String, dynamic>?;
+    final hasRelationPath = _containsRelationPath(where);
+
+    // Determine if we need a table alias (for computed fields, relations,
+    // or relationPath filters which generate JOINs requiring base alias)
+    final needsAlias = hasComputedFields || hasRelations || hasRelationPath;
     const baseAlias = 't0';
 
     // Build SELECT clause and JOIN clauses if relations are included
@@ -199,7 +204,7 @@ class SqlCompiler {
     // Build WHERE clause
     // Pass baseAlias when JOINs are present to disambiguate column names
     // Start param index after computed field params
-    final where = args['where'] as Map<String, dynamic>?;
+    // Note: 'where' already extracted above for hasRelationPath check
     final (whereClause, whereArgs, whereTypes) = _buildWhereClause(
       where,
       modelName: query.modelName,
@@ -1034,6 +1039,38 @@ RETURNING *
     return columns.join(', ');
   }
 
+  /// Check if a WHERE clause contains relationPath filters (v0.2.9+).
+  ///
+  /// Recursively searches through the WHERE map for '_relationPath' keys
+  /// which indicate FilterOperators.relationPath() usage.
+  bool _containsRelationPath(Map<String, dynamic>? where) {
+    if (where == null || where.isEmpty) return false;
+
+    for (final entry in where.entries) {
+      final key = entry.key;
+      final value = entry.value;
+
+      // Direct relationPath filter
+      if (key == '_relationPath') return true;
+
+      // Check nested maps (e.g., in AND/OR conditions or nested objects)
+      if (value is Map<String, dynamic>) {
+        if (_containsRelationPath(value)) return true;
+      }
+
+      // Check lists (e.g., AND: [...] or OR: [...])
+      if (value is List) {
+        for (final item in value) {
+          if (item is Map<String, dynamic>) {
+            if (_containsRelationPath(item)) return true;
+          }
+        }
+      }
+    }
+
+    return false;
+  }
+
   /// Build SELECT clause with table alias prefix (v0.2.6+).
   ///
   /// Simple version for when we need an alias but don't have relations.
@@ -1338,9 +1375,12 @@ RETURNING *
 
         if (relation != null && relOperator != null) {
           final whereCondition = value[relOperator];
+          // Use baseAlias if available, otherwise fall back to parentAlias
+          // This ensures relation filters use the correct table alias (e.g., 't0')
+          final effectiveParentAlias = baseAlias ?? parentAlias;
           final (clause, vals, typs) = _buildRelationFilterClause(
             parentModel: modelName,
-            parentAlias: parentAlias,
+            parentAlias: effectiveParentAlias,
             relationName: field,
             relation: relation,
             operator: relOperator,
