@@ -222,6 +222,15 @@ class RelationCompiler {
 
     final tableAlias = _nextAlias();
 
+    // Check for join type (v0.2.9+): 'left' (default) or 'inner'
+    String joinType = 'left';
+    if (includeValue is Map<String, dynamic>) {
+      final specifiedJoinType = includeValue['_joinType'] as String?;
+      if (specifiedJoinType == 'inner') {
+        joinType = 'inner';
+      }
+    }
+
     // Build the JOIN clause based on relation type
     final joinClause = _buildJoinClause(
       relation: relation,
@@ -229,6 +238,7 @@ class RelationCompiler {
       parentAlias: parentAlias,
       targetModel: targetModel,
       targetAlias: tableAlias,
+      joinType: joinType,
     );
 
     // Check if includeValue has a 'select' directive for field selection
@@ -303,27 +313,35 @@ class RelationCompiler {
     );
   }
 
+  /// Build a JOIN clause for the given relation.
+  ///
+  /// [joinType] can be 'left' (default) or 'inner'.
+  /// Use 'inner' for required relations that must exist.
   String _buildJoinClause({
     required RelationInfo relation,
     required String parentModel,
     required String parentAlias,
     required ModelSchema targetModel,
     required String targetAlias,
+    String joinType = 'left',
   }) {
     final targetTable = _quote(targetModel.tableName);
+
+    // Determine the JOIN keyword based on type (v0.2.9+)
+    final joinKeyword = joinType == 'inner' ? 'INNER JOIN' : 'LEFT JOIN';
 
     switch (relation.type) {
       case RelationType.oneToMany:
         // Parent has many targets, FK is on target
-        // LEFT JOIN "posts" t1 ON t1."author_id" = t0."id"
-        return 'LEFT JOIN $targetTable ${_quote(targetAlias)} ON '
+        // {JOIN} "posts" t1 ON t1."author_id" = t0."id"
+        return '$joinKeyword $targetTable ${_quote(targetAlias)} ON '
             '${_quote(targetAlias)}.${_quote(relation.foreignKey)} = '
             '${_quote(parentAlias)}.${_quote(relation.references.first)}';
 
       case RelationType.manyToOne:
         // Target has many parents, FK is on parent
-        // LEFT JOIN "users" t1 ON t1."id" = t0."author_id"
-        return 'LEFT JOIN $targetTable ${_quote(targetAlias)} ON '
+        // {JOIN} "users" t1 ON t1."id" = t0."author_id"
+        return '$joinKeyword $targetTable ${_quote(targetAlias)} ON '
             '${_quote(targetAlias)}.${_quote(relation.references.first)} = '
             '${_quote(parentAlias)}.${_quote(relation.foreignKey)}';
 
@@ -331,27 +349,27 @@ class RelationCompiler {
         // Depends on which side owns the FK
         if (relation.isOwner) {
           // FK is on this model
-          return 'LEFT JOIN $targetTable ${_quote(targetAlias)} ON '
+          return '$joinKeyword $targetTable ${_quote(targetAlias)} ON '
               '${_quote(targetAlias)}.${_quote(relation.references.first)} = '
               '${_quote(parentAlias)}.${_quote(relation.foreignKey)}';
         } else {
           // FK is on target model
-          return 'LEFT JOIN $targetTable ${_quote(targetAlias)} ON '
+          return '$joinKeyword $targetTable ${_quote(targetAlias)} ON '
               '${_quote(targetAlias)}.${_quote(relation.foreignKey)} = '
               '${_quote(parentAlias)}.${_quote(relation.references.first)}';
         }
 
       case RelationType.manyToMany:
-        // Need join table
-        // LEFT JOIN "_UserToRole" j ON j."A" = t0."id"
-        // LEFT JOIN "roles" t1 ON t1."id" = j."B"
+        // Need join table - both JOINs use the same type
+        // {JOIN} "_UserToRole" j ON j."A" = t0."id"
+        // {JOIN} "roles" t1 ON t1."id" = j."B"
         final joinTable = _quote(relation.joinTable!);
         final joinAlias = 'j$_aliasCounter';
 
-        return 'LEFT JOIN $joinTable ${_quote(joinAlias)} ON '
+        return '$joinKeyword $joinTable ${_quote(joinAlias)} ON '
             '${_quote(joinAlias)}.${_quote(relation.joinColumn!)} = '
             '${_quote(parentAlias)}.${_quote(relation.references.first)} '
-            'LEFT JOIN $targetTable ${_quote(targetAlias)} ON '
+            '$joinKeyword $targetTable ${_quote(targetAlias)} ON '
             '${_quote(targetAlias)}.${_quote(relation.references.first)} = '
             '${_quote(joinAlias)}.${_quote(relation.inverseJoinColumn!)}';
     }

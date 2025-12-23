@@ -126,12 +126,15 @@ class JsonQueryBuilder {
   Map<String, dynamic>? _select;
   List<String>? _selectFields;
   Map<String, dynamic>? _include;
+  Map<String, dynamic>? _includeRequired;
   Map<String, dynamic>? _orderBy;
   Map<String, dynamic>? _aggregate;
   List<String>? _groupBy;
   Map<String, ComputedField>? _computed;
   int? _take;
   int? _skip;
+  bool _distinct = false;
+  List<String>? _distinctFields;
   final bool _selectScalars = true;
 
   JsonQueryBuilder model(String name) {
@@ -183,6 +186,53 @@ class JsonQueryBuilder {
 
   JsonQueryBuilder include(Map<String, dynamic> relations) {
     _include = relations;
+    return this;
+  }
+
+  /// Include relations with INNER JOIN (required relations).
+  ///
+  /// Unlike `include()` which uses LEFT JOIN, `includeRequired()` uses
+  /// INNER JOIN, filtering out records where the relation doesn't exist.
+  ///
+  /// Example:
+  /// ```dart
+  /// JsonQueryBuilder()
+  ///   .model('SlotOfAppointment')
+  ///   .action(QueryAction.findMany)
+  ///   .includeRequired({'appointment': true})  // INNER JOIN
+  ///   .include({'consultation': true})          // LEFT JOIN
+  ///   .build();
+  /// ```
+  JsonQueryBuilder includeRequired(Map<String, dynamic> relations) {
+    _includeRequired = relations;
+    return this;
+  }
+
+  /// Add DISTINCT to the SELECT clause.
+  ///
+  /// Without arguments: SELECT DISTINCT * FROM ...
+  /// With fields: SELECT DISTINCT ON (field1, field2) ... (PostgreSQL only)
+  ///
+  /// Example:
+  /// ```dart
+  /// // Simple DISTINCT
+  /// JsonQueryBuilder()
+  ///   .model('SlotOfAppointment')
+  ///   .action(QueryAction.findMany)
+  ///   .distinct()
+  ///   .selectFields(['startsAt', 'endsAt'])
+  ///   .build();
+  ///
+  /// // PostgreSQL DISTINCT ON (specific fields)
+  /// JsonQueryBuilder()
+  ///   .model('User')
+  ///   .action(QueryAction.findMany)
+  ///   .distinct(['email'])  // SELECT DISTINCT ON ("email") *
+  ///   .build();
+  /// ```
+  JsonQueryBuilder distinct([List<String>? fields]) {
+    _distinct = true;
+    _distinctFields = fields;
     return this;
   }
 
@@ -285,10 +335,17 @@ class JsonQueryBuilder {
         (key, value) => MapEntry(key, value.toJson()),
       );
     }
+    // DISTINCT support
+    if (_distinct) {
+      arguments['distinct'] = true;
+      if (_distinctFields != null && _distinctFields!.isNotEmpty) {
+        arguments['distinctFields'] = _distinctFields;
+      }
+    }
 
     // Build selection
     JsonSelection? selection;
-    if (_select != null || _include != null) {
+    if (_select != null || _include != null || _includeRequired != null) {
       final fields = <String, JsonFieldSelection>{};
 
       if (_select != null) {
@@ -299,6 +356,7 @@ class JsonQueryBuilder {
         }
       }
 
+      // Include with LEFT JOIN (default)
       if (_include != null) {
         for (final entry in _include!.entries) {
           if (entry.value == true) {
@@ -308,6 +366,28 @@ class JsonQueryBuilder {
           } else if (entry.value is Map) {
             fields[entry.key] = JsonFieldSelection(
               arguments: entry.value as Map<String, dynamic>,
+              selection: const JsonSelection(scalars: true),
+            );
+          }
+        }
+      }
+
+      // Include with INNER JOIN (required relations)
+      if (_includeRequired != null) {
+        for (final entry in _includeRequired!.entries) {
+          final args = <String, dynamic>{'_joinType': 'inner'};
+          if (entry.value == true) {
+            fields[entry.key] = JsonFieldSelection(
+              arguments: args,
+              selection: const JsonSelection(scalars: true),
+            );
+          } else if (entry.value is Map) {
+            final existingArgs = entry.value as Map<String, dynamic>;
+            final finalArgs = Map<String, dynamic>.from(existingArgs);
+            finalArgs['_joinType'] =
+                'inner'; // Ensure INNER JOIN takes precedence
+            fields[entry.key] = JsonFieldSelection(
+              arguments: finalArgs,
               selection: const JsonSelection(scalars: true),
             );
           }
@@ -461,4 +541,94 @@ class FilterOperators {
   /// ```
   /// Generates: EXISTS (SELECT 1 FROM "Post" WHERE ...)
   static Map<String, dynamic> isNotEmpty() => {'some': <String, dynamic>{}};
+
+  // ==================== NULL-Coalescing Operators ====================
+  // These are used for NULL-aware filtering patterns.
+
+  /// Filter where field is NULL.
+  ///
+  /// Example:
+  /// ```dart
+  /// .where({'deletedAt': FilterOperators.isNull()})
+  /// ```
+  /// Generates: "deletedAt" IS NULL
+  static Map<String, dynamic> isNull() => {'isNull': true};
+
+  /// Filter where field is NOT NULL.
+  ///
+  /// Example:
+  /// ```dart
+  /// .where({'email': FilterOperators.isNotNull()})
+  /// ```
+  /// Generates: "email" IS NOT NULL
+  static Map<String, dynamic> isNotNull() => {'isNotNull': true};
+
+  /// Filter where field is NOT IN the list OR is NULL.
+  ///
+  /// Useful for filtering across LEFT JOINs where NULL means "no match".
+  ///
+  /// Example:
+  /// ```dart
+  /// .where({
+  ///   'requestStatus': FilterOperators.notInOrNull(['CANCELLED', 'REJECTED', 'EXPIRED'])
+  /// })
+  /// ```
+  /// Generates: ("requestStatus" NOT IN ('CANCELLED', 'REJECTED', 'EXPIRED') OR "requestStatus" IS NULL)
+  static Map<String, dynamic> notInOrNull(List<dynamic> values) =>
+      {'notInOrNull': values};
+
+  /// Filter where field is IN the list OR is NULL.
+  ///
+  /// Example:
+  /// ```dart
+  /// .where({'role': FilterOperators.inOrNull(['ADMIN', 'MODERATOR'])})
+  /// ```
+  /// Generates: ("role" IN ('ADMIN', 'MODERATOR') OR "role" IS NULL)
+  static Map<String, dynamic> inOrNull(List<dynamic> values) =>
+      {'inOrNull': values};
+
+  /// Filter where field equals value OR is NULL.
+  ///
+  /// Example:
+  /// ```dart
+  /// .where({'parentId': FilterOperators.equalsOrNull('root-id')})
+  /// ```
+  /// Generates: ("parentId" = 'root-id' OR "parentId" IS NULL)
+  static Map<String, dynamic> equalsOrNull(dynamic value) =>
+      {'equalsOrNull': value};
+
+  // ==================== Deep Relation Path Filtering ====================
+
+  /// Filter across a deep relation path.
+  ///
+  /// Use this with OR conditions to filter across different relation trees.
+  /// Generates an EXISTS subquery that traverses the relation path.
+  ///
+  /// Example:
+  /// ```dart
+  /// .where({
+  ///   'OR': [
+  ///     FilterOperators.relationPath(
+  ///       'appointment.consultation.consultationPlan',
+  ///       {'consultantProfileId': profileId},
+  ///     ),
+  ///     FilterOperators.relationPath(
+  ///       'appointment.subscription.subscriptionPlan',
+  ///       {'consultantProfileId': profileId},
+  ///     ),
+  ///   ],
+  /// })
+  /// ```
+  /// Generates:
+  /// ```sql
+  /// EXISTS (SELECT 1 FROM "Appointment" rp1
+  ///   LEFT JOIN "Consultation" rp2 ON ...
+  ///   LEFT JOIN "ConsultationPlan" rp3 ON ...
+  ///   WHERE rp3."consultantProfileId" = $1 AND rp1.id = t0."appointmentId")
+  /// ```
+  static Map<String, dynamic> relationPath(
+    String path,
+    Map<String, dynamic> where,
+  ) =>
+      {'_relationPath': path, '_relationWhere': where};
 }
