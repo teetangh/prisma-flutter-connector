@@ -383,9 +383,10 @@ class JsonQueryBuilder {
             );
           } else if (entry.value is Map) {
             final existingArgs = entry.value as Map<String, dynamic>;
-            args.addAll(existingArgs);
+            final finalArgs = Map<String, dynamic>.from(existingArgs);
+            finalArgs['_joinType'] = 'inner'; // Ensure INNER JOIN takes precedence
             fields[entry.key] = JsonFieldSelection(
-              arguments: args,
+              arguments: finalArgs,
               selection: const JsonSelection(scalars: true),
             );
           }

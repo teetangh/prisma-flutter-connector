@@ -247,7 +247,8 @@ class SqlCompiler {
         sql.write(' $joinClauses');
       }
     } else {
-      sql.write('SELECT $distinctClause$selectClause FROM ${_quoteIdentifier(tableName)}');
+      sql.write(
+          'SELECT $distinctClause$selectClause FROM ${_quoteIdentifier(tableName)}');
     }
 
     if (whereClause.isNotEmpty) {
@@ -1807,9 +1808,8 @@ WHERE $joinTable.$joinColumn = $parentRef.$pkCol''';
             linkToBaseCondition =
                 '"$alias".${_quoteIdentifier(relation.references.first)} = "$baseAlias".${_quoteIdentifier(relation.foreignKey)}';
           case RelationType.manyToMany:
-            // This is complex - simplified version
-            linkToBaseCondition =
-                '"$alias"."id" = "$baseAlias".${_quoteIdentifier(relation.foreignKey)}';
+            // Many-to-many relations not supported in relationPath (requires junction table)
+            return ('', [], []);
         }
       } else {
         // Subsequent relations: these are JOINs
@@ -1825,9 +1825,8 @@ WHERE $joinTable.$joinColumn = $parentRef.$pkCol''';
             joinCondition =
                 '"$alias".${_quoteIdentifier(relation.references.first)} = "$previousAlias".${_quoteIdentifier(relation.foreignKey)}';
           case RelationType.manyToMany:
-            // Simplified - would need junction table for full support
-            joinCondition =
-                '"$alias"."id" = "$previousAlias".${_quoteIdentifier(relation.foreignKey)}';
+            // Many-to-many relations not supported in relationPath (requires junction table)
+            return ('', [], []);
         }
 
         joinClauses.add('LEFT JOIN $targetTable "$alias" ON $joinCondition');
