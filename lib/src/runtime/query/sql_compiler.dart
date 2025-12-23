@@ -1808,7 +1808,8 @@ WHERE $joinTable.$joinColumn = $parentRef.$pkCol''';
             linkToBaseCondition =
                 '"$alias".${_quoteIdentifier(relation.references.first)} = "$baseAlias".${_quoteIdentifier(relation.foreignKey)}';
           case RelationType.manyToMany:
-            // Many-to-many relations not supported in relationPath (requires junction table)
+            // Many-to-many relations not yet supported (requires junction table)
+            // TODO(v0.3.0): Add many-to-many support via junction table joins
             return ('', [], []);
         }
       } else {
@@ -1825,7 +1826,8 @@ WHERE $joinTable.$joinColumn = $parentRef.$pkCol''';
             joinCondition =
                 '"$alias".${_quoteIdentifier(relation.references.first)} = "$previousAlias".${_quoteIdentifier(relation.foreignKey)}';
           case RelationType.manyToMany:
-            // Many-to-many relations not supported in relationPath (requires junction table)
+            // Many-to-many relations not yet supported (requires junction table)
+            // TODO(v0.3.0): Add many-to-many support via junction table joins
             return ('', [], []);
         }
 

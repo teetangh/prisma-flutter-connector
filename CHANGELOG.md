@@ -100,7 +100,7 @@ final query = JsonQueryBuilder()
 ```
 
 ### Known Limitations
-- **`relationPath` does not support many-to-many relations** - Paths containing many-to-many relations will be silently ignored. This is because many-to-many relations require joining through a junction table, which adds significant complexity. For many-to-many filtering, use the existing `some`/`every`/`none` operators or raw SQL.
+- **`relationPath` does not support many-to-many relations** - Paths containing many-to-many relations will be silently ignored. This is because many-to-many relations require joining through a junction table, which adds significant complexity. Many-to-many support is planned for v0.3.0. For now, use the existing `some`/`every`/`none` operators or raw SQL.
 
 ### Notes
 - All features are backward compatible - no breaking changes
