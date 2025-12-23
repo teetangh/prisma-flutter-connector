@@ -1798,7 +1798,7 @@ WHERE $joinTable.$joinColumn = $parentRef.$pkCol''';
     final effectiveSchema = schema ?? schemaRegistry;
     final values = <dynamic>[];
     final types = <ArgType>[];
-    var paramIndex = startIndex;
+    final paramIndex = startIndex;
 
     // Build the subquery with chained JOINs
     final joinClauses = <String>[];
