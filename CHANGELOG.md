@@ -4,6 +4,106 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.2.9] - 2025-12-23
+
+### Added
+
+#### DISTINCT Support
+- **`distinct()`** - Select unique rows with `SELECT DISTINCT`
+  - Standard DISTINCT: `.distinct()` → `SELECT DISTINCT *`
+  - PostgreSQL DISTINCT ON: `.distinct(['email'])` → `SELECT DISTINCT ON ("email") *`
+  - Works with `selectFields()` for specific column deduplication
+
+#### NULL-Coalescing Filter Operators
+New operators for handling NULL values in complex queries (especially with LEFT JOINs):
+
+- **`FilterOperators.isNull()`** - Check if column is NULL
+- **`FilterOperators.isNotNull()`** - Check if column is NOT NULL
+- **`FilterOperators.notInOrNull(values)`** - `NOT IN (...) OR IS NULL` pattern
+- **`FilterOperators.inOrNull(values)`** - `IN (...) OR IS NULL` pattern
+- **`FilterOperators.equalsOrNull(value)`** - `= value OR IS NULL` pattern
+
+#### Deep Relation Path Filtering
+- **`FilterOperators.relationPath(path, where)`** - Filter through nested relations
+  - Generates efficient EXISTS subqueries with chained JOINs
+  - Supports arbitrary nesting depth (e.g., `appointment.consultation.consultationPlan`)
+  - Works with OR conditions for multiple relation paths
+
+```dart
+.where({
+  'OR': [
+    FilterOperators.relationPath(
+      'appointment.consultation.consultationPlan',
+      {'consultantProfileId': profileId},
+    ),
+    FilterOperators.relationPath(
+      'appointment.subscription.subscriptionPlan',
+      {'consultantProfileId': profileId},
+    ),
+  ],
+})
+```
+
+#### Explicit JOIN Type Control
+- **`includeRequired()`** - Use INNER JOIN instead of LEFT JOIN for required relations
+- **`_joinType: 'inner'`** - Inline JOIN type specification in `include()`
+
+```dart
+// Method 1: Separate method
+.includeRequired({'appointment': true})  // INNER JOIN
+.include({'consultation': true})          // LEFT JOIN (default)
+
+// Method 2: Inline specification
+.include({
+  'appointment': {'_joinType': 'inner'},
+  'consultation': {'_joinType': 'left'},
+})
+```
+
+### Use Case
+
+These features enable complex multi-table queries that previously required raw SQL:
+
+```dart
+// Before v0.2.9: Raw SQL required
+final sql = '''
+  SELECT DISTINCT soa."startsAt", soa."endsAt"
+  FROM "SlotOfAppointment" soa
+  INNER JOIN "Appointment" a ON soa."appointmentId" = a.id
+  LEFT JOIN "Consultation" c ON a."consultationId" = c.id
+  LEFT JOIN "ConsultationPlan" cp ON c."consultationPlanId" = cp.id
+  WHERE (cp."consultantProfileId" = $1 OR sp."consultantProfileId" = $1)
+    AND (c."requestStatus" NOT IN ('CANCELLED', 'REJECTED') OR c."requestStatus" IS NULL)
+''';
+
+// After v0.2.9: Full ORM support
+final query = JsonQueryBuilder()
+    .model('SlotOfAppointment')
+    .action(QueryAction.findMany)
+    .distinct()
+    .selectFields(['startsAt', 'endsAt', 'isTentative'])
+    .includeRequired({'appointment': true})
+    .where({
+      'OR': [
+        FilterOperators.relationPath(
+          'appointment.consultation.consultationPlan',
+          {'consultantProfileId': profileId},
+        ),
+        FilterOperators.relationPath(
+          'appointment.subscription.subscriptionPlan',
+          {'consultantProfileId': profileId},
+        ),
+      ],
+      'startsAt': FilterOperators.gte(startDate.toIso8601String()),
+    })
+    .build();
+```
+
+### Notes
+- All features are backward compatible - no breaking changes
+- DISTINCT ON is PostgreSQL/Supabase specific; other databases use standard DISTINCT
+- Relation path filtering requires `SchemaRegistry` to resolve relation metadata
+
 ## [0.2.8] - 2025-12-21
 
 ### Fixed

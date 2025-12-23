@@ -109,6 +109,10 @@ class SqlCompiler {
     final hasComputedFields =
         computedFields != null && computedFields.isNotEmpty;
 
+    // Check for DISTINCT (v0.2.9+)
+    final distinctArg = args['distinct'] as bool? ?? false;
+    final distinctFields = args['distinctFields'] as List<dynamic>?;
+
     // Check for include directive (relations)
     final include = _extractInclude(query.args.selection);
     final hasRelations = include != null && include.isNotEmpty;
@@ -216,15 +220,34 @@ class SqlCompiler {
     final skip = args['skip'] as int?;
 
     // Construct SQL with optional table alias
+    // Build DISTINCT clause (v0.2.9+)
+    String distinctClause = '';
+    if (distinctArg) {
+      if (distinctFields != null && distinctFields.isNotEmpty) {
+        // PostgreSQL-specific: DISTINCT ON (field1, field2, ...)
+        if (provider == 'postgresql' || provider == 'supabase') {
+          final quotedFields = distinctFields
+              .map((f) => _quoteIdentifier(f.toString()))
+              .join(', ');
+          distinctClause = 'DISTINCT ON ($quotedFields) ';
+        } else {
+          // MySQL/SQLite: Just use DISTINCT (ignore specific fields)
+          distinctClause = 'DISTINCT ';
+        }
+      } else {
+        distinctClause = 'DISTINCT ';
+      }
+    }
+
     final sql = StringBuffer();
     if (needsAlias) {
       sql.write(
-          'SELECT $selectClause FROM ${_quoteIdentifier(tableName)} "$baseAlias"');
+          'SELECT $distinctClause$selectClause FROM ${_quoteIdentifier(tableName)} "$baseAlias"');
       if (joinClauses.isNotEmpty) {
         sql.write(' $joinClauses');
       }
     } else {
-      sql.write('SELECT $selectClause FROM ${_quoteIdentifier(tableName)}');
+      sql.write('SELECT $distinctClause$selectClause FROM ${_quoteIdentifier(tableName)}');
     }
 
     if (whereClause.isNotEmpty) {
@@ -1279,6 +1302,33 @@ RETURNING *
         continue;
       }
 
+      // Handle deep relation path filter (v0.2.9+)
+      // Used with FilterOperators.relationPath() for OR conditions across relation trees
+      if (field == '_relationPath' && value is String) {
+        final relationWhere = where['_relationWhere'] as Map<String, dynamic>?;
+        if (relationWhere != null && modelName != null) {
+          final (clause, vals, typs) = _buildRelationPathFilter(
+            path: value,
+            where: relationWhere,
+            baseModel: modelName,
+            baseAlias: baseAlias ?? 't0',
+            startIndex: paramIndex,
+          );
+          if (clause.isNotEmpty) {
+            conditions.add(clause);
+            values.addAll(vals);
+            types.addAll(typs);
+            paramIndex += vals.length;
+          }
+        }
+        continue;
+      }
+
+      // Skip _relationWhere as it's handled with _relationPath
+      if (field == '_relationWhere') {
+        continue;
+      }
+
       // Check if field is a relation with a filter operator (some/every/none)
       if (modelName != null && value is Map<String, dynamic>) {
         final effectiveSchema = schema ?? schemaRegistry;
@@ -1406,6 +1456,66 @@ RETURNING *
                   .add('$columnName $endsWithOp ${_placeholder(paramIndex++)}');
               values.add('%$endsWithValue');
               types.add(ArgType.string);
+              break;
+
+            // ==================== NULL-Coalescing Operators ====================
+
+            case 'isNull':
+              // Generates: field IS NULL
+              conditions.add('$columnName IS NULL');
+              break;
+
+            case 'isNotNull':
+              // Generates: field IS NOT NULL
+              conditions.add('$columnName IS NOT NULL');
+              break;
+
+            case 'notInOrNull':
+              // Generates: (field NOT IN (...) OR field IS NULL)
+              // Useful for LEFT JOIN filtering where NULL means "no match"
+              final notInOrNullList = op.value as List;
+              if (notInOrNullList.isEmpty) {
+                // Empty list means always true (nothing to exclude)
+                conditions.add('(1=1)');
+              } else {
+                final placeholders = List.generate(
+                  notInOrNullList.length,
+                  (_) => _placeholder(paramIndex++),
+                );
+                conditions.add(
+                  '($columnName NOT IN (${placeholders.join(', ')}) OR $columnName IS NULL)',
+                );
+                values.addAll(notInOrNullList);
+                types.addAll(notInOrNullList.map(_inferArgType));
+              }
+              break;
+
+            case 'inOrNull':
+              // Generates: (field IN (...) OR field IS NULL)
+              final inOrNullList = op.value as List;
+              if (inOrNullList.isEmpty) {
+                // Empty list means only NULL matches
+                conditions.add('$columnName IS NULL');
+              } else {
+                final placeholders = List.generate(
+                  inOrNullList.length,
+                  (_) => _placeholder(paramIndex++),
+                );
+                conditions.add(
+                  '($columnName IN (${placeholders.join(', ')}) OR $columnName IS NULL)',
+                );
+                values.addAll(inOrNullList);
+                types.addAll(inOrNullList.map(_inferArgType));
+              }
+              break;
+
+            case 'equalsOrNull':
+              // Generates: (field = value OR field IS NULL)
+              conditions.add(
+                '($columnName = ${_placeholder(paramIndex++)} OR $columnName IS NULL)',
+              );
+              values.add(op.value);
+              types.add(_inferArgType(op.value));
               break;
           }
         }
@@ -1615,6 +1725,147 @@ WHERE $joinTable.$joinColumn = $parentRef.$pkCol''';
       'none' => 'NOT EXISTS ($fullCondition)',
       _ => throw ArgumentError('Unknown relation operator: $operator'),
     };
+  }
+
+  /// Build EXISTS clause for deep relation path filtering (v0.2.9+).
+  ///
+  /// Handles paths like 'appointment.consultation.consultationPlan'
+  /// by building an EXISTS subquery that chains JOINs through the relations.
+  ///
+  /// Example: For path 'appointment.consultation.consultationPlan'
+  /// on model 'SlotOfAppointment' with where {'consultantProfileId': 'abc'}
+  ///
+  /// Generates:
+  /// ```sql
+  /// EXISTS (
+  ///   SELECT 1 FROM "Appointment" rp1
+  ///   LEFT JOIN "Consultation" rp2 ON rp2."id" = rp1."consultationId"
+  ///   LEFT JOIN "ConsultationPlan" rp3 ON rp3."id" = rp2."consultationPlanId"
+  ///   WHERE rp3."consultantProfileId" = $1 AND rp1."id" = t0."appointmentId"
+  /// )
+  /// ```
+  (String, List<dynamic>, List<ArgType>) _buildRelationPathFilter({
+    required String path,
+    required Map<String, dynamic> where,
+    required String baseModel,
+    required String baseAlias,
+    required int startIndex,
+  }) {
+    final parts = path.split('.');
+    if (parts.isEmpty) return ('', [], []);
+
+    final effectiveSchema = schema ?? schemaRegistry;
+    final values = <dynamic>[];
+    final types = <ArgType>[];
+    var paramIndex = startIndex;
+
+    // Build the subquery with chained JOINs
+    final joinClauses = <String>[];
+    String currentModel = baseModel;
+    String previousAlias = baseAlias;
+    var aliasCounter = 1;
+
+    // First relation determines the FROM clause
+    // Subsequent relations are JOINs
+    String? fromTable;
+    String? fromAlias;
+    String? linkToBaseCondition;
+
+    for (var i = 0; i < parts.length; i++) {
+      final relationName = parts[i];
+      final relation = effectiveSchema.getRelation(currentModel, relationName);
+
+      if (relation == null) {
+        // Unknown relation - return empty (will be ignored)
+        return ('', [], []);
+      }
+
+      final targetModelSchema = effectiveSchema.getModel(relation.targetModel);
+      if (targetModelSchema == null) {
+        return ('', [], []);
+      }
+
+      final targetTable = _quoteIdentifier(targetModelSchema.tableName);
+      final alias = 'rp$aliasCounter';
+      aliasCounter++;
+
+      if (i == 0) {
+        // First relation: this is the FROM clause
+        fromTable = targetTable;
+        fromAlias = alias;
+
+        // Build the link back to the base table
+        // Depends on relation type
+        switch (relation.type) {
+          case RelationType.oneToMany:
+            // FK is on target side (target.fk = base.pk)
+            linkToBaseCondition =
+                '"$alias".${_quoteIdentifier(relation.foreignKey)} = "$baseAlias".${_quoteIdentifier(relation.references.first)}';
+          case RelationType.manyToOne:
+          case RelationType.oneToOne:
+            // FK is on base side (target.pk = base.fk)
+            linkToBaseCondition =
+                '"$alias".${_quoteIdentifier(relation.references.first)} = "$baseAlias".${_quoteIdentifier(relation.foreignKey)}';
+          case RelationType.manyToMany:
+            // This is complex - simplified version
+            linkToBaseCondition =
+                '"$alias"."id" = "$baseAlias".${_quoteIdentifier(relation.foreignKey)}';
+        }
+      } else {
+        // Subsequent relations: these are JOINs
+        String joinCondition;
+        switch (relation.type) {
+          case RelationType.oneToMany:
+            // FK is on target side
+            joinCondition =
+                '"$alias".${_quoteIdentifier(relation.foreignKey)} = "$previousAlias".${_quoteIdentifier(relation.references.first)}';
+          case RelationType.manyToOne:
+          case RelationType.oneToOne:
+            // FK is on parent side (previous table)
+            joinCondition =
+                '"$alias".${_quoteIdentifier(relation.references.first)} = "$previousAlias".${_quoteIdentifier(relation.foreignKey)}';
+          case RelationType.manyToMany:
+            // Simplified - would need junction table for full support
+            joinCondition =
+                '"$alias"."id" = "$previousAlias".${_quoteIdentifier(relation.foreignKey)}';
+        }
+
+        joinClauses.add('LEFT JOIN $targetTable "$alias" ON $joinCondition');
+      }
+
+      previousAlias = alias;
+      currentModel = relation.targetModel;
+    }
+
+    if (fromTable == null || fromAlias == null || linkToBaseCondition == null) {
+      return ('', [], []);
+    }
+
+    // Build WHERE clause for the deepest relation
+    final (whereClause, whereVals, whereTypes) = _buildWhereClause(
+      where,
+      startIndex: paramIndex,
+      modelName: currentModel,
+      baseAlias: previousAlias,
+    );
+    values.addAll(whereVals);
+    types.addAll(whereTypes);
+
+    // Combine all parts into EXISTS subquery
+    final joinClausesStr =
+        joinClauses.isNotEmpty ? ' ${joinClauses.join(' ')}' : '';
+
+    String fullWhere;
+    if (whereClause.isNotEmpty) {
+      fullWhere = '$whereClause AND $linkToBaseCondition';
+    } else {
+      fullWhere = linkToBaseCondition;
+    }
+
+    final existsClause =
+        'EXISTS (SELECT 1 FROM $fromTable "$fromAlias"$joinClausesStr WHERE $fullWhere)';
+
+    return (existsClause, values, types);
   }
 
   /// Build ORDER BY clause.
