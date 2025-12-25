@@ -940,10 +940,9 @@ RETURNING *
         if (relation != null && relation.type == RelationType.manyToMany) {
           // Get primary key field name from schema (fallback to 'id' for compatibility)
           final parentModel = effectiveSchema.getModel(query.modelName);
-          final parentPkFieldName =
-              parentModel?.primaryKeys.isNotEmpty == true
-                  ? parentModel!.primaryKeys.first.name
-                  : 'id';
+          final parentPkFieldName = parentModel?.primaryKeys.isNotEmpty == true
+              ? parentModel!.primaryKeys.first.name
+              : 'id';
 
           // Get the primary key value for the parent record
           // For create, it's in the data; for update, it's in the where clause
@@ -1065,8 +1064,7 @@ RETURNING *
 
       // Generate INSERT with ON CONFLICT DO NOTHING to handle duplicates
       // Use _placeholder() for correct database-specific placeholders
-      final valuesClause =
-          'VALUES (${_placeholder(1)}, ${_placeholder(2)})';
+      final valuesClause = 'VALUES (${_placeholder(1)}, ${_placeholder(2)})';
 
       String sql;
       if (provider == 'postgresql' || provider == 'supabase') {

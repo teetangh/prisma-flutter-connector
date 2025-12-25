@@ -2299,7 +2299,8 @@ void main() {
         // First connect mutation
         expect(result.relationMutations[0].sql,
             contains('INSERT INTO "_SlotOfAppointmentToUser"'));
-        expect(result.relationMutations[0].sql, contains('ON CONFLICT DO NOTHING'));
+        expect(result.relationMutations[0].sql,
+            contains('ON CONFLICT DO NOTHING'));
         expect(result.relationMutations[0].args, ['slot-123', 'user-1']);
 
         // Second connect mutation
@@ -2419,7 +2420,8 @@ void main() {
         final result = compilerWithSchema.compileWithRelations(query);
 
         expect(result.relationMutations.length, 1);
-        expect(result.relationMutations[0].args, ['slot-single', 'user-single']);
+        expect(
+            result.relationMutations[0].args, ['slot-single', 'user-single']);
       });
 
       test('MySQL provider uses INSERT IGNORE for connect', () {
