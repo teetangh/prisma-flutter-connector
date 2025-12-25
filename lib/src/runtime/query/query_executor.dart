@@ -279,6 +279,116 @@ class QueryExecutor implements BaseExecutor {
     return affectedRows;
   }
 
+  /// Execute a mutation with potential relation operations (connect/disconnect).
+  ///
+  /// This method handles CREATE and UPDATE queries that include `connect` or
+  /// `disconnect` operations for many-to-many relations. It executes the main
+  /// mutation first, then executes all relation mutations in sequence.
+  ///
+  /// If the main mutation succeeds but a relation mutation fails, the main
+  /// record will already be created/updated. Consider using
+  /// `executeMutationWithRelationsAtomic` for atomic operations.
+  ///
+  /// Example:
+  /// ```dart
+  /// final result = await executor.executeMutationWithRelations(
+  ///   JsonQueryBuilder()
+  ///       .model('SlotOfAppointment')
+  ///       .action(QueryAction.create)
+  ///       .data({
+  ///         'id': 'slot-123',
+  ///         'startsAt': DateTime.now(),
+  ///         'users': {
+  ///           'connect': [{'id': 'user-1'}],
+  ///         },
+  ///       })
+  ///       .build(),
+  /// );
+  /// ```
+  Future<Map<String, dynamic>?> executeMutationWithRelations(
+    JsonQuery query,
+  ) async {
+    // Compile with relation support
+    final compiled = compiler.compileWithRelations(query);
+
+    // Execute main mutation
+    final result = await adapter.queryRaw(compiled.mainQuery);
+
+    // Execute relation mutations if any
+    if (compiled.hasRelationMutations) {
+      for (final relationQuery in compiled.relationMutations) {
+        try {
+          await adapter.executeRaw(relationQuery);
+        } catch (e, s) {
+          // Log the error but continue with other relation mutations
+          // This is the non-atomic version - errors are logged but don't stop execution
+          // Use executeMutationWithRelationsAtomic() if you need all-or-nothing behavior
+          logger?.onQueryError(QueryErrorEvent(
+            sql: relationQuery.sql,
+            parameters: relationQuery.args,
+            model: query.modelName,
+            operation: 'relationMutation',
+            duration: Duration.zero,
+            error: e,
+            stackTrace: s,
+          ));
+          // Don't rethrow - continue with other mutations (non-atomic behavior)
+        }
+      }
+    }
+
+    // Return the created/updated record
+    if (result.rows.isNotEmpty) {
+      return _resultSetToMaps(result).first;
+    }
+    return null;
+  }
+
+  /// Execute a mutation with relation operations inside a transaction.
+  ///
+  /// This ensures atomicity - if any relation mutation fails, the entire
+  /// operation is rolled back.
+  ///
+  /// Example:
+  /// ```dart
+  /// final result = await executor.executeMutationWithRelationsAtomic(
+  ///   JsonQueryBuilder()
+  ///       .model('SlotOfAppointment')
+  ///       .action(QueryAction.update)
+  ///       .where({'id': 'slot-123'})
+  ///       .data({
+  ///         'users': {
+  ///           'connect': [{'id': 'user-1'}],
+  ///           'disconnect': [{'id': 'user-2'}],
+  ///         },
+  ///       })
+  ///       .build(),
+  /// );
+  /// ```
+  Future<Map<String, dynamic>?> executeMutationWithRelationsAtomic(
+    JsonQuery query, {
+    IsolationLevel? isolationLevel,
+  }) async {
+    return executeInTransaction<Map<String, dynamic>?>((txExecutor) async {
+      // Compile with relation support
+      final compiled = compiler.compileWithRelations(query);
+
+      // Execute main mutation
+      final result = await txExecutor.transaction.queryRaw(compiled.mainQuery);
+
+      // Execute relation mutations
+      for (final relationQuery in compiled.relationMutations) {
+        await txExecutor.transaction.executeRaw(relationQuery);
+      }
+
+      // Return the created/updated record
+      if (result.rows.isNotEmpty) {
+        return _resultSetToMaps(result).first;
+      }
+      return null;
+    }, isolationLevel: isolationLevel);
+  }
+
   /// Execute a query and deserialize results to maps.
   ///
   /// If the query includes relations via `include`, results are automatically

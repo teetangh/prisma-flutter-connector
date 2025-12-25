@@ -41,6 +41,32 @@ class SqlQuery {
   String toString() => 'SqlQuery(sql: $sql, args: $args)';
 }
 
+/// Represents a compiled mutation that may include additional relation operations.
+///
+/// Used when a CREATE or UPDATE query includes `connect` or `disconnect`
+/// operations for many-to-many relations. The main query is the primary
+/// INSERT/UPDATE, and [relationMutations] contains the junction table
+/// INSERT/DELETE statements.
+class CompiledMutation {
+  /// The primary INSERT or UPDATE query
+  final SqlQuery mainQuery;
+
+  /// Additional queries for junction table operations (connect/disconnect)
+  final List<SqlQuery> relationMutations;
+
+  const CompiledMutation({
+    required this.mainQuery,
+    this.relationMutations = const [],
+  });
+
+  /// Whether this mutation has additional relation operations
+  bool get hasRelationMutations => relationMutations.isNotEmpty;
+
+  @override
+  String toString() =>
+      'CompiledMutation(main: $mainQuery, relationMutations: ${relationMutations.length})';
+}
+
 /// Result set from a SQL query execution.
 class SqlResultSet {
   /// Names of columns in the result

@@ -2227,5 +2227,248 @@ void main() {
         expect(result.sql, contains('FROM "UnknownModel"'));
       });
     });
+
+    group('Connect/Disconnect M2M Relations', () {
+      late SqlCompiler compilerWithSchema;
+
+      setUp(() {
+        // Set up schema with M2M relation
+        schemaRegistry.clear();
+        schemaRegistry.registerModel(ModelSchema(
+          name: 'SlotOfAppointment',
+          tableName: 'slot_of_appointments',
+          fields: {
+            'id': FieldInfo.id(name: 'id', type: 'String'),
+            'startsAt': const FieldInfo(
+                name: 'startsAt', columnName: 'startsAt', type: 'DateTime'),
+            'endsAt': const FieldInfo(
+                name: 'endsAt', columnName: 'endsAt', type: 'DateTime'),
+          },
+          relations: {
+            'users': RelationInfo.manyToMany(
+              name: 'users',
+              targetModel: 'User',
+              joinTable: '_SlotOfAppointmentToUser',
+              joinColumn: 'A',
+              inverseJoinColumn: 'B',
+            ),
+          },
+        ));
+        schemaRegistry.registerModel(ModelSchema(
+          name: 'User',
+          tableName: 'users',
+          fields: {
+            'id': FieldInfo.id(name: 'id', type: 'String'),
+            'name': const FieldInfo(
+                name: 'name', columnName: 'name', type: 'String'),
+          },
+          relations: {},
+        ));
+
+        compilerWithSchema = SqlCompiler(
+          provider: 'postgresql',
+          schema: schemaRegistry,
+        );
+      });
+
+      test('compileWithRelations extracts connect operations for M2M', () {
+        final query = JsonQueryBuilder()
+            .model('SlotOfAppointment')
+            .action(QueryAction.create)
+            .data({
+          'id': 'slot-123',
+          'startsAt': '2024-01-01T10:00:00Z',
+          'users': {
+            'connect': [
+              {'id': 'user-1'},
+              {'id': 'user-2'},
+            ],
+          },
+        }).build();
+
+        final result = compilerWithSchema.compileWithRelations(query);
+
+        // Main query should be INSERT without the users field
+        expect(result.mainQuery.sql, contains('INSERT INTO'));
+        expect(result.mainQuery.sql, contains('"slot_of_appointments"'));
+        expect(result.mainQuery.sql, isNot(contains('users')));
+
+        // Should have 2 relation mutations (one for each user)
+        expect(result.relationMutations.length, 2);
+
+        // First connect mutation
+        expect(result.relationMutations[0].sql,
+            contains('INSERT INTO "_SlotOfAppointmentToUser"'));
+        expect(result.relationMutations[0].sql, contains('ON CONFLICT DO NOTHING'));
+        expect(result.relationMutations[0].args, ['slot-123', 'user-1']);
+
+        // Second connect mutation
+        expect(result.relationMutations[1].args, ['slot-123', 'user-2']);
+      });
+
+      test('compileWithRelations extracts disconnect operations for M2M', () {
+        final query = JsonQueryBuilder()
+            .model('SlotOfAppointment')
+            .action(QueryAction.update)
+            .where({'id': 'slot-123'}).data({
+          'users': {
+            'disconnect': [
+              {'id': 'user-1'},
+            ],
+          },
+        }).build();
+
+        final result = compilerWithSchema.compileWithRelations(query);
+
+        // Main query should be UPDATE
+        expect(result.mainQuery.sql, contains('UPDATE'));
+        expect(result.mainQuery.sql, contains('"slot_of_appointments"'));
+
+        // Should have 1 disconnect mutation
+        expect(result.relationMutations.length, 1);
+        expect(result.relationMutations[0].sql,
+            contains('DELETE FROM "_SlotOfAppointmentToUser"'));
+        expect(result.relationMutations[0].sql, contains('WHERE'));
+        expect(result.relationMutations[0].args, ['slot-123', 'user-1']);
+      });
+
+      test('compileWithRelations handles mixed connect and disconnect', () {
+        final query = JsonQueryBuilder()
+            .model('SlotOfAppointment')
+            .action(QueryAction.update)
+            .where({'id': 'slot-123'}).data({
+          'users': {
+            'connect': [
+              {'id': 'user-new'},
+            ],
+            'disconnect': [
+              {'id': 'user-old'},
+            ],
+          },
+        }).build();
+
+        final result = compilerWithSchema.compileWithRelations(query);
+
+        // Should have 2 mutations (1 connect + 1 disconnect)
+        expect(result.relationMutations.length, 2);
+
+        // First should be connect (INSERT)
+        expect(result.relationMutations[0].sql, contains('INSERT'));
+        expect(result.relationMutations[0].args, ['slot-123', 'user-new']);
+
+        // Second should be disconnect (DELETE)
+        expect(result.relationMutations[1].sql, contains('DELETE'));
+        expect(result.relationMutations[1].args, ['slot-123', 'user-old']);
+      });
+
+      test('compileWithRelations preserves regular fields', () {
+        final query = JsonQueryBuilder()
+            .model('SlotOfAppointment')
+            .action(QueryAction.create)
+            .data({
+          'id': 'slot-456',
+          'startsAt': '2024-01-01T10:00:00Z',
+          'endsAt': '2024-01-01T11:00:00Z',
+          'users': {
+            'connect': [
+              {'id': 'user-1'},
+            ],
+          },
+        }).build();
+
+        final result = compilerWithSchema.compileWithRelations(query);
+
+        // Main query should contain the regular fields
+        expect(result.mainQuery.sql, contains('"id"'));
+        expect(result.mainQuery.sql, contains('"startsAt"'));
+        expect(result.mainQuery.sql, contains('"endsAt"'));
+
+        // Args should include all regular field values
+        expect(result.mainQuery.args, contains('slot-456'));
+        expect(result.mainQuery.args, contains('2024-01-01T10:00:00Z'));
+        expect(result.mainQuery.args, contains('2024-01-01T11:00:00Z'));
+      });
+
+      test('compileWithRelations returns empty mutations when no M2M ops', () {
+        final query = JsonQueryBuilder()
+            .model('SlotOfAppointment')
+            .action(QueryAction.create)
+            .data({
+          'id': 'slot-789',
+          'startsAt': '2024-01-01T10:00:00Z',
+        }).build();
+
+        final result = compilerWithSchema.compileWithRelations(query);
+
+        expect(result.hasRelationMutations, false);
+        expect(result.relationMutations, isEmpty);
+      });
+
+      test('compileWithRelations handles single connect item (not array)', () {
+        final query = JsonQueryBuilder()
+            .model('SlotOfAppointment')
+            .action(QueryAction.create)
+            .data({
+          'id': 'slot-single',
+          'startsAt': '2024-01-01T10:00:00Z',
+          'users': {
+            'connect': {'id': 'user-single'},
+          },
+        }).build();
+
+        final result = compilerWithSchema.compileWithRelations(query);
+
+        expect(result.relationMutations.length, 1);
+        expect(result.relationMutations[0].args, ['slot-single', 'user-single']);
+      });
+
+      test('MySQL provider uses INSERT IGNORE for connect', () {
+        final mysqlCompiler = SqlCompiler(
+          provider: 'mysql',
+          schema: schemaRegistry,
+        );
+
+        final query = JsonQueryBuilder()
+            .model('SlotOfAppointment')
+            .action(QueryAction.create)
+            .data({
+          'id': 'slot-123',
+          'startsAt': '2024-01-01T10:00:00Z',
+          'users': {
+            'connect': [
+              {'id': 'user-1'},
+            ],
+          },
+        }).build();
+
+        final result = mysqlCompiler.compileWithRelations(query);
+
+        expect(result.relationMutations[0].sql, contains('INSERT IGNORE'));
+      });
+
+      test('SQLite provider uses INSERT OR IGNORE for connect', () {
+        final sqliteCompiler = SqlCompiler(
+          provider: 'sqlite',
+          schema: schemaRegistry,
+        );
+
+        final query = JsonQueryBuilder()
+            .model('SlotOfAppointment')
+            .action(QueryAction.create)
+            .data({
+          'id': 'slot-123',
+          'startsAt': '2024-01-01T10:00:00Z',
+          'users': {
+            'connect': [
+              {'id': 'user-1'},
+            ],
+          },
+        }).build();
+
+        final result = sqliteCompiler.compileWithRelations(query);
+
+        expect(result.relationMutations[0].sql, contains('INSERT OR IGNORE'));
+      });
+    });
   });
 }
