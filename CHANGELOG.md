@@ -4,6 +4,69 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.3.0] - 2025-12-25
+
+### Added
+
+#### Many-to-Many Relation Mutations (Connect/Disconnect)
+- **`compileWithRelations()`** - Compile mutations with M2M relation operations
+  - Automatically extracts `connect` and `disconnect` from data
+  - Generates junction table INSERT/DELETE statements
+  - Works with `create` and `update` operations
+
+- **`executeMutationWithRelations()`** - Execute mutations with M2M support
+  - Executes main mutation first, then relation mutations
+  - Supports non-atomic execution for performance
+
+- **`executeMutationWithRelationsAtomic()`** - Atomic M2M mutations
+  - Wraps all operations in a transaction
+  - Rolls back if any mutation fails
+
+#### CompiledMutation Type
+- New `CompiledMutation` class for structured mutation results
+  - `mainQuery` - The primary INSERT/UPDATE query
+  - `relationMutations` - List of junction table operations
+  - `hasRelationMutations` - Helper to check if M2M operations exist
+
+#### Provider-Specific Connect Syntax
+- PostgreSQL/Supabase: `INSERT ... ON CONFLICT DO NOTHING`
+- MySQL: `INSERT IGNORE INTO ...`
+- SQLite: `INSERT OR IGNORE INTO ...`
+
+### Example Usage
+
+```dart
+// Create with M2M connect
+final result = await executor.executeMutationWithRelations(
+  JsonQueryBuilder()
+      .model('SlotOfAppointment')
+      .action(QueryAction.create)
+      .data({
+        'id': 'slot-123',
+        'startsAt': DateTime.now(),
+        'users': {
+          'connect': [{'id': 'user-1'}, {'id': 'user-2'}],
+        },
+      })
+      .build(),
+);
+
+// Update with connect/disconnect
+final result = await executor.executeMutationWithRelationsAtomic(
+  JsonQueryBuilder()
+      .model('SlotOfAppointment')
+      .action(QueryAction.update)
+      .where({'id': 'slot-123'})
+      .data({
+        'users': {
+          'connect': [{'id': 'user-new'}],
+          'disconnect': [{'id': 'user-old'}],
+        },
+      })
+      .build(),
+);
+```
+
 ## [0.2.9] - 2025-12-23
 
 ### Added

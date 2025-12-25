@@ -902,6 +902,207 @@ RETURNING *
     );
   }
 
+  /// Compile a mutation query with potential relation operations.
+  ///
+  /// This is used when CREATE or UPDATE queries include `connect` or
+  /// `disconnect` operations for many-to-many relations.
+  ///
+  /// Example:
+  /// ```dart
+  /// final query = JsonQueryBuilder()
+  ///     .model('SlotOfAppointment')
+  ///     .action(QueryAction.create)
+  ///     .data({
+  ///       'id': 'slot-123',
+  ///       'startsAt': DateTime.now(),
+  ///       'users': {
+  ///         'connect': [{'id': 'user-1'}, {'id': 'user-2'}],
+  ///       },
+  ///     })
+  ///     .build();
+  /// ```
+  CompiledMutation compileWithRelations(JsonQuery query) {
+    final args = query.args.arguments ?? {};
+    final data = args['data'] as Map<String, dynamic>? ?? {};
+
+    // Extract relation operations from data
+    final relationMutations = <SqlQuery>[];
+    final cleanData = <String, dynamic>{};
+    final effectiveSchema = schema ?? schemaRegistry;
+
+    for (final entry in data.entries) {
+      final value = entry.value;
+      if (value is Map<String, dynamic> &&
+          (value.containsKey('connect') || value.containsKey('disconnect'))) {
+        // This is a relation operation - look up the relation info
+        final relation =
+            effectiveSchema.getRelation(query.modelName, entry.key);
+        if (relation != null && relation.type == RelationType.manyToMany) {
+          // Get the primary key value for the parent record
+          // For create, it's in the data; for update, it's in the where clause
+          String? parentId;
+          if (query.action == 'create') {
+            parentId = data['id']?.toString();
+          } else if (query.action == 'update') {
+            final where = args['where'] as Map<String, dynamic>?;
+            parentId = where?['id']?.toString();
+          }
+
+          if (parentId != null) {
+            // Compile connect operations
+            if (value.containsKey('connect')) {
+              final connectItems =
+                  _normalizeConnectDisconnect(value['connect']);
+              relationMutations.addAll(_compileConnectOperations(
+                parentId: parentId,
+                relation: relation,
+                connectItems: connectItems,
+              ));
+            }
+
+            // Compile disconnect operations
+            if (value.containsKey('disconnect')) {
+              final disconnectItems =
+                  _normalizeConnectDisconnect(value['disconnect']);
+              relationMutations.addAll(_compileDisconnectOperations(
+                parentId: parentId,
+                relation: relation,
+                disconnectItems: disconnectItems,
+              ));
+            }
+          }
+        }
+      } else {
+        // Regular field - keep in clean data
+        cleanData[entry.key] = value;
+      }
+    }
+
+    // Create modified query with clean data (no relation operations)
+    final cleanArgs = Map<String, dynamic>.from(args);
+    cleanArgs['data'] = cleanData;
+    final cleanQuery = JsonQuery(
+      modelName: query.modelName,
+      action: query.action,
+      args: JsonQueryArgs(arguments: cleanArgs),
+    );
+
+    // Compile the main query
+    final mainQuery = compile(cleanQuery);
+
+    return CompiledMutation(
+      mainQuery: mainQuery,
+      relationMutations: relationMutations,
+    );
+  }
+
+  /// Normalize connect/disconnect input to a list of maps.
+  ///
+  /// Handles both single item and array formats:
+  /// - `{'id': 'user-1'}` -> `[{'id': 'user-1'}]`
+  /// - `[{'id': 'user-1'}, {'id': 'user-2'}]` -> as-is
+  List<Map<String, dynamic>> _normalizeConnectDisconnect(dynamic input) {
+    if (input is List) {
+      return input.cast<Map<String, dynamic>>();
+    } else if (input is Map<String, dynamic>) {
+      return [input];
+    }
+    return [];
+  }
+
+  /// Compile M2M connect operations into INSERT statements for junction table.
+  ///
+  /// For each item to connect, generates:
+  /// ```sql
+  /// INSERT INTO "_JunctionTable" ("A", "B") VALUES ($1, $2) ON CONFLICT DO NOTHING
+  /// ```
+  List<SqlQuery> _compileConnectOperations({
+    required String parentId,
+    required RelationInfo relation,
+    required List<Map<String, dynamic>> connectItems,
+  }) {
+    final queries = <SqlQuery>[];
+
+    if (relation.joinTable == null ||
+        relation.joinColumn == null ||
+        relation.inverseJoinColumn == null) {
+      return queries; // Invalid M2M relation configuration
+    }
+
+    final junctionTable = _quoteIdentifier(relation.joinTable!);
+    final joinCol = _quoteIdentifier(relation.joinColumn!);
+    final inverseCol = _quoteIdentifier(relation.inverseJoinColumn!);
+
+    for (final item in connectItems) {
+      final targetId = item['id']?.toString();
+      if (targetId == null) continue;
+
+      // Generate INSERT with ON CONFLICT DO NOTHING to handle duplicates
+      String sql;
+      if (provider == 'postgresql' || provider == 'supabase') {
+        sql = 'INSERT INTO $junctionTable ($joinCol, $inverseCol) '
+            'VALUES (\$1, \$2) ON CONFLICT DO NOTHING';
+      } else if (provider == 'mysql') {
+        sql = 'INSERT IGNORE INTO $junctionTable ($joinCol, $inverseCol) '
+            'VALUES (?, ?)';
+      } else if (provider == 'sqlite') {
+        sql = 'INSERT OR IGNORE INTO $junctionTable ($joinCol, $inverseCol) '
+            'VALUES (\$1, \$2)';
+      } else {
+        sql = 'INSERT INTO $junctionTable ($joinCol, $inverseCol) '
+            'VALUES (\$1, \$2)';
+      }
+
+      queries.add(SqlQuery(
+        sql: sql,
+        args: [parentId, targetId],
+        argTypes: [ArgType.string, ArgType.string],
+      ));
+    }
+
+    return queries;
+  }
+
+  /// Compile M2M disconnect operations into DELETE statements for junction table.
+  ///
+  /// For each item to disconnect, generates:
+  /// ```sql
+  /// DELETE FROM "_JunctionTable" WHERE "A" = $1 AND "B" = $2
+  /// ```
+  List<SqlQuery> _compileDisconnectOperations({
+    required String parentId,
+    required RelationInfo relation,
+    required List<Map<String, dynamic>> disconnectItems,
+  }) {
+    final queries = <SqlQuery>[];
+
+    if (relation.joinTable == null ||
+        relation.joinColumn == null ||
+        relation.inverseJoinColumn == null) {
+      return queries; // Invalid M2M relation configuration
+    }
+
+    final junctionTable = _quoteIdentifier(relation.joinTable!);
+    final joinCol = _quoteIdentifier(relation.joinColumn!);
+    final inverseCol = _quoteIdentifier(relation.inverseJoinColumn!);
+
+    for (final item in disconnectItems) {
+      final targetId = item['id']?.toString();
+      if (targetId == null) continue;
+
+      final sql = 'DELETE FROM $junctionTable '
+          'WHERE $joinCol = ${_placeholder(1)} AND $inverseCol = ${_placeholder(2)}';
+
+      queries.add(SqlQuery(
+        sql: sql,
+        args: [parentId, targetId],
+        argTypes: [ArgType.string, ArgType.string],
+      ));
+    }
+
+    return queries;
+  }
+
   /// Build SELECT fields from selection.
   List<String> _buildSelectFields(JsonSelection? selection) {
     if (selection == null ||
