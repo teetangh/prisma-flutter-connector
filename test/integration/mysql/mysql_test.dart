@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// Integration tests for MySQL
 ///

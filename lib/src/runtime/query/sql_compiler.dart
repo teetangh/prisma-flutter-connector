@@ -1020,7 +1020,9 @@ RETURNING *
   /// - `[{'id': 'user-1'}, {'id': 'user-2'}]` -> as-is
   List<Map<String, dynamic>> _normalizeConnectDisconnect(dynamic input) {
     if (input is List) {
-      return input.cast<Map<String, dynamic>>();
+      // Use List.from() for type safety - validates all elements immediately
+      // instead of cast<>() which is a lazy view that fails at access time
+      return List<Map<String, dynamic>>.from(input);
     } else if (input is Map<String, dynamic>) {
       return [input];
     }
@@ -1062,19 +1064,23 @@ RETURNING *
       if (targetId == null) continue;
 
       // Generate INSERT with ON CONFLICT DO NOTHING to handle duplicates
+      // Use _placeholder() for correct database-specific placeholders
+      final valuesClause =
+          'VALUES (${_placeholder(1)}, ${_placeholder(2)})';
+
       String sql;
       if (provider == 'postgresql' || provider == 'supabase') {
         sql = 'INSERT INTO $junctionTable ($joinCol, $inverseCol) '
-            'VALUES (\$1, \$2) ON CONFLICT DO NOTHING';
+            '$valuesClause ON CONFLICT DO NOTHING';
       } else if (provider == 'mysql') {
         sql = 'INSERT IGNORE INTO $junctionTable ($joinCol, $inverseCol) '
-            'VALUES (?, ?)';
+            '$valuesClause';
       } else if (provider == 'sqlite') {
         sql = 'INSERT OR IGNORE INTO $junctionTable ($joinCol, $inverseCol) '
-            'VALUES (\$1, \$2)';
+            '$valuesClause';
       } else {
         sql = 'INSERT INTO $junctionTable ($joinCol, $inverseCol) '
-            'VALUES (\$1, \$2)';
+            '$valuesClause';
       }
 
       queries.add(SqlQuery(
