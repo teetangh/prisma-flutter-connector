@@ -938,14 +938,21 @@ RETURNING *
         final relation =
             effectiveSchema.getRelation(query.modelName, entry.key);
         if (relation != null && relation.type == RelationType.manyToMany) {
+          // Get primary key field name from schema (fallback to 'id' for compatibility)
+          final parentModel = effectiveSchema.getModel(query.modelName);
+          final parentPkFieldName =
+              parentModel?.primaryKeys.isNotEmpty == true
+                  ? parentModel!.primaryKeys.first.name
+                  : 'id';
+
           // Get the primary key value for the parent record
           // For create, it's in the data; for update, it's in the where clause
           String? parentId;
           if (query.action == 'create') {
-            parentId = data['id']?.toString();
+            parentId = data[parentPkFieldName]?.toString();
           } else if (query.action == 'update') {
             final where = args['where'] as Map<String, dynamic>?;
-            parentId = where?['id']?.toString();
+            parentId = where?[parentPkFieldName]?.toString();
           }
 
           if (parentId != null) {
@@ -957,6 +964,7 @@ RETURNING *
                 parentId: parentId,
                 relation: relation,
                 connectItems: connectItems,
+                effectiveSchema: effectiveSchema,
               ));
             }
 
@@ -968,10 +976,19 @@ RETURNING *
                 parentId: parentId,
                 relation: relation,
                 disconnectItems: disconnectItems,
+                effectiveSchema: effectiveSchema,
               ));
             }
           }
+        } else if (relation != null) {
+          // Non-M2M relation with connect/disconnect - not supported
+          throw UnsupportedError(
+            'connect/disconnect operations are only supported for many-to-many '
+            'relations. Field "${entry.key}" is a ${relation.type.name} relation.',
+          );
         }
+        // If relation is null, the field will be passed through and likely fail
+        // downstream with a more specific error about the unknown field
       } else {
         // Regular field - keep in clean data
         cleanData[entry.key] = value;
@@ -1020,6 +1037,7 @@ RETURNING *
     required String parentId,
     required RelationInfo relation,
     required List<Map<String, dynamic>> connectItems,
+    required SchemaRegistry effectiveSchema,
   }) {
     final queries = <SqlQuery>[];
 
@@ -1033,8 +1051,14 @@ RETURNING *
     final joinCol = _quoteIdentifier(relation.joinColumn!);
     final inverseCol = _quoteIdentifier(relation.inverseJoinColumn!);
 
+    // Get target model's primary key field name (fallback to 'id' for compatibility)
+    final targetModel = effectiveSchema.getModel(relation.targetModel);
+    final targetPkFieldName = targetModel?.primaryKeys.isNotEmpty == true
+        ? targetModel!.primaryKeys.first.name
+        : 'id';
+
     for (final item in connectItems) {
-      final targetId = item['id']?.toString();
+      final targetId = item[targetPkFieldName]?.toString();
       if (targetId == null) continue;
 
       // Generate INSERT with ON CONFLICT DO NOTHING to handle duplicates
@@ -1073,6 +1097,7 @@ RETURNING *
     required String parentId,
     required RelationInfo relation,
     required List<Map<String, dynamic>> disconnectItems,
+    required SchemaRegistry effectiveSchema,
   }) {
     final queries = <SqlQuery>[];
 
@@ -1086,8 +1111,14 @@ RETURNING *
     final joinCol = _quoteIdentifier(relation.joinColumn!);
     final inverseCol = _quoteIdentifier(relation.inverseJoinColumn!);
 
+    // Get target model's primary key field name (fallback to 'id' for compatibility)
+    final targetModel = effectiveSchema.getModel(relation.targetModel);
+    final targetPkFieldName = targetModel?.primaryKeys.isNotEmpty == true
+        ? targetModel!.primaryKeys.first.name
+        : 'id';
+
     for (final item in disconnectItems) {
-      final targetId = item['id']?.toString();
+      final targetId = item[targetPkFieldName]?.toString();
       if (targetId == null) continue;
 
       final sql = 'DELETE FROM $junctionTable '

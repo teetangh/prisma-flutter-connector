@@ -319,9 +319,10 @@ class QueryExecutor implements BaseExecutor {
       for (final relationQuery in compiled.relationMutations) {
         try {
           await adapter.executeRaw(relationQuery);
-        } catch (e) {
+        } catch (e, s) {
           // Log the error but continue with other relation mutations
-          // In production, you might want to throw or handle differently
+          // This is the non-atomic version - errors are logged but don't stop execution
+          // Use executeMutationWithRelationsAtomic() if you need all-or-nothing behavior
           logger?.onQueryError(QueryErrorEvent(
             sql: relationQuery.sql,
             parameters: relationQuery.args,
@@ -329,9 +330,9 @@ class QueryExecutor implements BaseExecutor {
             operation: 'relationMutation',
             duration: Duration.zero,
             error: e,
-            stackTrace: StackTrace.current,
+            stackTrace: s,
           ));
-          rethrow;
+          // Don't rethrow - continue with other mutations (non-atomic behavior)
         }
       }
     }
