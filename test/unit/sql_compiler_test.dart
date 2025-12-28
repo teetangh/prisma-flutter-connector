@@ -2055,6 +2055,72 @@ void main() {
             RegExp(r'FROM\s+"ConsultantProfile"\s+"t0"').hasMatch(result.sql);
         expect(fromClause, isTrue);
       });
+
+      test('computedFieldNames is populated for preservation during deserialization', () {
+        // This test verifies that computed field names are tracked in SqlQuery
+        // so they can be preserved when relation deserialization strips them.
+        final schema = SchemaRegistry();
+
+        schema.registerModel(const ModelSchema(
+          name: 'Consultant',
+          tableName: 'Consultant',
+          fields: {
+            'id': FieldInfo(
+              name: 'id',
+              columnName: 'id',
+              type: 'String',
+              isId: true,
+            ),
+          },
+        ));
+
+        final compilerWithSchema = SqlCompiler(
+          provider: 'postgresql',
+          schema: schema,
+        );
+
+        // Query with multiple computed fields
+        final query = JsonQueryBuilder()
+            .model('Consultant')
+            .action(QueryAction.findMany)
+            .computed({
+          'minPrice': ComputedField.min(
+            'price',
+            from: 'ConsultationPlan',
+            where: {'consultantProfileId': const FieldRef('id')},
+          ),
+          'maxPrice': ComputedField.max(
+            'price',
+            from: 'ConsultationPlan',
+            where: {'consultantProfileId': const FieldRef('id')},
+          ),
+          'avgRating': ComputedField.avg(
+            'rating',
+            from: 'Reviews',
+            where: {'consultantId': const FieldRef('id')},
+          ),
+        }).build();
+
+        final result = compilerWithSchema.compile(query);
+
+        // Verify computedFieldNames contains all computed field names
+        expect(result.computedFieldNames, hasLength(3));
+        expect(result.computedFieldNames, contains('minPrice'));
+        expect(result.computedFieldNames, contains('maxPrice'));
+        expect(result.computedFieldNames, contains('avgRating'));
+      });
+
+      test('computedFieldNames is empty when no computed fields', () {
+        final query = JsonQueryBuilder()
+            .model('users')
+            .action(QueryAction.findMany)
+            .where({'id': '123'})
+            .build();
+
+        final result = compiler.compile(query);
+
+        expect(result.computedFieldNames, isEmpty);
+      });
     });
 
     group('@@map directive support', () {

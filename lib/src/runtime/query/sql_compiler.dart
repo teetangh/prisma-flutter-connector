@@ -278,11 +278,16 @@ class SqlCompiler {
     final allArgs = [...computedArgs, ...whereArgs];
     final allTypes = [...computedTypes, ...whereTypes];
 
+    // Collect computed field names for preservation during relation deserialization
+    final computedFieldNamesList =
+        hasComputedFields ? computedFields.keys.toList() : <String>[];
+
     return SqlQuery(
       sql: sql.toString(),
       args: allArgs,
       argTypes: allTypes,
       relationMetadata: compiledRelations,
+      computedFieldNames: computedFieldNamesList,
     );
   }
 

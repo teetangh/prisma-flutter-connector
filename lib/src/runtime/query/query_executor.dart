@@ -430,6 +430,37 @@ class QueryExecutor implements BaseExecutor {
         includedRelations: compiledRelations.includedRelations,
       );
 
+      // Preserve computed fields that were lost during relation deserialization.
+      // Computed fields are added to the SELECT clause but not registered in
+      // columnAliases, so they get dropped by _extractBaseColumns().
+      // We need to copy them back from the flat maps.
+      if (sqlQuery.computedFieldNames.isNotEmpty && flatMaps.isNotEmpty) {
+        // Group flat maps by primary key to match with deserialized results
+        // Since deserialization groups by PK, we need the first row for each group
+        final model = (compiler.schema ?? schemaRegistry).getModel(query.modelName);
+        if (model != null && model.primaryKeys.isNotEmpty) {
+          final pkColumn = model.primaryKeys.first.columnName;
+          final flatMapByPk = <dynamic, Map<String, dynamic>>{};
+          for (final row in flatMaps) {
+            final pk = row[pkColumn];
+            // Keep only the first occurrence for each PK (same as deserializer)
+            flatMapByPk.putIfAbsent(pk, () => row);
+          }
+
+          for (final resultRow in deserialized) {
+            final pk = resultRow[pkColumn];
+            final flatRow = flatMapByPk[pk];
+            if (flatRow != null) {
+              for (final fieldName in sqlQuery.computedFieldNames) {
+                if (flatRow.containsKey(fieldName)) {
+                  resultRow[fieldName] = flatRow[fieldName];
+                }
+              }
+            }
+          }
+        }
+      }
+
       return deserialized;
     }
 

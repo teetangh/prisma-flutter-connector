@@ -27,11 +27,16 @@ class SqlQuery {
   /// Only present when the query includes relations via `include`.
   final RelationMetadata? relationMetadata;
 
+  /// Names of computed fields in the query (e.g., 'minPrice', 'avgRating').
+  /// Used to preserve computed fields when deserializing JOIN results.
+  final List<String> computedFieldNames;
+
   const SqlQuery({
     required this.sql,
     required this.args,
     required this.argTypes,
     this.relationMetadata,
+    this.computedFieldNames = const [],
   });
 
   /// Whether this query has relation metadata that needs deserialization.
