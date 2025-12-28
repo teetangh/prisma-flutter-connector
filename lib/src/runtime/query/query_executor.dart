@@ -434,22 +434,30 @@ class QueryExecutor implements BaseExecutor {
       // Computed fields are added to the SELECT clause but not registered in
       // columnAliases, so they get dropped by _extractBaseColumns().
       // We need to copy them back from the flat maps.
+      //
+      // Note: This relies on primary keys to match rows. Models without primary
+      // keys (extremely rare in Prisma) won't have computed fields preserved.
+      // This is consistent with RelationDeserializer which has the same limitation.
       if (sqlQuery.computedFieldNames.isNotEmpty && flatMaps.isNotEmpty) {
         // Group flat maps by primary key to match with deserialized results
         // Since deserialization groups by PK, we need the first row for each group
         final model = (compiler.schema ?? schemaRegistry).getModel(query.modelName);
         if (model != null && model.primaryKeys.isNotEmpty) {
-          final pkColumn = model.primaryKeys.first.columnName;
-          final flatMapByPk = <dynamic, Map<String, dynamic>>{};
+          // Support composite primary keys (@@id([field1, field2]))
+          final pkColumns =
+              model.primaryKeys.map((pk) => pk.columnName).toList();
+          final flatMapByPk = <String, Map<String, dynamic>>{};
           for (final row in flatMaps) {
-            final pk = row[pkColumn];
+            final pkValue =
+                pkColumns.map((c) => row[c]?.toString() ?? '').join('::');
             // Keep only the first occurrence for each PK (same as deserializer)
-            flatMapByPk.putIfAbsent(pk, () => row);
+            flatMapByPk.putIfAbsent(pkValue, () => row);
           }
 
           for (final resultRow in deserialized) {
-            final pk = resultRow[pkColumn];
-            final flatRow = flatMapByPk[pk];
+            final pkValue =
+                pkColumns.map((c) => resultRow[c]?.toString() ?? '').join('::');
+            final flatRow = flatMapByPk[pkValue];
             if (flatRow != null) {
               for (final fieldName in sqlQuery.computedFieldNames) {
                 if (flatRow.containsKey(fieldName)) {
