@@ -2056,7 +2056,9 @@ void main() {
         expect(fromClause, isTrue);
       });
 
-      test('computedFieldNames is populated for preservation during deserialization', () {
+      test(
+          'computedFieldNames is populated for preservation during deserialization',
+          () {
         // This test verifies that computed field names are tracked in SqlQuery
         // so they can be preserved when relation deserialization strips them.
         final schema = SchemaRegistry();
@@ -2114,8 +2116,7 @@ void main() {
         final query = JsonQueryBuilder()
             .model('users')
             .action(QueryAction.findMany)
-            .where({'id': '123'})
-            .build();
+            .where({'id': '123'}).build();
 
         final result = compiler.compile(query);
 
