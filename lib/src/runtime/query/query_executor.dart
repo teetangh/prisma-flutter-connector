@@ -430,6 +430,49 @@ class QueryExecutor implements BaseExecutor {
         includedRelations: compiledRelations.includedRelations,
       );
 
+      // Preserve computed fields that were lost during relation deserialization.
+      // Computed fields are added to the SELECT clause but not registered in
+      // columnAliases, so they get dropped by _extractBaseColumns().
+      // We need to copy them back from the flat maps.
+      //
+      // Note: This relies on primary keys to match rows. Models without primary
+      // keys (extremely rare in Prisma) won't have computed fields preserved.
+      // This is consistent with RelationDeserializer which has the same limitation.
+      if (sqlQuery.computedFieldNames.isNotEmpty && flatMaps.isNotEmpty) {
+        final model =
+            (compiler.schema ?? schemaRegistry).getModel(query.modelName);
+        if (model != null && model.primaryKeys.isNotEmpty) {
+          // Support composite primary keys (@@id([field1, field2]))
+          final pkColumns =
+              model.primaryKeys.map((pk) => pk.columnName).toList();
+
+          // Helper to generate a composite primary key string from a row map.
+          String getPkValue(Map<String, dynamic> row) {
+            return pkColumns.map((c) => row[c]?.toString() ?? '').join('::');
+          }
+
+          // Group flat maps by primary key to match with deserialized results.
+          // Keep only the first occurrence for each PK (same as deserializer).
+          final flatMapByPk = <String, Map<String, dynamic>>{};
+          for (final row in flatMaps) {
+            flatMapByPk.putIfAbsent(getPkValue(row), () => row);
+          }
+
+          // Copy computed field values from the original flat map to the
+          // deserialized result.
+          for (final resultRow in deserialized) {
+            final flatRow = flatMapByPk[getPkValue(resultRow)];
+            if (flatRow != null) {
+              for (final fieldName in sqlQuery.computedFieldNames) {
+                if (flatRow.containsKey(fieldName)) {
+                  resultRow[fieldName] = flatRow[fieldName];
+                }
+              }
+            }
+          }
+        }
+      }
+
       return deserialized;
     }
 

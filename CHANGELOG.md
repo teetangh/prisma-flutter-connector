@@ -4,6 +4,34 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.3.1] - 2025-12-28
+
+### Fixed
+
+#### Computed Fields with Relations Bug
+- **Fixed computed fields returning `null` when used with `include()`**
+  - Computed fields (e.g., `ComputedField.min()`, `ComputedField.max()`) now correctly return values when combined with relation includes
+  - Previously, computed fields were dropped during relation deserialization because they weren't tracked in `columnAliases`
+  - Added `computedFieldNames` to `SqlQuery` to track computed field names
+  - After relation deserialization, computed fields are now copied back from the flat result maps
+
+### Example
+
+```dart
+// This now works correctly:
+final consultants = await prisma.consultant.findMany(
+  include: {
+    'user': {'select': {'name': true, 'image': true}},
+    'domain': true,
+  },
+  computed: {
+    'minPrice': ComputedField.min('price', from: 'ConsultationPlan',
+      where: {'consultantProfileId': FieldRef('id')}),
+  },
+);
+// consultants[0]['minPrice'] now returns the correct value instead of null
+```
+
 ## [0.3.0] - 2025-12-25
 
 ### Added
