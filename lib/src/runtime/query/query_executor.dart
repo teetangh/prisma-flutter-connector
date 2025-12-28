@@ -439,25 +439,29 @@ class QueryExecutor implements BaseExecutor {
       // keys (extremely rare in Prisma) won't have computed fields preserved.
       // This is consistent with RelationDeserializer which has the same limitation.
       if (sqlQuery.computedFieldNames.isNotEmpty && flatMaps.isNotEmpty) {
-        // Group flat maps by primary key to match with deserialized results
-        // Since deserialization groups by PK, we need the first row for each group
-        final model = (compiler.schema ?? schemaRegistry).getModel(query.modelName);
+        final model =
+            (compiler.schema ?? schemaRegistry).getModel(query.modelName);
         if (model != null && model.primaryKeys.isNotEmpty) {
           // Support composite primary keys (@@id([field1, field2]))
           final pkColumns =
               model.primaryKeys.map((pk) => pk.columnName).toList();
-          final flatMapByPk = <String, Map<String, dynamic>>{};
-          for (final row in flatMaps) {
-            final pkValue =
-                pkColumns.map((c) => row[c]?.toString() ?? '').join('::');
-            // Keep only the first occurrence for each PK (same as deserializer)
-            flatMapByPk.putIfAbsent(pkValue, () => row);
+
+          // Helper to generate a composite primary key string from a row map.
+          String getPkValue(Map<String, dynamic> row) {
+            return pkColumns.map((c) => row[c]?.toString() ?? '').join('::');
           }
 
+          // Group flat maps by primary key to match with deserialized results.
+          // Keep only the first occurrence for each PK (same as deserializer).
+          final flatMapByPk = <String, Map<String, dynamic>>{};
+          for (final row in flatMaps) {
+            flatMapByPk.putIfAbsent(getPkValue(row), () => row);
+          }
+
+          // Copy computed field values from the original flat map to the
+          // deserialized result.
           for (final resultRow in deserialized) {
-            final pkValue =
-                pkColumns.map((c) => resultRow[c]?.toString() ?? '').join('::');
-            final flatRow = flatMapByPk[pkValue];
+            final flatRow = flatMapByPk[getPkValue(resultRow)];
             if (flatRow != null) {
               for (final fieldName in sqlQuery.computedFieldNames) {
                 if (flatRow.containsKey(fieldName)) {
