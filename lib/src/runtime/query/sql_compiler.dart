@@ -141,13 +141,19 @@ class SqlCompiler {
   }
 
   /// Convert PascalCase to snake_case.
+  ///
+  /// Handles acronyms correctly:
+  /// - "User" -> "user"
+  /// - "URLShortener" -> "url_shortener"
+  /// - "HTTPSConnection" -> "https_connection"
   String _toSnakeCase(String input) {
     return input
+        // Handle acronyms followed by a word: "URLShortener" -> "URL_Shortener"
         .replaceAllMapped(
-          RegExp(r'[A-Z]'),
-          (match) => '_${match.group(0)!.toLowerCase()}',
-        )
-        .replaceFirst(RegExp(r'^_'), '');
+            RegExp(r'([A-Z]+)([A-Z][a-z])'), (m) => '${m[1]}_${m[2]}')
+        // Handle lowercase followed by uppercase: "myURL" -> "my_URL"
+        .replaceAllMapped(RegExp(r'([a-z\d])([A-Z])'), (m) => '${m[1]}_${m[2]}')
+        .toLowerCase();
   }
 
   /// Compile a JSON query to SQL.

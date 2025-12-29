@@ -3018,6 +3018,47 @@ void main() {
         final result = compiler.compile(query);
         expect(result.sql, contains('FROM "User"'));
       });
+
+      test('acronyms in model names are handled correctly in suggestions', () {
+        final compiler = SqlCompiler(
+          provider: 'postgresql',
+          strictModelValidation: true,
+        );
+
+        // URLShortener should suggest url_shortener (not u_r_l_shortener)
+        final query1 = JsonQueryBuilder()
+            .model('URLShortener')
+            .action(QueryAction.findMany)
+            .build();
+
+        expect(
+          () => compiler.compile(query1),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => e.message,
+              'message',
+              contains('.model(\'url_shortener\')'),
+            ),
+          ),
+        );
+
+        // HTTPSConnection should suggest https_connection
+        final query2 = JsonQueryBuilder()
+            .model('HTTPSConnection')
+            .action(QueryAction.findMany)
+            .build();
+
+        expect(
+          () => compiler.compile(query2),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => e.message,
+              'message',
+              contains('.model(\'https_connection\')'),
+            ),
+          ),
+        );
+      });
     });
   });
 }
