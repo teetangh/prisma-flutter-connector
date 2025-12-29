@@ -4,6 +4,41 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.3.2] - 2025-12-29
+
+### Fixed
+
+#### Deeply Nested Relation Filters Validation (Issue #13)
+- **Added validation for invalid relation filter patterns**
+  - Relation fields used without `some()`, `every()`, or `none()` operators now throw clear errors
+  - Unknown filter operators on scalar fields are now detected with helpful error messages
+  - Previously, these patterns would silently generate invalid SQL
+  
+- **Error messages now guide users to the correct syntax**
+  - Suggests using `FilterOperators.some()`, `every()`, or `none()` for relation fields
+  - Lists valid scalar operators when an unknown operator is detected
+  - Mentions `FilterOperators.relationPath()` for complex OR conditions across relations
+
+### Example
+
+```dart
+// This invalid pattern now throws a helpful error:
+.where({
+  'posts': {  // ❌ Relation field without operator
+    'title': {'equals': 'Test'},
+  },
+})
+// Error: Relation field "posts" on model "User" requires a filter operator.
+// Use FilterOperators.some(), every(), or none().
+
+// Correct usage:
+.where({
+  'posts': FilterOperators.some({  // ✅ Using some() operator
+    'title': {'equals': 'Test'},
+  }),
+})
+```
+
 ## [0.3.1] - 2025-12-28
 
 ### Fixed

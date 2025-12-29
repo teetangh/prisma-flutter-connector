@@ -1501,6 +1501,50 @@ RETURNING *
     return null;
   }
 
+  /// Known filter operators for scalar fields.
+  ///
+  /// These are valid keys in a Map filter value for non-relation fields.
+  /// Any unknown key will result in an error to catch invalid queries early.
+  static const _knownScalarOperators = {
+    'equals',
+    'not',
+    'in',
+    'notIn',
+    'lt',
+    'lte',
+    'gt',
+    'gte',
+    'contains',
+    'startsWith',
+    'endsWith',
+    'isNull',
+    'isNotNull',
+    'notInOrNull',
+    'inOrNull',
+    'equalsOrNull',
+  };
+
+  /// Validate that a Map filter value contains only known operators.
+  ///
+  /// Throws [ArgumentError] if unknown operators are found, helping users
+  /// identify invalid queries before they generate bad SQL.
+  void _validateScalarFilterOperators(
+    String field,
+    Map<String, dynamic> value,
+    String? modelName,
+  ) {
+    for (final key in value.keys) {
+      if (!_knownScalarOperators.contains(key)) {
+        final modelInfo = modelName != null ? ' on model "$modelName"' : '';
+        throw ArgumentError(
+          'Unknown filter operator "$key" for field "$field"$modelInfo. '
+          'Valid scalar operators: ${_knownScalarOperators.join(', ')}. '
+          'If "$field" is a relation, use FilterOperators.some(), every(), or none().',
+        );
+      }
+    }
+  }
+
   /// Build WHERE clause from conditions.
   ///
   /// [modelName] is optional but required for relation filtering.
@@ -1634,6 +1678,16 @@ RETURNING *
           types.addAll(typs);
           paramIndex += vals.length;
           continue;
+        } else if (relation != null && relOperator == null) {
+          // Relation field used without some/every/none operator
+          // This is a common mistake that generates invalid SQL
+          throw ArgumentError(
+            'Relation field "$field" on model "$modelName" requires a filter '
+            'operator. Use FilterOperators.some(), every(), or none(). '
+            'Example: {\'$field\': FilterOperators.some({\'fieldName\': value})}. '
+            'For complex OR conditions across relations, use '
+            'FilterOperators.relationPath() instead.',
+          );
         }
       }
 
@@ -1645,6 +1699,10 @@ RETURNING *
           : _quoteIdentifier(field);
 
       if (value is Map<String, dynamic>) {
+        // Validate that all keys are known operators before processing
+        // This catches invalid patterns early instead of generating bad SQL
+        _validateScalarFilterOperators(field, value, modelName);
+
         // Filter operators
         for (final op in value.entries) {
           switch (op.key) {

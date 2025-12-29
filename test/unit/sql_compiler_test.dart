@@ -2539,5 +2539,166 @@ void main() {
         expect(result.relationMutations[0].sql, contains('INSERT OR IGNORE'));
       });
     });
+
+    group('Validation Errors (v0.3.2)', () {
+      late SqlCompiler compiler;
+      late SchemaRegistry schemaRegistry;
+
+      setUp(() {
+        // Set up schema with relations for testing validation
+        schemaRegistry = SchemaRegistry();
+        schemaRegistry.registerModel(ModelSchema(
+          name: 'User',
+          tableName: 'User',
+          fields: {
+            'id': const FieldInfo(
+              name: 'id',
+              columnName: 'id',
+              type: 'String',
+              isId: true,
+            ),
+            'email': const FieldInfo(
+              name: 'email',
+              columnName: 'email',
+              type: 'String',
+            ),
+          },
+          relations: {
+            'posts': RelationInfo.oneToMany(
+              name: 'posts',
+              targetModel: 'Post',
+              foreignKey: 'authorId',
+            ),
+          },
+        ));
+        schemaRegistry.registerModel(const ModelSchema(
+          name: 'Post',
+          tableName: 'Post',
+          fields: {
+            'id': FieldInfo(
+              name: 'id',
+              columnName: 'id',
+              type: 'String',
+              isId: true,
+            ),
+            'title': FieldInfo(
+              name: 'title',
+              columnName: 'title',
+              type: 'String',
+            ),
+            'authorId': FieldInfo(
+              name: 'authorId',
+              columnName: 'authorId',
+              type: 'String',
+            ),
+          },
+        ));
+
+        compiler = SqlCompiler(
+          provider: 'postgresql',
+          schema: schemaRegistry,
+        );
+      });
+
+      test('throws error for unknown filter operator on scalar field', () {
+        final query = JsonQueryBuilder()
+            .model('User')
+            .action(QueryAction.findMany)
+            .where({
+          'email': {'unknownOperator': 'test@example.com'},
+        }).build();
+
+        expect(
+          () => compiler.compile(query),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => e.message,
+              'message',
+              contains('Unknown filter operator "unknownOperator"'),
+            ),
+          ),
+        );
+      });
+
+      test('throws error for relation field without some/every/none', () {
+        final query = JsonQueryBuilder()
+            .model('User')
+            .action(QueryAction.findMany)
+            .where({
+          'posts': {
+            'title': {'equals': 'Test'},
+          },
+        }).build();
+
+        expect(
+          () => compiler.compile(query),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => e.message,
+              'message',
+              allOf(
+                contains('Relation field "posts"'),
+                contains('requires a filter operator'),
+                contains('some()'),
+              ),
+            ),
+          ),
+        );
+      });
+
+      test('error message suggests using FilterOperators', () {
+        final query = JsonQueryBuilder()
+            .model('User')
+            .action(QueryAction.findMany)
+            .where({
+          'posts': {
+            'OR': [
+              {'title': 'Test1'},
+              {'title': 'Test2'},
+            ],
+          },
+        }).build();
+
+        expect(
+          () => compiler.compile(query),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => e.message,
+              'message',
+              contains('FilterOperators'),
+            ),
+          ),
+        );
+      });
+
+      test('valid relation filter with some() still works', () {
+        final query = JsonQueryBuilder()
+            .model('User')
+            .action(QueryAction.findMany)
+            .where({
+          'posts': {
+            'some': {'title': {'equals': 'Test'}},
+          },
+        }).build();
+
+        // Should not throw, should compile successfully
+        final result = compiler.compile(query);
+        expect(result.sql, contains('EXISTS'));
+      });
+
+      test('valid scalar filter operators still work', () {
+        final query = JsonQueryBuilder()
+            .model('User')
+            .action(QueryAction.findMany)
+            .where({
+          'email': {'equals': 'test@example.com', 'not': 'admin@example.com'},
+        }).build();
+
+        // Should not throw
+        final result = compiler.compile(query);
+        expect(result.sql, contains('WHERE'));
+        expect(result.args, contains('test@example.com'));
+      });
+    });
   });
 }
