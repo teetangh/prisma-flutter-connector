@@ -4,6 +4,45 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.3.3] - 2025-12-29
+
+### Added
+
+#### Strict Model Name Validation (Opt-in)
+- **New opt-in validation for model names** helps catch common mistakes when using PascalCase Prisma model names instead of lowercase PostgreSQL table names
+  - Enable globally: `SqlCompiler.strictModelValidation = true`
+  - Enable per-instance: `SqlCompiler(provider: 'postgresql', strictModelValidation: true)`
+  - Disabled by default for backwards compatibility
+
+- **Helpful error messages** when validation is enabled:
+  - Detects PascalCase model names (e.g., `'User'`) and suggests the likely table name (e.g., `'user'`)
+  - When SchemaRegistry is empty, reminds users to either use table names directly or run code generation
+  - When SchemaRegistry has models, lists available models to help identify typos
+
+### Example
+
+```dart
+// Enable strict validation globally
+SqlCompiler.strictModelValidation = true;
+
+// This now throws a helpful error:
+final query = JsonQueryBuilder()
+    .model('User')  // ❌ PascalCase - suggests using 'user' instead
+    .action(QueryAction.findMany)
+    .build();
+
+// Error message:
+// Model "User" not found in SchemaRegistry (registry is empty).
+//
+// When using JsonQueryBuilder without Prisma code generation, you must use
+// the actual PostgreSQL table name instead of the Prisma model name.
+//
+// Try: .model('user') instead of .model('User')
+//
+// Alternatively, run "dart run prisma_flutter_connector:generate" to
+// populate the SchemaRegistry with model-to-table mappings.
+```
+
 ## [0.3.2] - 2025-12-29
 
 ### Fixed

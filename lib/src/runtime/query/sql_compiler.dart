@@ -18,6 +18,31 @@ class SqlCompiler {
   final String? schemaName;
   final SchemaRegistry? schema;
 
+  /// Enable strict model name validation.
+  ///
+  /// When enabled, the compiler will throw an [ArgumentError] if a PascalCase
+  /// model name (e.g., 'User') is used but not registered in the SchemaRegistry.
+  /// This helps catch common mistakes when using JsonQueryBuilder manually
+  /// without Prisma code generation.
+  ///
+  /// Defaults to `false` for backwards compatibility. Set to `true` to enable
+  /// helpful error messages for model name mismatches.
+  ///
+  /// Example:
+  /// ```dart
+  /// SqlCompiler.strictModelValidation = true; // Enable globally
+  ///
+  /// // Or per-instance:
+  /// final compiler = SqlCompiler(
+  ///   provider: 'postgresql',
+  ///   strictModelValidation: true,
+  /// );
+  /// ```
+  static bool strictModelValidation = false;
+
+  /// Instance-level override for strict model validation.
+  final bool? _strictModelValidation;
+
   /// Lazily created relation compiler.
   RelationCompiler? _relationCompiler;
 
@@ -25,7 +50,8 @@ class SqlCompiler {
     required this.provider,
     this.schemaName,
     this.schema,
-  });
+    bool? strictModelValidation,
+  }) : _strictModelValidation = strictModelValidation;
 
   /// Get or create relation compiler.
   /// Uses startingCounter: 1 since t0 is reserved for the base table.
@@ -40,9 +66,94 @@ class SqlCompiler {
   ///
   /// Uses SchemaRegistry if available, otherwise returns the model name as-is.
   /// This handles @@map directives transparently.
+  ///
+  /// Throws [ArgumentError] with a helpful message if the model appears to be
+  /// a PascalCase name but isn't registered in the schema (common mistake when
+  /// using JsonQueryBuilder manually without code generation).
   String _resolveTableName(String modelName) {
     final effectiveSchema = schema ?? schemaRegistry;
-    return effectiveSchema.getTableName(modelName) ?? modelName;
+    final tableName = effectiveSchema.getTableName(modelName);
+
+    if (tableName != null) {
+      return tableName;
+    }
+
+    // Check if this looks like a PascalCase model name that should be registered
+    _validateModelName(modelName, effectiveSchema);
+
+    return modelName;
+  }
+
+  /// Check if strict model validation is enabled (instance or global).
+  bool get _isStrictValidationEnabled =>
+      _strictModelValidation ?? strictModelValidation;
+
+  /// Validates that a model name is properly registered or is a valid table name.
+  ///
+  /// When using JsonQueryBuilder without code generation, users often mistakenly
+  /// use PascalCase model names (e.g., 'User') instead of the actual PostgreSQL
+  /// table names (e.g., 'users'). This method detects this pattern and provides
+  /// a helpful error message.
+  ///
+  /// This validation only runs when [strictModelValidation] is enabled.
+  void _validateModelName(String modelName, SchemaRegistry effectiveSchema) {
+    // Skip validation if not in strict mode
+    if (!_isStrictValidationEnabled) return;
+
+    // If the schema has any registered models, we expect all models to be registered
+    final hasRegisteredModels = effectiveSchema.modelNames.isNotEmpty;
+
+    // Check if this looks like a PascalCase Prisma model name
+    final isPascalCase = _isPascalCase(modelName);
+
+    if (isPascalCase) {
+      final suggestedTableName = _toSnakeCase(modelName);
+
+      if (hasRegisteredModels) {
+        // Schema is populated but this model isn't registered
+        throw ArgumentError(
+          'Model "$modelName" is not registered in SchemaRegistry.\n'
+          'Available models: ${effectiveSchema.modelNames.join(", ")}.\n\n'
+          'Did you mean to use one of the registered models, or did you forget '
+          'to register "$modelName"?',
+        );
+      } else {
+        // Schema is empty - likely using JsonQueryBuilder without code generation
+        throw ArgumentError(
+          'Model "$modelName" not found in SchemaRegistry (registry is empty).\n\n'
+          'When using JsonQueryBuilder without Prisma code generation, you must use '
+          'the actual PostgreSQL table name instead of the Prisma model name.\n\n'
+          'Try: .model(\'$suggestedTableName\') instead of .model(\'$modelName\')\n\n'
+          'Alternatively, run "dart run prisma_flutter_connector:generate" to '
+          'populate the SchemaRegistry with model-to-table mappings.',
+        );
+      }
+    }
+  }
+
+  /// Check if a string is PascalCase (starts with uppercase, contains lowercase).
+  bool _isPascalCase(String s) {
+    if (s.isEmpty) return false;
+    // Starts with uppercase and contains at least one lowercase letter
+    return s[0] == s[0].toUpperCase() &&
+        s[0] != s[0].toLowerCase() &&
+        s.contains(RegExp(r'[a-z]'));
+  }
+
+  /// Convert PascalCase to snake_case.
+  ///
+  /// Handles acronyms correctly:
+  /// - "User" -> "user"
+  /// - "URLShortener" -> "url_shortener"
+  /// - "HTTPSConnection" -> "https_connection"
+  String _toSnakeCase(String input) {
+    return input
+        // Handle acronyms followed by a word: "URLShortener" -> "URL_Shortener"
+        .replaceAllMapped(
+            RegExp(r'([A-Z]+)([A-Z][a-z])'), (m) => '${m[1]}_${m[2]}')
+        // Handle lowercase followed by uppercase: "myURL" -> "my_URL"
+        .replaceAllMapped(RegExp(r'([a-z\d])([A-Z])'), (m) => '${m[1]}_${m[2]}')
+        .toLowerCase();
   }
 
   /// Compile a JSON query to SQL.
