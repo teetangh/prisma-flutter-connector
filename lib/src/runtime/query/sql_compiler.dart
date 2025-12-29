@@ -1860,6 +1860,13 @@ RETURNING *
               values.add(op.value);
               types.add(_inferArgType(op.value));
               break;
+            default:
+              // This should not be reached if _knownScalarOperators is in sync
+              // with this switch statement, but serves as a safeguard.
+              throw StateError(
+                'Unsupported filter operator "${op.key}" passed validation but is not implemented. '
+                'Please add implementation for this operator or remove it from _knownScalarOperators.',
+              );
           }
         }
       } else {
