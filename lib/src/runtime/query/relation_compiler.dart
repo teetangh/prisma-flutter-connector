@@ -276,6 +276,7 @@ class RelationCompiler {
 
     // Handle nested includes
     final nestedIncludes = <IncludedRelation>[];
+    final nestedJoins = <String>[];
     if (includeValue is Map<String, dynamic>) {
       final nestedInclude = includeValue['include'] as Map<String, dynamic>?;
       if (nestedInclude != null) {
@@ -295,14 +296,21 @@ class RelationCompiler {
             );
             if (nestedResult != null) {
               nestedIncludes.add(nestedResult.includedRelation);
+              // FIX: Include the nested JOIN clause in the output
+              nestedJoins.add(nestedResult.joinClause);
             }
           }
         }
       }
     }
 
+    // Combine current JOIN with any nested JOINs
+    final combinedJoinClause = nestedJoins.isEmpty
+        ? joinClause
+        : '$joinClause ${nestedJoins.join(' ')}';
+
     return _RelationCompileResult(
-      joinClause: joinClause,
+      joinClause: combinedJoinClause,
       includedRelation: IncludedRelation(
         name: relationName,
         relation: relation,
