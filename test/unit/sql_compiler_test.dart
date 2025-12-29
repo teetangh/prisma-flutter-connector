@@ -2824,7 +2824,9 @@ void main() {
             .action(QueryAction.findMany)
             .where({
           'posts': {
-            'some': {'title': {'equals': 'Test'}},
+            'some': {
+              'title': {'equals': 'Test'}
+            },
           },
         }).build();
 

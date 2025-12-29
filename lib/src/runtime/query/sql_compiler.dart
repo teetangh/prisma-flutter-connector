@@ -1533,8 +1533,9 @@ RETURNING *
     Map<String, dynamic> value,
     String? modelName,
   ) {
-    final unknownOperators =
-        value.keys.where((key) => !_knownScalarOperators.contains(key)).toList();
+    final unknownOperators = value.keys
+        .where((key) => !_knownScalarOperators.contains(key))
+        .toList();
 
     if (unknownOperators.isNotEmpty) {
       final modelInfo = modelName != null ? ' on model "$modelName"' : '';
