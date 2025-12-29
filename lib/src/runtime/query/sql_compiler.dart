@@ -1533,15 +1533,17 @@ RETURNING *
     Map<String, dynamic> value,
     String? modelName,
   ) {
-    for (final key in value.keys) {
-      if (!_knownScalarOperators.contains(key)) {
-        final modelInfo = modelName != null ? ' on model "$modelName"' : '';
-        throw ArgumentError(
-          'Unknown filter operator "$key" for field "$field"$modelInfo. '
-          'Valid scalar operators: ${_knownScalarOperators.join(', ')}. '
-          'If "$field" is a relation, use FilterOperators.some(), every(), or none().',
-        );
-      }
+    final unknownOperators =
+        value.keys.where((key) => !_knownScalarOperators.contains(key)).toList();
+
+    if (unknownOperators.isNotEmpty) {
+      final modelInfo = modelName != null ? ' on model "$modelName"' : '';
+      final plural = unknownOperators.length > 1;
+      throw ArgumentError(
+        'Unknown filter operator${plural ? 's' : ''} "${unknownOperators.join('", "')}" for field "$field"$modelInfo. '
+        'Valid scalar operators: ${_knownScalarOperators.join(', ')}. '
+        'If "$field" is a relation, use FilterOperators.some(), every(), or none().',
+      );
     }
   }
 

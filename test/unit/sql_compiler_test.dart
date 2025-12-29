@@ -1714,6 +1714,129 @@ void main() {
         expect(result.sql, contains('"t0"')); // Base table alias
         expect(result.sql, contains('"t1"')); // First relation alias
       });
+
+      test('nested include generates JOINs for all levels (v0.3.2 fix)', () {
+        // Set up a schema with three levels: ConsultationPlan -> ConsultantProfile -> User
+        final nestedSchema = SchemaRegistry();
+
+        // ConsultationPlan (base)
+        nestedSchema.registerModel(ModelSchema(
+          name: 'ConsultationPlan',
+          tableName: 'ConsultationPlan',
+          fields: {
+            'id': const FieldInfo(
+              name: 'id',
+              columnName: 'id',
+              type: 'String',
+              isId: true,
+            ),
+            'price': const FieldInfo(
+              name: 'price',
+              columnName: 'price',
+              type: 'double',
+            ),
+            'consultantProfileId': const FieldInfo(
+              name: 'consultantProfileId',
+              columnName: 'consultantProfileId',
+              type: 'String',
+            ),
+          },
+          relations: {
+            'consultantProfile': RelationInfo.manyToOne(
+              name: 'consultantProfile',
+              targetModel: 'ConsultantProfile',
+              foreignKey: 'consultantProfileId',
+            ),
+          },
+        ));
+
+        // ConsultantProfile (middle)
+        nestedSchema.registerModel(ModelSchema(
+          name: 'ConsultantProfile',
+          tableName: 'ConsultantProfile',
+          fields: {
+            'id': const FieldInfo(
+              name: 'id',
+              columnName: 'id',
+              type: 'String',
+              isId: true,
+            ),
+            'headline': const FieldInfo(
+              name: 'headline',
+              columnName: 'headline',
+              type: 'String',
+            ),
+            'userId': const FieldInfo(
+              name: 'userId',
+              columnName: 'userId',
+              type: 'String',
+            ),
+          },
+          relations: {
+            'user': RelationInfo.manyToOne(
+              name: 'user',
+              targetModel: 'User',
+              foreignKey: 'userId',
+            ),
+          },
+        ));
+
+        // User (deepest)
+        nestedSchema.registerModel(const ModelSchema(
+          name: 'User',
+          tableName: 'users',
+          fields: {
+            'id': FieldInfo(
+              name: 'id',
+              columnName: 'id',
+              type: 'String',
+              isId: true,
+            ),
+            'name': FieldInfo(
+              name: 'name',
+              columnName: 'name',
+              type: 'String',
+            ),
+            'email': FieldInfo(
+              name: 'email',
+              columnName: 'email',
+              type: 'String',
+            ),
+          },
+        ));
+
+        final nestedCompiler = SqlCompiler(
+          provider: 'postgresql',
+          schema: nestedSchema,
+        );
+
+        // Test nested include: ConsultationPlan -> ConsultantProfile -> User
+        final query = JsonQueryBuilder()
+            .model('ConsultationPlan')
+            .action(QueryAction.findUnique)
+            .where({'id': 'plan-123'}).include({
+          'consultantProfile': {
+            'include': {'user': true}
+          }
+        }).build();
+
+        final result = nestedCompiler.compile(query);
+
+        // Should have JOIN for consultantProfile (t1)
+        expect(result.sql, contains('LEFT JOIN "ConsultantProfile"'));
+        expect(result.sql, contains('"t1"'));
+
+        // Should have JOIN for nested user (t2)
+        // This was the bug - the nested JOIN was missing
+        expect(result.sql, contains('LEFT JOIN "users"'));
+        expect(result.sql, contains('"t2"'));
+
+        // The SQL should select from all three tables
+        expect(result.sql, contains('FROM "ConsultationPlan" "t0"'));
+
+        // Should not throw "missing FROM-clause entry for table t2"
+        // by having columns from t2 without the JOIN
+      });
     });
 
     group('Computed Fields (v0.2.6)', () {
@@ -2615,6 +2738,30 @@ void main() {
               (e) => e.message,
               'message',
               contains('Unknown filter operator "unknownOperator"'),
+            ),
+          ),
+        );
+      });
+
+      test('reports all unknown operators at once (v0.3.2)', () {
+        final query = JsonQueryBuilder()
+            .model('User')
+            .action(QueryAction.findMany)
+            .where({
+          'email': {'badOp1': 'test', 'badOp2': 'test2', 'equals': 'valid'},
+        }).build();
+
+        expect(
+          () => compiler.compile(query),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => e.message,
+              'message',
+              allOf(
+                contains('Unknown filter operators'),
+                contains('badOp1'),
+                contains('badOp2'),
+              ),
             ),
           ),
         );

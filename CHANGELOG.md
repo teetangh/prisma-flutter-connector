@@ -8,12 +8,35 @@ All notable changes to the Prisma Flutter Connector.
 
 ### Fixed
 
+#### Nested Include JOINs Bug
+- **Fixed nested `include()` generating invalid SQL** - "missing FROM-clause entry for table" error
+  - When using nested includes like `.include({'relation': {'include': {'nestedRelation': true}}})`
+  - The nested JOIN clauses were not being added to the SQL output
+  - This caused errors like `missing FROM-clause entry for table "t2"` because columns from the nested relation were selected but the table was never joined
+  - Fixed `RelationCompiler._compileRelation()` to collect and combine nested JOIN clauses with the parent JOIN
+
+#### Example
+
+```dart
+// This now works correctly:
+final query = JsonQueryBuilder()
+    .model('ConsultationPlan')
+    .action(QueryAction.findUnique)
+    .where({'id': planId})
+    .include({
+      'consultantProfile': {
+        'include': {'user': true}  // ✅ Nested include now generates correct JOINs
+      }
+    })
+    .build();
+```
+
 #### Deeply Nested Relation Filters Validation (Issue #13)
 - **Added validation for invalid relation filter patterns**
   - Relation fields used without `some()`, `every()`, or `none()` operators now throw clear errors
   - Unknown filter operators on scalar fields are now detected with helpful error messages
   - Previously, these patterns would silently generate invalid SQL
-  
+
 - **Error messages now guide users to the correct syntax**
   - Suggests using `FilterOperators.some()`, `every()`, or `none()` for relation fields
   - Lists valid scalar operators when an unknown operator is detected
