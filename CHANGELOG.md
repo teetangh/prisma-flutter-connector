@@ -4,6 +4,56 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.3.4] - 2025-12-30
+
+### Fixed
+
+#### TransactionExecutor Relation Deserialization Bug
+- **Fixed `include()` not deserializing nested relations when executed within transactions**
+  - When using `executeInTransaction()` or `executeQueryAsMaps()` on a `TransactionExecutor`, queries with `include()` were returning flat maps with aliased column names (e.g., `consultationPlanTitle`) instead of properly nested objects (e.g., `{'consultationPlan': {'title': ...}}`)
+  - This happened because `TransactionExecutor` was missing the `RelationDeserializer` logic that exists in `QueryExecutor`
+  - Now `TransactionExecutor` properly deserializes relations using the same logic as `QueryExecutor`
+
+- **Added proper value deserialization in `TransactionExecutor`**
+  - DateTime, Date, Boolean, and JSON values are now properly deserialized within transactions
+  - Previously, these values were returned as raw database values
+
+#### Example
+
+```dart
+// This now works correctly within transactions:
+await executor.executeInTransaction((txn) async {
+  final result = await txn.executeQueryAsMaps(
+    JsonQueryBuilder()
+        .model('Consultation')
+        .action(QueryAction.findUnique)
+        .where({'id': consultationId})
+        .include({
+          'consultationPlan': {
+            'include': {'consultantProfile': true}
+          }
+        })
+        .build(),
+  );
+
+  // ✅ Now returns nested objects:
+  // {
+  //   'id': '...',
+  //   'consultationPlan': {
+  //     'title': 'Premium Consultation',
+  //     'consultantProfile': { ... }
+  //   }
+  // }
+
+  // ❌ Previously returned flat keys:
+  // {
+  //   'id': '...',
+  //   'consultationPlanTitle': 'Premium Consultation',
+  //   'consultationPlanConsultantProfileId': '...'
+  // }
+});
+```
+
 ## [0.3.3] - 2025-12-29
 
 ### Added

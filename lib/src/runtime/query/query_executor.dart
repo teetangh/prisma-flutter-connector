@@ -512,6 +512,7 @@ class QueryExecutor implements BaseExecutor {
         transaction: transaction,
         compiler: compiler,
         adapter: adapter,
+        schema: schema,
       );
 
       final result = await callback(txExecutor);
@@ -621,10 +622,16 @@ class TransactionExecutor implements BaseExecutor {
   final SqlCompiler compiler;
   final SqlDriverAdapter _adapter;
 
+  /// Optional schema registry for relation information.
+  /// When provided, enables includes with automatic JOINs and proper
+  /// relation deserialization.
+  final SchemaRegistry? schema;
+
   TransactionExecutor({
     required this.transaction,
     required this.compiler,
     required SqlDriverAdapter adapter,
+    this.schema,
   }) : _adapter = adapter;
 
   @override
@@ -650,10 +657,74 @@ class TransactionExecutor implements BaseExecutor {
   }
 
   /// Execute a query and deserialize results to maps.
+  ///
+  /// If the query includes relations via `include`, results are automatically
+  /// deserialized into nested structures using the [RelationDeserializer].
   @override
   Future<List<Map<String, dynamic>>> executeQueryAsMaps(JsonQuery query) async {
-    final result = await executeQuery(query);
-    return _resultSetToMaps(result);
+    // Compile to get relation metadata
+    final sqlQuery = compiler.compile(query);
+
+    // Execute the query
+    final result = await transaction.queryRaw(sqlQuery);
+
+    // Check if we need to deserialize relations
+    final hasRelations =
+        sqlQuery.hasRelations && sqlQuery.relationMetadata is CompiledRelations;
+
+    // Convert to maps - preserve aliases when relations are present so
+    // the RelationDeserializer can match column aliases like "user__name"
+    final flatMaps = _resultSetToMaps(result, preserveAliases: hasRelations);
+
+    if (hasRelations) {
+      final compiledRelations = sqlQuery.relationMetadata as CompiledRelations;
+
+      // Use relation deserializer to nest flat JOIN results
+      final deserializer = RelationDeserializer(
+        schema: schema ?? compiler.schema ?? schemaRegistry,
+      );
+
+      final deserialized = deserializer.deserialize(
+        rows: flatMaps,
+        baseModel: query.modelName,
+        columnAliases: compiledRelations.columnAliases,
+        includedRelations: compiledRelations.includedRelations,
+      );
+
+      // Preserve computed fields that were lost during relation deserialization.
+      if (sqlQuery.computedFieldNames.isNotEmpty && flatMaps.isNotEmpty) {
+        final model = (schema ?? compiler.schema ?? schemaRegistry)
+            .getModel(query.modelName);
+        if (model != null && model.primaryKeys.isNotEmpty) {
+          final pkColumns =
+              model.primaryKeys.map((pk) => pk.columnName).toList();
+
+          String getPkValue(Map<String, dynamic> row) {
+            return pkColumns.map((c) => row[c]?.toString() ?? '').join('::');
+          }
+
+          final flatMapByPk = <String, Map<String, dynamic>>{};
+          for (final row in flatMaps) {
+            flatMapByPk.putIfAbsent(getPkValue(row), () => row);
+          }
+
+          for (final resultRow in deserialized) {
+            final flatRow = flatMapByPk[getPkValue(resultRow)];
+            if (flatRow != null) {
+              for (final fieldName in sqlQuery.computedFieldNames) {
+                if (flatRow.containsKey(fieldName)) {
+                  resultRow[fieldName] = flatRow[fieldName];
+                }
+              }
+            }
+          }
+        }
+      }
+
+      return deserialized;
+    }
+
+    return flatMaps;
   }
 
   /// Execute a query expecting a single result.
@@ -678,7 +749,14 @@ class TransactionExecutor implements BaseExecutor {
   }
 
   /// Convert SqlResultSet to list of maps.
-  List<Map<String, dynamic>> _resultSetToMaps(SqlResultSet result) {
+  ///
+  /// [preserveAliases] - If true, preserves column aliases as-is without
+  /// camelCase conversion. Used when relations are present and the
+  /// RelationDeserializer needs to match aliases.
+  List<Map<String, dynamic>> _resultSetToMaps(
+    SqlResultSet result, {
+    bool preserveAliases = false,
+  }) {
     if (result.rows.isEmpty) return [];
 
     final maps = <Map<String, dynamic>>[];
@@ -689,15 +767,51 @@ class TransactionExecutor implements BaseExecutor {
       for (var i = 0; i < result.columnNames.length; i++) {
         final columnName = result.columnNames[i];
         final value = i < row.length ? row[i] : null;
-        final camelCaseName = _toCamelCase(columnName);
 
-        map[camelCaseName] = value;
+        // Convert snake_case column names to camelCase (unless preserving aliases)
+        final key = preserveAliases ? columnName : _toCamelCase(columnName);
+
+        map[key] = _deserializeValue(value, result.columnTypes[i]);
       }
 
       maps.add(map);
     }
 
     return maps;
+  }
+
+  /// Deserialize a database value to Dart type.
+  dynamic _deserializeValue(dynamic value, ColumnType type) {
+    if (value == null) return null;
+
+    switch (type) {
+      case ColumnType.dateTime:
+        if (value is String) {
+          return DateTime.parse(value);
+        }
+        if (value is DateTime) {
+          return value;
+        }
+        return value;
+
+      case ColumnType.date:
+        if (value is String) {
+          return DateTime.parse(value);
+        }
+        return value;
+
+      case ColumnType.json:
+        return value;
+
+      case ColumnType.boolean:
+        if (value is int) {
+          return value != 0;
+        }
+        return value;
+
+      default:
+        return value;
+    }
   }
 
   String _toCamelCase(String input) {
