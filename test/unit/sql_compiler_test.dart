@@ -2849,5 +2849,175 @@ void main() {
         expect(result.args, contains('test@example.com'));
       });
     });
+
+    group('Strict Model Validation (v0.3.3)', () {
+      setUp(() {
+        // Clear any state from previous test groups
+        schemaRegistry.clear();
+        SqlCompiler.strictModelValidation = false;
+      });
+
+      tearDown(() {
+        // Reset global flag after each test
+        SqlCompiler.strictModelValidation = false;
+        schemaRegistry.clear();
+      });
+
+      test('PascalCase model passes when strict validation is disabled', () {
+        SqlCompiler.strictModelValidation = false;
+        final compiler = SqlCompiler(provider: 'postgresql');
+
+        final query = JsonQueryBuilder()
+            .model('User')
+            .action(QueryAction.findMany)
+            .build();
+
+        // Should not throw when validation is disabled
+        final result = compiler.compile(query);
+        expect(result.sql, contains('FROM "User"'));
+      });
+
+      test('PascalCase model throws with helpful message when strict validation enabled globally', () {
+        SqlCompiler.strictModelValidation = true;
+        final compiler = SqlCompiler(provider: 'postgresql');
+
+        final query = JsonQueryBuilder()
+            .model('User')
+            .action(QueryAction.findMany)
+            .build();
+
+        expect(
+          () => compiler.compile(query),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => e.message,
+              'message',
+              allOf([
+                contains('Model "User" not found in SchemaRegistry'),
+                contains('registry is empty'),
+                contains('.model(\'user\')'),
+              ]),
+            ),
+          ),
+        );
+      });
+
+      test('PascalCase model throws when strict validation enabled per-instance', () {
+        final compiler = SqlCompiler(
+          provider: 'postgresql',
+          strictModelValidation: true,
+        );
+
+        final query = JsonQueryBuilder()
+            .model('ConsultantProfile')
+            .action(QueryAction.findMany)
+            .build();
+
+        expect(
+          () => compiler.compile(query),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => e.message,
+              'message',
+              allOf([
+                contains('Model "ConsultantProfile" not found'),
+                contains('.model(\'consultant_profile\')'),
+              ]),
+            ),
+          ),
+        );
+      });
+
+      test('lowercase table name passes even with strict validation', () {
+        SqlCompiler.strictModelValidation = true;
+        final compiler = SqlCompiler(provider: 'postgresql');
+
+        final query = JsonQueryBuilder()
+            .model('users')
+            .action(QueryAction.findMany)
+            .build();
+
+        // lowercase names should pass (they're actual table names)
+        final result = compiler.compile(query);
+        expect(result.sql, contains('FROM "users"'));
+      });
+
+      test('registered model passes with strict validation', () {
+        SqlCompiler.strictModelValidation = true;
+
+        // Register a model
+        schemaRegistry.registerModel(ModelSchema(
+          name: 'User',
+          tableName: 'users',
+          fields: {
+            'id': const FieldInfo(name: 'id', columnName: 'id', type: 'String', isId: true),
+          },
+        ));
+
+        final compiler = SqlCompiler(provider: 'postgresql');
+
+        final query = JsonQueryBuilder()
+            .model('User')
+            .action(QueryAction.findMany)
+            .build();
+
+        // Should resolve 'User' to 'users'
+        final result = compiler.compile(query);
+        expect(result.sql, contains('FROM "users"'));
+      });
+
+      test('unregistered model throws helpful error when schema has other models', () {
+        SqlCompiler.strictModelValidation = true;
+
+        // Register some models
+        schemaRegistry.registerModel(ModelSchema(
+          name: 'Post',
+          tableName: 'posts',
+          fields: {
+            'id': const FieldInfo(name: 'id', columnName: 'id', type: 'String', isId: true),
+          },
+        ));
+
+        final compiler = SqlCompiler(provider: 'postgresql');
+
+        final query = JsonQueryBuilder()
+            .model('User')
+            .action(QueryAction.findMany)
+            .build();
+
+        expect(
+          () => compiler.compile(query),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => e.message,
+              'message',
+              allOf([
+                contains('Model "User" is not registered'),
+                contains('Available models: Post'),
+              ]),
+            ),
+          ),
+        );
+      });
+
+      test('instance-level flag overrides global flag', () {
+        SqlCompiler.strictModelValidation = true;
+
+        // Disable at instance level
+        final compiler = SqlCompiler(
+          provider: 'postgresql',
+          strictModelValidation: false,
+        );
+
+        final query = JsonQueryBuilder()
+            .model('User')
+            .action(QueryAction.findMany)
+            .build();
+
+        // Should not throw because instance-level override is false
+        final result = compiler.compile(query);
+        expect(result.sql, contains('FROM "User"'));
+      });
+    });
   });
 }
