@@ -2877,7 +2877,9 @@ void main() {
         expect(result.sql, contains('FROM "User"'));
       });
 
-      test('PascalCase model throws with helpful message when strict validation enabled globally', () {
+      test(
+          'PascalCase model throws with helpful message when strict validation enabled globally',
+          () {
         SqlCompiler.strictModelValidation = true;
         final compiler = SqlCompiler(provider: 'postgresql');
 
@@ -2902,7 +2904,9 @@ void main() {
         );
       });
 
-      test('PascalCase model throws when strict validation enabled per-instance', () {
+      test(
+          'PascalCase model throws when strict validation enabled per-instance',
+          () {
         final compiler = SqlCompiler(
           provider: 'postgresql',
           strictModelValidation: true,
@@ -2946,11 +2950,12 @@ void main() {
         SqlCompiler.strictModelValidation = true;
 
         // Register a model
-        schemaRegistry.registerModel(ModelSchema(
+        schemaRegistry.registerModel(const ModelSchema(
           name: 'User',
           tableName: 'users',
           fields: {
-            'id': const FieldInfo(name: 'id', columnName: 'id', type: 'String', isId: true),
+            'id': FieldInfo(
+                name: 'id', columnName: 'id', type: 'String', isId: true),
           },
         ));
 
@@ -2966,15 +2971,18 @@ void main() {
         expect(result.sql, contains('FROM "users"'));
       });
 
-      test('unregistered model throws helpful error when schema has other models', () {
+      test(
+          'unregistered model throws helpful error when schema has other models',
+          () {
         SqlCompiler.strictModelValidation = true;
 
         // Register some models
-        schemaRegistry.registerModel(ModelSchema(
+        schemaRegistry.registerModel(const ModelSchema(
           name: 'Post',
           tableName: 'posts',
           fields: {
-            'id': const FieldInfo(name: 'id', columnName: 'id', type: 'String', isId: true),
+            'id': FieldInfo(
+                name: 'id', columnName: 'id', type: 'String', isId: true),
           },
         ));
 
