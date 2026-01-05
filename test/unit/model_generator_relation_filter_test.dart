@@ -8,6 +8,10 @@ void main() {
     late PrismaModel userModel;
     late PrismaModel orderModel;
     late PrismaModel productModel;
+    // Cache generated code to avoid repeated generation in tests
+    late String userCode;
+    late String orderCode;
+    late String productCode;
 
     setUp(() {
       // Create a schema with various relation types for testing
@@ -121,12 +125,15 @@ void main() {
       userModel = schema.models.firstWhere((m) => m.name == 'User');
       orderModel = schema.models.firstWhere((m) => m.name == 'Order');
       productModel = schema.models.firstWhere((m) => m.name == 'Product');
+
+      // Generate code once for all tests
+      userCode = generator.generateModel(userModel);
+      orderCode = generator.generateModel(orderModel);
+      productCode = generator.generateModel(productModel);
     });
 
     group('ListRelationFilter generation', () {
       test('generates ListRelationFilter for one-to-many relations', () {
-        final userCode = generator.generateModel(userModel);
-
         // Should generate OrderListRelationFilter for the orders relation
         expect(userCode, contains('OrderListRelationFilter? orders,'));
 
@@ -138,18 +145,12 @@ void main() {
       });
 
       test('generates ListRelationFilter for many-to-many relations', () {
-        final userCode = generator.generateModel(userModel);
-
         // Should generate ProductListRelationFilter for the favoriteProducts relation
         expect(
             userCode, contains('ProductListRelationFilter? favoriteProducts,'));
       });
 
-      test(
-          'ListRelationFilter includes some, every, and none operators',
-          () {
-        final orderCode = generator.generateModel(orderModel);
-
+      test('ListRelationFilter includes some, every, and none operators', () {
         // Order model should have its own ListRelationFilter
         expect(orderCode, contains('class OrderListRelationFilter'));
         expect(orderCode, contains('OrderWhereInput? some,'));
@@ -160,15 +161,11 @@ void main() {
 
     group('RelationFilter generation', () {
       test('generates RelationFilter for many-to-one relations', () {
-        final orderCode = generator.generateModel(orderModel);
-
         // Should generate UserRelationFilter for the user relation
         expect(orderCode, contains('UserRelationFilter? user,'));
       });
 
       test('RelationFilter includes is and isNot operators', () {
-        final userCode = generator.generateModel(userModel);
-
         // User model should have its own RelationFilter
         expect(userCode, contains('class UserRelationFilter'));
         expect(userCode, contains("@JsonKey(name: 'is') UserWhereInput? is_,"));
@@ -178,8 +175,6 @@ void main() {
 
     group('WhereInput with relations', () {
       test('WhereInput includes relation filter fields', () {
-        final userCode = generator.generateModel(userModel);
-
         // WhereInput should include the relation filter fields
         expect(userCode, contains('class UserWhereInput'));
         expect(userCode, contains('/// Filter by orders relation'));
@@ -190,8 +185,6 @@ void main() {
       });
 
       test('WhereInput includes scalar filter fields alongside relations', () {
-        final userCode = generator.generateModel(userModel);
-
         // Should still have scalar filters
         expect(userCode, contains('StringFilter? id,'));
         expect(userCode, contains('StringFilter? email,'));
@@ -199,8 +192,6 @@ void main() {
       });
 
       test('WhereInput includes logical operators', () {
-        final userCode = generator.generateModel(userModel);
-
         expect(userCode, contains('List<UserWhereInput>? AND,'));
         expect(userCode, contains('List<UserWhereInput>? OR,'));
         expect(userCode, contains('UserWhereInput? NOT,'));
@@ -209,22 +200,20 @@ void main() {
 
     group('JSON serialization', () {
       test('ListRelationFilter has fromJson factory', () {
-        final userCode = generator.generateModel(userModel);
-
-        expect(userCode,
-            contains('factory UserListRelationFilter.fromJson(Map<String, dynamic> json)'));
+        expect(
+            userCode,
+            contains(
+                'factory UserListRelationFilter.fromJson(Map<String, dynamic> json)'));
       });
 
       test('RelationFilter has fromJson factory', () {
-        final userCode = generator.generateModel(userModel);
-
-        expect(userCode,
-            contains('factory UserRelationFilter.fromJson(Map<String, dynamic> json)'));
+        expect(
+            userCode,
+            contains(
+                'factory UserRelationFilter.fromJson(Map<String, dynamic> json)'));
       });
 
       test('RelationFilter uses @JsonKey for is_ field', () {
-        final userCode = generator.generateModel(userModel);
-
         // The 'is' keyword needs to be escaped as 'is_' with a JsonKey mapping
         expect(userCode, contains("@JsonKey(name: 'is') UserWhereInput? is_,"));
       });
@@ -234,8 +223,6 @@ void main() {
       test('model without relations still generates filter types', () {
         // Even models without relations should generate their own filter types
         // so other models can reference them
-        final productCode = generator.generateModel(productModel);
-
         expect(productCode, contains('class ProductListRelationFilter'));
         expect(productCode, contains('class ProductRelationFilter'));
       });
@@ -288,8 +275,7 @@ void main() {
 
         // Should handle self-referential relations
         expect(categoryCode, contains('CategoryRelationFilter? parent,'));
-        expect(
-            categoryCode, contains('CategoryListRelationFilter? children,'));
+        expect(categoryCode, contains('CategoryListRelationFilter? children,'));
       });
     });
   });

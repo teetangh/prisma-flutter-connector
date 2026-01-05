@@ -395,10 +395,8 @@ class ModelGenerator {
       // Handle relation fields with relation filters
       if (field.isRelation) {
         final relationType = _getRelationFilterType(field);
-        if (relationType != null) {
-          buffer.writeln('    /// Filter by ${field.name} relation');
-          buffer.writeln('    $relationType? ${field.name},');
-        }
+        buffer.writeln('    /// Filter by ${field.name} relation');
+        buffer.writeln('    $relationType? ${field.name},');
         continue;
       }
 
@@ -503,9 +501,9 @@ class ModelGenerator {
   ///
   /// List relations (1-to-many, M-to-M) use ListRelationFilter with some/every/none
   /// Single relations (1-to-1, M-to-1) use RelationFilter with is/isNot
-  String? _getRelationFilterType(PrismaField field) {
-    if (!field.isRelation) return null;
-
+  ///
+  /// Note: This method assumes the field is already verified as a relation.
+  String _getRelationFilterType(PrismaField field) {
     final targetModel = field.type;
 
     // List relations use ListRelationFilter
