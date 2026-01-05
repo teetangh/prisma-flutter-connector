@@ -140,6 +140,9 @@ class ModelGenerator {
     buffer.write(_generateWhereUniqueInput(model));
     buffer.write(_generateWhereInput(model));
 
+    // Relation filter types for this model
+    buffer.write(_generateRelationFiltersForModel(model));
+
     // OrderBy input
     buffer.write(_generateOrderByInput(model));
 
@@ -389,8 +392,15 @@ class ModelGenerator {
 
     // Add field filters (using field-level filter types)
     for (final field in model.fields) {
-      // Skip relations for now
-      if (field.isRelation) continue;
+      // Handle relation fields with relation filters
+      if (field.isRelation) {
+        final relationType = _getRelationFilterType(field);
+        if (relationType != null) {
+          buffer.writeln('    /// Filter by ${field.name} relation');
+          buffer.writeln('    $relationType? ${field.name},');
+        }
+        continue;
+      }
 
       final filterType = _getFilterTypeForField(field);
       if (filterType != null) {
@@ -487,6 +497,74 @@ class ModelGenerator {
         // Unknown type (model types, etc.), skip filter
         return null;
     }
+  }
+
+  /// Get the relation filter type for a relation field
+  ///
+  /// List relations (1-to-many, M-to-M) use ListRelationFilter with some/every/none
+  /// Single relations (1-to-1, M-to-1) use RelationFilter with is/isNot
+  String? _getRelationFilterType(PrismaField field) {
+    if (!field.isRelation) return null;
+
+    final targetModel = field.type;
+
+    // List relations use ListRelationFilter
+    if (field.isList) {
+      return '${targetModel}ListRelationFilter';
+    }
+
+    // Single relations use RelationFilter
+    return '${targetModel}RelationFilter';
+  }
+
+  /// Generate relation filter types for a model
+  ///
+  /// Creates ListRelationFilter (for 1-to-many and M-to-M relations)
+  /// and RelationFilter (for 1-to-1 and M-to-1 relations) for this model.
+  String _generateRelationFiltersForModel(PrismaModel model) {
+    final buffer = StringBuffer();
+
+    // ListRelationFilter for 1-to-many and M-to-M relations
+    buffer.writeln(
+        '/// Filter for ${model.name} list relations (one-to-many, many-to-many)');
+    buffer.writeln('@freezed');
+    buffer.writeln(
+        'class ${model.name}ListRelationFilter with _\$${model.name}ListRelationFilter {');
+    buffer.writeln('  const factory ${model.name}ListRelationFilter({');
+    buffer.writeln('    /// At least one related record matches');
+    buffer.writeln('    ${model.name}WhereInput? some,');
+    buffer.writeln('    /// All related records match');
+    buffer.writeln('    ${model.name}WhereInput? every,');
+    buffer.writeln('    /// No related records match');
+    buffer.writeln('    ${model.name}WhereInput? none,');
+    buffer.writeln('  }) = _${model.name}ListRelationFilter;');
+    buffer.writeln();
+    buffer.writeln(
+        '  factory ${model.name}ListRelationFilter.fromJson(Map<String, dynamic> json) =>');
+    buffer.writeln('      _\$${model.name}ListRelationFilterFromJson(json);');
+    buffer.writeln('}');
+    buffer.writeln();
+
+    // RelationFilter for 1-to-1 and M-to-1 relations
+    buffer.writeln(
+        '/// Filter for ${model.name} single relations (one-to-one, many-to-one)');
+    buffer.writeln('@freezed');
+    buffer.writeln(
+        'class ${model.name}RelationFilter with _\$${model.name}RelationFilter {');
+    buffer.writeln('  const factory ${model.name}RelationFilter({');
+    buffer.writeln('    /// Related record matches');
+    buffer.writeln("    @JsonKey(name: 'is') ${model.name}WhereInput? is_,");
+    buffer.writeln('    /// Related record does not match');
+    buffer.writeln('    ${model.name}WhereInput? isNot,');
+    buffer.writeln('  }) = _${model.name}RelationFilter;');
+    buffer.writeln();
+    buffer.writeln(
+        '  factory ${model.name}RelationFilter.fromJson(Map<String, dynamic> json) =>');
+    buffer.writeln('      _\$${model.name}RelationFilterFromJson(json);');
+    buffer.writeln('}');
+    buffer.writeln();
+
+    return buffer.toString();
   }
 
   /// Generate enum class
