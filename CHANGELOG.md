@@ -4,6 +4,40 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-01-07
+
+### Added
+
+#### Relation Filter Support in WhereInput Classes
+- **Added support for filtering on relation fields in generated WhereInput classes**
+  - Previously, all relation fields were skipped during generation, preventing queries like `FilterOperators.some()` from working on M2M relations
+  - Now generates `ListRelationFilter` (some/every/none) for list relations and `RelationFilter` (is/isNot) for single relations
+
+- **New generated filter types:**
+  - `{Model}ListRelationFilter` - For filtering on list/many relations with `some`, `every`, `none` operators
+  - `{Model}RelationFilter` - For filtering on single/one relations with `is`, `isNot` operators
+
+#### Example Usage
+
+```dart
+// Filter appointments where at least one user has a specific email
+final query = JsonQueryBuilder()
+    .model('SlotOfAppointment')
+    .action(QueryAction.findMany)
+    .where({
+      'user': {
+        'some': {
+          'email': {'contains': '@example.com'}
+        }
+      }
+    })
+    .build();
+```
+
+### Tests
+- Added 13 comprehensive unit tests for relation filter generation
+- All existing unit tests pass (no regressions)
+
 ## [0.3.4] - 2025-12-30
 
 ### Fixed
