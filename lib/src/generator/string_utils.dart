@@ -1,14 +1,18 @@
 /// Shared string utilities for code generators
 library;
 
+/// Cached regex patterns for better performance in code generation.
+final _upperCasePattern = RegExp(r'[A-Z]');
+final _leadingUnderscorePattern = RegExp(r'^_');
+
 /// Convert PascalCase to snake_case
 String toSnakeCase(String input) {
   return input
       .replaceAllMapped(
-        RegExp(r'[A-Z]'),
+        _upperCasePattern,
         (match) => '_${match.group(0)!.toLowerCase()}',
       )
-      .replaceFirst(RegExp(r'^_'), ''); // Remove leading underscore safely
+      .replaceFirst(_leadingUnderscorePattern, '');
 }
 
 /// Convert SCREAMING_CASE to camelCase

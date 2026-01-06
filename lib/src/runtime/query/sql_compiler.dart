@@ -12,6 +12,9 @@ import 'package:prisma_flutter_connector/src/runtime/query/json_protocol.dart';
 import 'package:prisma_flutter_connector/src/runtime/query/relation_compiler.dart';
 import 'package:prisma_flutter_connector/src/runtime/schema/schema_registry.dart';
 
+/// Cached regex pattern for ISO 8601 year validation.
+final _yearPattern = RegExp(r'^\d{4}-');
+
 /// Compiles JSON queries to SQL.
 class SqlCompiler {
   final String provider;
@@ -2443,8 +2446,7 @@ WHERE $joinTable.$joinColumn = $parentRef.$pkCol''';
     if (!value.contains('-')) return false;
 
     // Must start with 4 digits (year) followed by a dash
-    final yearPattern = RegExp(r'^\d{4}-');
-    if (!yearPattern.hasMatch(value)) return false;
+    if (!_yearPattern.hasMatch(value)) return false;
 
     try {
       final parsed = DateTime.parse(value);

@@ -16,6 +16,94 @@ import 'package:prisma_flutter_connector/src/runtime/query/relation_compiler.dar
 import 'package:prisma_flutter_connector/src/runtime/query/sql_compiler.dart';
 import 'package:prisma_flutter_connector/src/runtime/schema/schema_registry.dart';
 
+/// Mixin providing common result set conversion utilities.
+///
+/// This mixin extracts shared logic used by both [QueryExecutor] and
+/// [TransactionExecutor] to convert database results to Dart types.
+mixin ResultSetConverter {
+  /// Convert SqlResultSet to list of maps.
+  ///
+  /// [preserveAliases] - If true, preserves column aliases as-is without
+  /// camelCase conversion. Used when relations are present and the
+  /// RelationDeserializer needs to match aliases.
+  List<Map<String, dynamic>> resultSetToMaps(
+    SqlResultSet result, {
+    bool preserveAliases = false,
+  }) {
+    if (result.rows.isEmpty) return [];
+
+    final maps = <Map<String, dynamic>>[];
+
+    for (final row in result.rows) {
+      final map = <String, dynamic>{};
+
+      for (var i = 0; i < result.columnNames.length; i++) {
+        final columnName = result.columnNames[i];
+        final value = i < row.length ? row[i] : null;
+
+        // Convert snake_case column names to camelCase (unless preserving aliases)
+        final key = preserveAliases ? columnName : snakeToCamelCase(columnName);
+
+        map[key] = deserializeValue(value, result.columnTypes[i]);
+      }
+
+      maps.add(map);
+    }
+
+    return maps;
+  }
+
+  /// Deserialize a database value to Dart type.
+  dynamic deserializeValue(dynamic value, ColumnType type) {
+    if (value == null) return null;
+
+    switch (type) {
+      case ColumnType.dateTime:
+        if (value is String) {
+          return DateTime.parse(value);
+        }
+        if (value is DateTime) {
+          return value;
+        }
+        return value;
+
+      case ColumnType.date:
+        if (value is String) {
+          return DateTime.parse(value);
+        }
+        return value;
+
+      case ColumnType.json:
+        // JSON values are typically returned as strings that need parsing
+        // or as already-parsed objects depending on the driver
+        return value;
+
+      case ColumnType.boolean:
+        if (value is int) {
+          return value != 0;
+        }
+        return value;
+
+      default:
+        return value;
+    }
+  }
+
+  /// Convert snake_case to camelCase.
+  String snakeToCamelCase(String input) {
+    if (!input.contains('_')) return input;
+
+    final parts = input.split('_');
+    if (parts.isEmpty) return input;
+
+    return parts.first +
+        parts
+            .skip(1)
+            .map((p) => p.isEmpty ? '' : p[0].toUpperCase() + p.substring(1))
+            .join();
+  }
+}
+
 /// Abstract base class for query execution.
 ///
 /// This interface is implemented by both [QueryExecutor] (for normal operations)
@@ -39,7 +127,7 @@ abstract class BaseExecutor {
 }
 
 /// Executes Prisma queries against a database adapter.
-class QueryExecutor implements BaseExecutor {
+class QueryExecutor with ResultSetConverter implements BaseExecutor {
   @override
   final SqlDriverAdapter adapter;
   final SqlCompiler compiler;
@@ -103,7 +191,7 @@ class QueryExecutor implements BaseExecutor {
       execute: () => adapter.queryRaw(sqlQuery),
     );
 
-    return _resultSetToMaps(result);
+    return resultSetToMaps(result);
   }
 
   /// Execute raw SQL mutation (INSERT/UPDATE/DELETE) and return affected rows.
@@ -339,7 +427,7 @@ class QueryExecutor implements BaseExecutor {
 
     // Return the created/updated record
     if (result.rows.isNotEmpty) {
-      return _resultSetToMaps(result).first;
+      return resultSetToMaps(result).first;
     }
     return null;
   }
@@ -383,7 +471,7 @@ class QueryExecutor implements BaseExecutor {
 
       // Return the created/updated record
       if (result.rows.isNotEmpty) {
-        return _resultSetToMaps(result).first;
+        return resultSetToMaps(result).first;
       }
       return null;
     }, isolationLevel: isolationLevel);
@@ -413,7 +501,7 @@ class QueryExecutor implements BaseExecutor {
 
     // Convert to maps - preserve aliases when relations are present so
     // the RelationDeserializer can match column aliases like "user__name"
-    final flatMaps = _resultSetToMaps(result, preserveAliases: hasRelations);
+    final flatMaps = resultSetToMaps(result, preserveAliases: hasRelations);
 
     if (hasRelations) {
       final compiledRelations = sqlQuery.relationMetadata as CompiledRelations;
@@ -528,88 +616,6 @@ class QueryExecutor implements BaseExecutor {
     }
   }
 
-  /// Convert SqlResultSet to list of maps.
-  ///
-  /// [preserveAliases] - If true, preserves column aliases as-is without
-  /// camelCase conversion. Used when relations are present and the
-  /// RelationDeserializer needs to match aliases.
-  List<Map<String, dynamic>> _resultSetToMaps(
-    SqlResultSet result, {
-    bool preserveAliases = false,
-  }) {
-    if (result.rows.isEmpty) return [];
-
-    final maps = <Map<String, dynamic>>[];
-
-    for (final row in result.rows) {
-      final map = <String, dynamic>{};
-
-      for (var i = 0; i < result.columnNames.length; i++) {
-        final columnName = result.columnNames[i];
-        final value = i < row.length ? row[i] : null;
-
-        // Convert snake_case column names to camelCase (unless preserving aliases)
-        final key = preserveAliases ? columnName : _toCamelCase(columnName);
-
-        map[key] = _deserializeValue(value, result.columnTypes[i]);
-      }
-
-      maps.add(map);
-    }
-
-    return maps;
-  }
-
-  /// Deserialize a database value to Dart type.
-  dynamic _deserializeValue(dynamic value, ColumnType type) {
-    if (value == null) return null;
-
-    switch (type) {
-      case ColumnType.dateTime:
-        if (value is String) {
-          return DateTime.parse(value);
-        }
-        if (value is DateTime) {
-          return value;
-        }
-        return value;
-
-      case ColumnType.date:
-        if (value is String) {
-          return DateTime.parse(value);
-        }
-        return value;
-
-      case ColumnType.json:
-        // JSON values are typically returned as strings that need parsing
-        // or as already-parsed objects depending on the driver
-        return value;
-
-      case ColumnType.boolean:
-        if (value is int) {
-          return value != 0;
-        }
-        return value;
-
-      default:
-        return value;
-    }
-  }
-
-  /// Convert snake_case to camelCase.
-  String _toCamelCase(String input) {
-    if (!input.contains('_')) return input;
-
-    final parts = input.split('_');
-    if (parts.isEmpty) return input;
-
-    return parts.first +
-        parts
-            .skip(1)
-            .map((p) => p.isEmpty ? '' : p[0].toUpperCase() + p.substring(1))
-            .join();
-  }
-
   /// Close the adapter connection.
   Future<void> dispose() async {
     await adapter.dispose();
@@ -617,7 +623,7 @@ class QueryExecutor implements BaseExecutor {
 }
 
 /// Query executor for use within transactions.
-class TransactionExecutor implements BaseExecutor {
+class TransactionExecutor with ResultSetConverter implements BaseExecutor {
   final Transaction transaction;
   final SqlCompiler compiler;
   final SqlDriverAdapter _adapter;
@@ -674,7 +680,7 @@ class TransactionExecutor implements BaseExecutor {
 
     // Convert to maps - preserve aliases when relations are present so
     // the RelationDeserializer can match column aliases like "user__name"
-    final flatMaps = _resultSetToMaps(result, preserveAliases: hasRelations);
+    final flatMaps = resultSetToMaps(result, preserveAliases: hasRelations);
 
     if (hasRelations) {
       final compiledRelations = sqlQuery.relationMetadata as CompiledRelations;
@@ -746,84 +752,5 @@ class TransactionExecutor implements BaseExecutor {
     if (count is String) return int.parse(count);
 
     return 0;
-  }
-
-  /// Convert SqlResultSet to list of maps.
-  ///
-  /// [preserveAliases] - If true, preserves column aliases as-is without
-  /// camelCase conversion. Used when relations are present and the
-  /// RelationDeserializer needs to match aliases.
-  List<Map<String, dynamic>> _resultSetToMaps(
-    SqlResultSet result, {
-    bool preserveAliases = false,
-  }) {
-    if (result.rows.isEmpty) return [];
-
-    final maps = <Map<String, dynamic>>[];
-
-    for (final row in result.rows) {
-      final map = <String, dynamic>{};
-
-      for (var i = 0; i < result.columnNames.length; i++) {
-        final columnName = result.columnNames[i];
-        final value = i < row.length ? row[i] : null;
-
-        // Convert snake_case column names to camelCase (unless preserving aliases)
-        final key = preserveAliases ? columnName : _toCamelCase(columnName);
-
-        map[key] = _deserializeValue(value, result.columnTypes[i]);
-      }
-
-      maps.add(map);
-    }
-
-    return maps;
-  }
-
-  /// Deserialize a database value to Dart type.
-  dynamic _deserializeValue(dynamic value, ColumnType type) {
-    if (value == null) return null;
-
-    switch (type) {
-      case ColumnType.dateTime:
-        if (value is String) {
-          return DateTime.parse(value);
-        }
-        if (value is DateTime) {
-          return value;
-        }
-        return value;
-
-      case ColumnType.date:
-        if (value is String) {
-          return DateTime.parse(value);
-        }
-        return value;
-
-      case ColumnType.json:
-        return value;
-
-      case ColumnType.boolean:
-        if (value is int) {
-          return value != 0;
-        }
-        return value;
-
-      default:
-        return value;
-    }
-  }
-
-  String _toCamelCase(String input) {
-    if (!input.contains('_')) return input;
-
-    final parts = input.split('_');
-    if (parts.isEmpty) return input;
-
-    return parts.first +
-        parts
-            .skip(1)
-            .map((p) => p.isEmpty ? '' : p[0].toUpperCase() + p.substring(1))
-            .join();
   }
 }
