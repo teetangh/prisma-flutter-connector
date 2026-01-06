@@ -62,9 +62,6 @@ mixin ResultSetConverter {
         if (value is String) {
           return DateTime.parse(value);
         }
-        if (value is DateTime) {
-          return value;
-        }
         return value;
 
       case ColumnType.date:
@@ -94,7 +91,6 @@ mixin ResultSetConverter {
     if (!input.contains('_')) return input;
 
     final parts = input.split('_');
-    if (parts.isEmpty) return input;
 
     return parts.first +
         parts
