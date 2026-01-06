@@ -10,6 +10,7 @@ analyzer:
     - "**/*.data.gql.dart"
     - "prisma-submodule/**"
     - "examples/**/generated/**"
+    - "tmp/**"
   errors:
     invalid_annotation_target: ignore
     avoid_print: ignore  # Allow print in CLI tools

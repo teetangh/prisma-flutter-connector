@@ -15,7 +15,7 @@ void main() {
 
     setUp(() {
       // Create a schema with various relation types for testing
-      final schema = PrismaSchema(
+      const schema = PrismaSchema(
         models: [
           // User model with one-to-many relation to Order
           PrismaModel(
@@ -121,7 +121,7 @@ void main() {
         datasourceProvider: 'postgresql',
       );
 
-      generator = ModelGenerator(schema);
+      generator = const ModelGenerator(schema);
       userModel = schema.models.firstWhere((m) => m.name == 'User');
       orderModel = schema.models.firstWhere((m) => m.name == 'Order');
       productModel = schema.models.firstWhere((m) => m.name == 'Product');
@@ -229,7 +229,7 @@ void main() {
 
       test('self-referential relations work correctly', () {
         // Create a model with self-referential relation
-        final selfRefSchema = PrismaSchema(
+        const selfRefSchema = PrismaSchema(
           models: [
             PrismaModel(
               name: 'Category',
@@ -269,7 +269,7 @@ void main() {
           datasourceProvider: 'postgresql',
         );
 
-        final selfRefGenerator = ModelGenerator(selfRefSchema);
+        const selfRefGenerator = ModelGenerator(selfRefSchema);
         final categoryModel = selfRefSchema.models.first;
         final categoryCode = selfRefGenerator.generateModel(categoryModel);
 
