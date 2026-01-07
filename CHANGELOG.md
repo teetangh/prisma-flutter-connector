@@ -4,6 +4,18 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-01-07
+
+### Changed
+
+#### Runtime Refactoring
+- **Extracted shared `ResultSetConverter` mixin** for `QueryExecutor` and `TransactionExecutor`
+  - `resultSetToMaps()` - Convert database results to maps
+  - `deserializeValue()` - Convert database values to Dart types
+  - `snakeToCamelCase()` - Column name conversion
+- **Cached regex patterns** for improved performance in `string_utils.dart` and `sql_compiler.dart`
+- Reduced code duplication by ~71 lines with no functional changes
+
 ## [0.3.5] - 2026-01-07
 
 ### Added
