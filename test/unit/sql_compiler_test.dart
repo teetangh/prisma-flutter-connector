@@ -2,6 +2,7 @@ import 'package:test/test.dart';
 import 'package:prisma_flutter_connector/src/runtime/query/sql_compiler.dart';
 import 'package:prisma_flutter_connector/src/runtime/query/json_protocol.dart';
 import 'package:prisma_flutter_connector/src/runtime/query/computed_field.dart';
+import 'package:prisma_flutter_connector/src/runtime/query/relation_compiler.dart';
 import 'package:prisma_flutter_connector/src/runtime/adapters/types.dart';
 import 'package:prisma_flutter_connector/src/runtime/schema/schema_registry.dart';
 
@@ -1944,6 +1945,168 @@ void main() {
 
         // Should not throw "missing FROM-clause entry for table t2"
         // by having columns from t2 without the JOIN
+      });
+
+      test(
+          'nested include deserializes to correct nested structure (v0.3.8 fix)',
+          () {
+        // Set up a schema with three levels: ConsultationPlan -> ConsultantProfile -> User
+        final nestedSchema = SchemaRegistry();
+
+        // ConsultationPlan (base)
+        nestedSchema.registerModel(ModelSchema(
+          name: 'ConsultationPlan',
+          tableName: 'ConsultationPlan',
+          fields: {
+            'id': const FieldInfo(
+              name: 'id',
+              columnName: 'id',
+              type: 'String',
+              isId: true,
+            ),
+            'price': const FieldInfo(
+              name: 'price',
+              columnName: 'price',
+              type: 'double',
+            ),
+            'consultantProfileId': const FieldInfo(
+              name: 'consultantProfileId',
+              columnName: 'consultantProfileId',
+              type: 'String',
+            ),
+          },
+          relations: {
+            'consultantProfile': RelationInfo.manyToOne(
+              name: 'consultantProfile',
+              targetModel: 'ConsultantProfile',
+              foreignKey: 'consultantProfileId',
+            ),
+          },
+        ));
+
+        // ConsultantProfile (middle)
+        nestedSchema.registerModel(ModelSchema(
+          name: 'ConsultantProfile',
+          tableName: 'ConsultantProfile',
+          fields: {
+            'id': const FieldInfo(
+              name: 'id',
+              columnName: 'id',
+              type: 'String',
+              isId: true,
+            ),
+            'headline': const FieldInfo(
+              name: 'headline',
+              columnName: 'headline',
+              type: 'String',
+            ),
+            'userId': const FieldInfo(
+              name: 'userId',
+              columnName: 'userId',
+              type: 'String',
+            ),
+          },
+          relations: {
+            'user': RelationInfo.manyToOne(
+              name: 'user',
+              targetModel: 'User',
+              foreignKey: 'userId',
+            ),
+          },
+        ));
+
+        // User (deepest)
+        nestedSchema.registerModel(const ModelSchema(
+          name: 'User',
+          tableName: 'users',
+          fields: {
+            'id': FieldInfo(
+              name: 'id',
+              columnName: 'id',
+              type: 'String',
+              isId: true,
+            ),
+            'name': FieldInfo(
+              name: 'name',
+              columnName: 'name',
+              type: 'String',
+            ),
+            'email': FieldInfo(
+              name: 'email',
+              columnName: 'email',
+              type: 'String',
+            ),
+          },
+        ));
+
+        // Create relation compiler
+        final relationCompiler = RelationCompiler(
+          schema: nestedSchema,
+          provider: 'postgresql',
+        );
+
+        // Compile the nested include
+        final compiled = relationCompiler.compile(
+          baseModel: 'ConsultationPlan',
+          baseAlias: 't0',
+          include: {
+            'consultantProfile': {
+              'include': {'user': true}
+            }
+          },
+        );
+
+        // Create mock flat rows (as they would come from JOIN query)
+        final flatRows = [
+          {
+            'id': 'plan-123',
+            'price': 5000.0,
+            'consultantProfileId': 'cp-1',
+            'consultantProfile__id': 'cp-1',
+            'consultantProfile__headline': 'Senior Developer',
+            'consultantProfile__userId': 'u-1',
+            'consultantProfile.user__id': 'u-1',
+            'consultantProfile.user__name': 'John Doe',
+            'consultantProfile.user__email': 'john@example.com',
+          },
+        ];
+
+        // Deserialize using RelationDeserializer
+        final deserializer = RelationDeserializer(schema: nestedSchema);
+        final results = deserializer.deserialize(
+          rows: flatRows,
+          baseModel: 'ConsultationPlan',
+          columnAliases: compiled.columnAliases,
+          includedRelations: compiled.includedRelations,
+        );
+
+        expect(results, hasLength(1));
+        final result = results.first;
+
+        // Check base fields
+        expect(result['id'], equals('plan-123'));
+        expect(result['price'], equals(5000.0));
+
+        // Check first-level relation: should be 'consultantProfile', not path-like key
+        expect(result.containsKey('consultantProfile'), isTrue,
+            reason: 'First-level relation should use field name as key');
+        final profile = result['consultantProfile'] as Map<String, dynamic>?;
+        expect(profile, isNotNull);
+        expect(profile!['id'], equals('cp-1'));
+        expect(profile['headline'], equals('Senior Developer'));
+
+        // Check nested relation: should be 'user', not 'consultantProfile.user'
+        expect(profile.containsKey('user'), isTrue,
+            reason:
+                'Nested relation should use field name (user), not full path (consultantProfile.user)');
+        expect(profile.containsKey('consultantProfile.user'), isFalse,
+            reason: 'Should NOT use dot-separated path as key');
+
+        final user = profile['user'] as Map<String, dynamic>?;
+        expect(user, isNotNull);
+        expect(user!['id'], equals('u-1'));
+        expect(user['name'], equals('John Doe'));
+        expect(user['email'], equals('john@example.com'));
       });
     });
 
