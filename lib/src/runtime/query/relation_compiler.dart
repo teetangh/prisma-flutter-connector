@@ -65,8 +65,13 @@ class ColumnAlias {
 
 /// Information about an included relation.
 class IncludedRelation {
-  /// The relation field name (e.g., 'posts').
+  /// The relation path name used for column prefix matching (e.g., 'posts' or 'posts.author').
   final String name;
+
+  /// The immediate field name for object key assignment (e.g., 'posts' or 'author').
+  /// For top-level relations, this equals [name]. For nested relations, this is just
+  /// the last segment (e.g., 'author' instead of 'posts.author').
+  final String fieldName;
 
   /// The relation info from schema.
   final RelationInfo relation;
@@ -82,6 +87,7 @@ class IncludedRelation {
 
   const IncludedRelation({
     required this.name,
+    required this.fieldName,
     required this.relation,
     required this.tableAlias,
     required this.parentAlias,
@@ -176,6 +182,7 @@ class RelationCompiler {
       final result = _compileRelation(
         relation: relation,
         relationName: relationName,
+        fieldName: relationName,
         parentModel: baseModel,
         parentAlias: baseAlias,
         includeValue: relationValue,
@@ -212,6 +219,7 @@ class RelationCompiler {
   _RelationCompileResult? _compileRelation({
     required RelationInfo relation,
     required String relationName,
+    required String fieldName,
     required String parentModel,
     required String parentAlias,
     required dynamic includeValue,
@@ -289,6 +297,7 @@ class RelationCompiler {
             final nestedResult = _compileRelation(
               relation: nestedRelation,
               relationName: '$relationName.${nested.key}',
+              fieldName: nested.key,
               parentModel: relation.targetModel,
               parentAlias: tableAlias,
               includeValue: nested.value,
@@ -313,6 +322,7 @@ class RelationCompiler {
       joinClause: combinedJoinClause,
       includedRelation: IncludedRelation(
         name: relationName,
+        fieldName: fieldName,
         relation: relation,
         tableAlias: tableAlias,
         parentAlias: parentAlias,
@@ -523,7 +533,7 @@ class RelationDeserializer {
 
       // Add relations
       for (final relation in includedRelations) {
-        baseRow[relation.name] = _extractRelation(
+        baseRow[relation.fieldName] = _extractRelation(
           rows: rowGroup,
           relation: relation,
           columnAliases: columnAliases,
@@ -583,7 +593,7 @@ class RelationDeserializer {
 
       // Handle nested relations
       for (final nested in relation.nestedIncludes) {
-        obj[nested.name] = _extractRelation(
+        obj[nested.fieldName] = _extractRelation(
           rows: rows,
           relation: nested,
           columnAliases: columnAliases,
@@ -624,7 +634,7 @@ class RelationDeserializer {
 
         // Handle nested relations
         for (final nested in relation.nestedIncludes) {
-          obj[nested.name] = _extractRelation(
+          obj[nested.fieldName] = _extractRelation(
             rows: rows.where((r) => r[pkAlias] == pk).toList(),
             relation: nested,
             columnAliases: columnAliases,

@@ -4,6 +4,61 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.3.8] - 2026-01-10
+
+### Fixed
+
+#### Nested Include Deserialization Bug
+- **Fixed nested includes returning data under incorrect object keys**
+  - When using nested includes like `{'consultantProfile': {'include': {'user': true}}}`, the nested relation data was stored under the full path key (e.g., `'consultantProfile.user'`) instead of the immediate field name (`'user'`)
+  - Root cause: `IncludedRelation.name` stored the full dot-separated path, which was then used as the object key during deserialization
+  - Fix: Added `fieldName` field to `IncludedRelation` to store the immediate relation name separately from the full path (used for column prefix matching)
+
+#### Impact
+- Nested includes now correctly produce nested object structures
+- Application code can access nested relations using expected field names
+
+#### Example
+
+```dart
+// Query with nested include:
+final query = JsonQueryBuilder()
+    .model('ConsultationPlan')
+    .action(QueryAction.findUnique)
+    .where({'id': 'plan-123'})
+    .include({
+      'consultantProfile': {
+        'include': {'user': true}
+      }
+    })
+    .build();
+
+// Before fix (broken):
+{
+  'id': 'plan-123',
+  'consultantProfile': {'id': 'cp-1', 'headline': '...'},
+  'consultantProfile.user': {'id': 'u-1', 'name': 'John'}  // WRONG: flat key
+}
+
+// After fix (correct):
+{
+  'id': 'plan-123',
+  'consultantProfile': {
+    'id': 'cp-1',
+    'headline': '...',
+    'user': {'id': 'u-1', 'name': 'John'}  // CORRECT: properly nested
+  }
+}
+```
+
+### Changed
+- Added `fieldName` field to `IncludedRelation` class
+- Updated `_compileRelation()` to set `fieldName` for both top-level and nested relations
+- Updated `RelationDeserializer._extractRelation()` to use `fieldName` for object keys
+
+### Tests
+- Added comprehensive deserialization test for nested includes
+
 ## [0.3.7] - 2026-01-10
 
 ### Fixed
