@@ -1237,6 +1237,114 @@ void main() {
         expect(result.sql, contains('EXISTS'));
         expect(result.sql, contains('SELECT 1 FROM "Review"'));
       });
+
+      test('generates correct SQL for nested relation filters (v0.4.0 fix)',
+          () {
+        // Bug fix: nested relation filters need table aliases to work correctly.
+        // Without aliases, SQL like: sub_reviews."authorId" fails because sub_reviews
+        // is not defined in the FROM clause.
+
+        // Create a schema with nested relations: Product -> Review -> User
+        final nestedSchema = SchemaRegistry();
+
+        nestedSchema.registerModel(ModelSchema(
+          name: 'Product',
+          tableName: 'Product',
+          fields: {
+            'id': const FieldInfo(
+              name: 'id',
+              columnName: 'id',
+              type: 'String',
+              isId: true,
+            ),
+          },
+          relations: {
+            'reviews': RelationInfo.oneToMany(
+              name: 'reviews',
+              targetModel: 'Review',
+              foreignKey: 'productId',
+            ),
+          },
+        ));
+
+        nestedSchema.registerModel(ModelSchema(
+          name: 'Review',
+          tableName: 'Review',
+          fields: {
+            'id': const FieldInfo(
+              name: 'id',
+              columnName: 'id',
+              type: 'String',
+              isId: true,
+            ),
+            'productId': const FieldInfo(
+              name: 'productId',
+              columnName: 'productId',
+              type: 'String',
+            ),
+            'authorId': const FieldInfo(
+              name: 'authorId',
+              columnName: 'authorId',
+              type: 'String',
+            ),
+          },
+          relations: {
+            'author': RelationInfo.manyToOne(
+              name: 'author',
+              targetModel: 'User',
+              foreignKey: 'authorId',
+            ),
+          },
+        ));
+
+        nestedSchema.registerModel(const ModelSchema(
+          name: 'User',
+          tableName: 'users',
+          fields: {
+            'id': FieldInfo(
+              name: 'id',
+              columnName: 'id',
+              type: 'String',
+              isId: true,
+            ),
+            'name': FieldInfo(
+              name: 'name',
+              columnName: 'name',
+              type: 'String',
+            ),
+          },
+        ));
+
+        final nestedCompiler = SqlCompiler(
+          provider: 'postgresql',
+          schema: nestedSchema,
+        );
+
+        // Nested filter: Product -> reviews.some -> author.some -> id equals
+        final query = JsonQueryBuilder()
+            .model('Product')
+            .action(QueryAction.findMany)
+            .where({
+          'reviews': FilterOperators.some({
+            'author': FilterOperators.some({
+              'id': 'user-123',
+            }),
+          }),
+        }).build();
+
+        final result = nestedCompiler.compile(query);
+
+        // The SQL should define aliases for nested tables
+        // Without fix: "sub_reviews" is referenced but never defined → SQL error
+        // With fix: "Review" AS sub_reviews is in the FROM clause
+        expect(result.sql, contains('AS sub_reviews'));
+
+        // The nested EXISTS for author should also have proper alias
+        expect(result.sql, contains('AS sub_author'));
+
+        // Args should contain the user id
+        expect(result.args, contains('user-123'));
+      });
     });
 
     group('selectFields (v0.2.5)', () {

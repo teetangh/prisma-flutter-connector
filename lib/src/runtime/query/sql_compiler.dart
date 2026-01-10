@@ -2037,15 +2037,19 @@ RETURNING *
     paramIndex += subVals.length;
 
     // Build the EXISTS clause based on relation type
+    // The targetAlias must match the parentAlias passed to _buildWhereClause above
+    // so that nested relation filters can reference this table by alias.
+    final targetAlias = 'sub_$relationName';
     String existsClause;
 
     switch (relation.type) {
       case RelationType.oneToMany:
         // Parent has many targets. FK is on target table.
-        // EXISTS (SELECT 1 FROM Target WHERE Target.fk = Parent.id AND ...)
+        // EXISTS (SELECT 1 FROM Target AS sub_X WHERE sub_X.fk = Parent.id AND ...)
         existsClause = _buildOneToManyExistsClause(
           operator: operator,
           targetTable: targetTable,
+          targetAlias: targetAlias,
           targetFk: relation.foreignKey,
           parentRef: parentRef,
           parentPk: relation.references.first,
@@ -2054,10 +2058,11 @@ RETURNING *
 
       case RelationType.manyToOne:
         // Parent belongs to target. FK is on parent table.
-        // EXISTS (SELECT 1 FROM Target WHERE Target.id = Parent.fk AND ...)
+        // EXISTS (SELECT 1 FROM Target AS sub_X WHERE sub_X.id = Parent.fk AND ...)
         existsClause = _buildManyToOneExistsClause(
           operator: operator,
           targetTable: targetTable,
+          targetAlias: targetAlias,
           targetPk: relation.references.first,
           parentRef: parentRef,
           parentFk: relation.foreignKey,
@@ -2071,6 +2076,7 @@ RETURNING *
           existsClause = _buildManyToOneExistsClause(
             operator: operator,
             targetTable: targetTable,
+            targetAlias: targetAlias,
             targetPk: relation.references.first,
             parentRef: parentRef,
             parentFk: relation.foreignKey,
@@ -2081,6 +2087,7 @@ RETURNING *
           existsClause = _buildOneToManyExistsClause(
             operator: operator,
             targetTable: targetTable,
+            targetAlias: targetAlias,
             targetFk: relation.foreignKey,
             parentRef: parentRef,
             parentPk: relation.references.first,
@@ -2090,10 +2097,11 @@ RETURNING *
 
       case RelationType.manyToMany:
         // Uses a join table.
-        // EXISTS (SELECT 1 FROM JoinTable JOIN Target ON ... WHERE ...)
+        // EXISTS (SELECT 1 FROM JoinTable JOIN Target AS sub_X ON ... WHERE ...)
         existsClause = _buildManyToManyExistsClause(
           operator: operator,
           targetTable: targetTable,
+          targetAlias: targetAlias,
           joinTable: _quoteIdentifier(relation.joinTable ?? ''),
           joinColumn: _quoteIdentifier(relation.joinColumn ?? 'A'),
           inverseJoinColumn:
@@ -2108,9 +2116,14 @@ RETURNING *
   }
 
   /// Build EXISTS clause for one-to-many relations.
+  ///
+  /// The [targetAlias] parameter is used to alias the target table in the
+  /// FROM clause. This is essential for nested relation filters, where inner
+  /// EXISTS subqueries need to reference the outer table by alias.
   String _buildOneToManyExistsClause({
     required String operator,
     required String targetTable,
+    required String targetAlias,
     required String targetFk,
     required String parentRef,
     required String parentPk,
@@ -2119,24 +2132,32 @@ RETURNING *
     final fkCol = _quoteIdentifier(targetFk);
     final pkCol = _quoteIdentifier(parentPk);
 
-    final joinCondition = '$targetTable.$fkCol = $parentRef.$pkCol';
+    // Use alias for column references so nested filters can reference this table
+    final joinCondition = '$targetAlias.$fkCol = $parentRef.$pkCol';
     final fullCondition =
         subWhere.isNotEmpty ? '$joinCondition AND $subWhere' : joinCondition;
 
+    // Add AS $targetAlias to define the alias in FROM clause
     return switch (operator) {
-      'some' => 'EXISTS (SELECT 1 FROM $targetTable WHERE $fullCondition)',
+      'some' =>
+        'EXISTS (SELECT 1 FROM $targetTable AS $targetAlias WHERE $fullCondition)',
       'every' => subWhere.isNotEmpty
-          ? 'NOT EXISTS (SELECT 1 FROM $targetTable WHERE $joinCondition AND NOT ($subWhere))'
+          ? 'NOT EXISTS (SELECT 1 FROM $targetTable AS $targetAlias WHERE $joinCondition AND NOT ($subWhere))'
           : 'TRUE', // every with no condition is always true
-      'none' => 'NOT EXISTS (SELECT 1 FROM $targetTable WHERE $fullCondition)',
+      'none' =>
+        'NOT EXISTS (SELECT 1 FROM $targetTable AS $targetAlias WHERE $fullCondition)',
       _ => throw ArgumentError('Unknown relation operator: $operator'),
     };
   }
 
   /// Build EXISTS clause for many-to-one relations.
+  ///
+  /// The [targetAlias] parameter is used to alias the target table in the
+  /// FROM clause. This is essential for nested relation filters.
   String _buildManyToOneExistsClause({
     required String operator,
     required String targetTable,
+    required String targetAlias,
     required String targetPk,
     required String parentRef,
     required String parentFk,
@@ -2145,24 +2166,32 @@ RETURNING *
     final pkCol = _quoteIdentifier(targetPk);
     final fkCol = _quoteIdentifier(parentFk);
 
-    final joinCondition = '$targetTable.$pkCol = $parentRef.$fkCol';
+    // Use alias for column references so nested filters can reference this table
+    final joinCondition = '$targetAlias.$pkCol = $parentRef.$fkCol';
     final fullCondition =
         subWhere.isNotEmpty ? '$joinCondition AND $subWhere' : joinCondition;
 
+    // Add AS $targetAlias to define the alias in FROM clause
     return switch (operator) {
-      'some' => 'EXISTS (SELECT 1 FROM $targetTable WHERE $fullCondition)',
+      'some' =>
+        'EXISTS (SELECT 1 FROM $targetTable AS $targetAlias WHERE $fullCondition)',
       'every' => subWhere.isNotEmpty
-          ? 'NOT EXISTS (SELECT 1 FROM $targetTable WHERE $joinCondition AND NOT ($subWhere))'
+          ? 'NOT EXISTS (SELECT 1 FROM $targetTable AS $targetAlias WHERE $joinCondition AND NOT ($subWhere))'
           : 'TRUE',
-      'none' => 'NOT EXISTS (SELECT 1 FROM $targetTable WHERE $fullCondition)',
+      'none' =>
+        'NOT EXISTS (SELECT 1 FROM $targetTable AS $targetAlias WHERE $fullCondition)',
       _ => throw ArgumentError('Unknown relation operator: $operator'),
     };
   }
 
   /// Build EXISTS clause for many-to-many relations (via junction table).
+  ///
+  /// The [targetAlias] parameter is used to alias the target table in the
+  /// INNER JOIN clause. This is essential for nested relation filters.
   String _buildManyToManyExistsClause({
     required String operator,
     required String targetTable,
+    required String targetAlias,
     required String joinTable,
     required String joinColumn,
     required String inverseJoinColumn,
@@ -2172,10 +2201,11 @@ RETURNING *
   }) {
     final pkCol = _quoteIdentifier(parentPk);
 
-    // Subquery joins through junction table to target table
+    // Subquery joins through junction table to target table (with alias)
+    // The alias allows nested relation filters to reference this table
     final joinClause = '''
 SELECT 1 FROM $joinTable
-INNER JOIN $targetTable ON $targetTable."id" = $joinTable.$inverseJoinColumn
+INNER JOIN $targetTable AS $targetAlias ON $targetAlias."id" = $joinTable.$inverseJoinColumn
 WHERE $joinTable.$joinColumn = $parentRef.$pkCol''';
 
     final fullCondition =

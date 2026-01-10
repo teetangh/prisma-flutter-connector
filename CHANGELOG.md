@@ -4,6 +4,44 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.3.7] - 2026-01-10
+
+### Fixed
+
+#### Nested Relation Filter Bug
+- **Fixed "missing FROM-clause entry for table" error when using nested relation filters**
+  - When filtering through nested relations like `slots.some({ user.some({ id: '...' }) })`, the generated SQL referenced undefined table aliases
+  - Root cause: EXISTS subqueries passed `parentAlias: 'sub_$relationName'` to nested `_buildWhereClause` calls, but the FROM clause never defined this alias
+  - Fix: Added `targetAlias` parameter to all EXISTS clause builders (`_buildOneToManyExistsClause`, `_buildManyToOneExistsClause`, `_buildManyToManyExistsClause`) and added `AS $targetAlias` to the FROM/JOIN clauses
+
+#### Example
+
+```dart
+// This now works correctly:
+final query = JsonQueryBuilder()
+    .model('Appointment')
+    .action(QueryAction.findMany)
+    .where({
+      'slots': FilterOperators.some({
+        'user': FilterOperators.some({
+          'id': userId,
+        }),
+      }),
+    })
+    .build();
+
+// Generated SQL now properly defines aliases:
+// EXISTS (SELECT 1 FROM "SlotOfAppointment" AS sub_slots
+//   WHERE sub_slots."appointmentId" = "Appointment"."id"
+//   AND EXISTS (SELECT 1 FROM "_SlotOfAppointmentToUser"
+//     INNER JOIN "users" AS sub_user ON sub_user."id" = "_SlotOfAppointmentToUser"."B"
+//     WHERE "_SlotOfAppointmentToUser"."A" = sub_slots."id"
+//     AND sub_user."id" = $1))
+```
+
+### Tests
+- Added comprehensive test for nested relation filters
+
 ## [0.3.6] - 2026-01-07
 
 ### Changed
