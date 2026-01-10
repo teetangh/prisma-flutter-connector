@@ -1947,7 +1947,9 @@ void main() {
         // by having columns from t2 without the JOIN
       });
 
-      test('nested include deserializes to correct nested structure (v0.3.8 fix)', () {
+      test(
+          'nested include deserializes to correct nested structure (v0.3.8 fix)',
+          () {
         // Set up a schema with three levels: ConsultationPlan -> ConsultantProfile -> User
         final nestedSchema = SchemaRegistry();
 
@@ -2095,10 +2097,11 @@ void main() {
 
         // Check nested relation: should be 'user', not 'consultantProfile.user'
         expect(profile.containsKey('user'), isTrue,
-            reason: 'Nested relation should use field name (user), not full path (consultantProfile.user)');
+            reason:
+                'Nested relation should use field name (user), not full path (consultantProfile.user)');
         expect(profile.containsKey('consultantProfile.user'), isFalse,
             reason: 'Should NOT use dot-separated path as key');
-        
+
         final user = profile['user'] as Map<String, dynamic>?;
         expect(user, isNotNull);
         expect(user!['id'], equals('u-1'));
