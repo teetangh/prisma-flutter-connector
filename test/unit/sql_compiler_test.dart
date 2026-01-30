@@ -2934,6 +2934,289 @@ void main() {
       });
     });
 
+    group('M2M Include/Fetch', () {
+      late SqlCompiler compilerWithSchema;
+      late SchemaRegistry m2mSchema;
+
+      setUp(() {
+        m2mSchema = SchemaRegistry();
+
+        // Appointment (base model)
+        m2mSchema.registerModel(ModelSchema(
+          name: 'Appointment',
+          tableName: 'Appointment',
+          fields: {
+            'id': FieldInfo.id(name: 'id', type: 'String'),
+            'webinarId': const FieldInfo(
+              name: 'webinarId',
+              columnName: 'webinarId',
+              type: 'String',
+            ),
+            'createdAt': const FieldInfo(
+              name: 'createdAt',
+              columnName: 'createdAt',
+              type: 'DateTime',
+            ),
+          },
+          relations: {
+            'slots': RelationInfo.oneToMany(
+              name: 'slots',
+              targetModel: 'SlotOfAppointment',
+              foreignKey: 'appointmentId',
+            ),
+          },
+        ));
+
+        // SlotOfAppointment (with M2M to users)
+        m2mSchema.registerModel(ModelSchema(
+          name: 'SlotOfAppointment',
+          tableName: 'SlotOfAppointment',
+          fields: {
+            'id': FieldInfo.id(name: 'id', type: 'String'),
+            'appointmentId': const FieldInfo(
+              name: 'appointmentId',
+              columnName: 'appointmentId',
+              type: 'String',
+            ),
+            'startsAt': const FieldInfo(
+              name: 'startsAt',
+              columnName: 'startsAt',
+              type: 'DateTime',
+            ),
+          },
+          relations: {
+            'user': RelationInfo.manyToMany(
+              name: 'user',
+              targetModel: 'users',
+              joinTable: '_SlotOfAppointmentToUser',
+              joinColumn: 'A',
+              inverseJoinColumn: 'B',
+            ),
+          },
+        ));
+
+        // User model (table name 'users')
+        m2mSchema.registerModel(const ModelSchema(
+          name: 'users',
+          tableName: 'users',
+          fields: {
+            'id': FieldInfo(
+              name: 'id',
+              columnName: 'id',
+              type: 'String',
+              isId: true,
+            ),
+            'name': FieldInfo(
+              name: 'name',
+              columnName: 'name',
+              type: 'String',
+            ),
+            'image': FieldInfo(
+              name: 'image',
+              columnName: 'image',
+              type: 'String',
+            ),
+          },
+        ));
+
+        compilerWithSchema = SqlCompiler(
+          provider: 'postgresql',
+          schema: m2mSchema,
+        );
+      });
+
+      test('nested M2M include generates correct SQL with junction table JOINs',
+          () {
+        final query = JsonQueryBuilder()
+            .model('Appointment')
+            .action(QueryAction.findMany)
+            .where({
+              'webinarId': {'in': ['w-1']},
+            })
+            .include({
+              'slots': {
+                'include': {'user': true},
+              },
+            })
+            .build();
+
+        final result = compilerWithSchema.compile(query);
+
+        // Should JOIN SlotOfAppointment (oneToMany)
+        expect(result.sql, contains('LEFT JOIN "SlotOfAppointment"'));
+
+        // Should JOIN the M2M junction table
+        expect(result.sql, contains('LEFT JOIN "_SlotOfAppointmentToUser"'));
+
+        // Should JOIN the users table
+        expect(result.sql, contains('LEFT JOIN "users"'));
+
+        // Should have column aliases for user fields
+        expect(result.sql, contains('"slots.user__id"'));
+        expect(result.sql, contains('"slots.user__name"'));
+        expect(result.sql, contains('"slots.user__image"'));
+
+        // Should have column aliases for slot fields
+        expect(result.sql, contains('"slots__id"'));
+        expect(result.sql, contains('"slots__appointmentId"'));
+      });
+
+      test(
+          'nested M2M include deserializes flat rows into correct nested structure',
+          () {
+        final relationCompiler = RelationCompiler(
+          schema: m2mSchema,
+          provider: 'postgresql',
+        );
+
+        final compiled = relationCompiler.compile(
+          baseModel: 'Appointment',
+          baseAlias: 't0',
+          include: {
+            'slots': {
+              'include': {'user': true},
+            },
+          },
+        );
+
+        // Simulate flat JOIN rows: appointment apt-1 has slot-1 with 2 users
+        // and slot-2 with 1 user. Due to JOINs, rows are multiplied.
+        final flatRows = [
+          {
+            'id': 'apt-1',
+            'webinarId': 'w-1',
+            'createdAt': '2024-01-01T00:00:00Z',
+            'slots__id': 'slot-1',
+            'slots__appointmentId': 'apt-1',
+            'slots__startsAt': '2024-01-15T09:00:00Z',
+            'slots.user__id': 'user-A',
+            'slots.user__name': 'Alice',
+            'slots.user__image': 'alice.jpg',
+          },
+          {
+            'id': 'apt-1',
+            'webinarId': 'w-1',
+            'createdAt': '2024-01-01T00:00:00Z',
+            'slots__id': 'slot-1',
+            'slots__appointmentId': 'apt-1',
+            'slots__startsAt': '2024-01-15T09:00:00Z',
+            'slots.user__id': 'user-B',
+            'slots.user__name': 'Bob',
+            'slots.user__image': 'bob.jpg',
+          },
+          {
+            'id': 'apt-1',
+            'webinarId': 'w-1',
+            'createdAt': '2024-01-01T00:00:00Z',
+            'slots__id': 'slot-2',
+            'slots__appointmentId': 'apt-1',
+            'slots__startsAt': '2024-01-15T14:00:00Z',
+            'slots.user__id': 'user-C',
+            'slots.user__name': 'Carol',
+            'slots.user__image': 'carol.jpg',
+          },
+        ];
+
+        final deserializer = RelationDeserializer(schema: m2mSchema);
+        final results = deserializer.deserialize(
+          rows: flatRows,
+          baseModel: 'Appointment',
+          columnAliases: compiled.columnAliases,
+          includedRelations: compiled.includedRelations,
+        );
+
+        // Should produce 1 appointment
+        expect(results, hasLength(1));
+        final apt = results.first;
+        expect(apt['id'], equals('apt-1'));
+        expect(apt['webinarId'], equals('w-1'));
+
+        // Should have 'slots' key with a list
+        expect(apt.containsKey('slots'), isTrue,
+            reason: 'Appointment should contain slots relation');
+        final slots = apt['slots'] as List;
+        expect(slots, hasLength(2), reason: 'Should have 2 unique slots');
+
+        // Slot 1 should have 2 users
+        final slot1 = slots.firstWhere((s) =>
+                (s as Map<String, dynamic>)['id'] == 'slot-1')
+            as Map<String, dynamic>;
+        expect(slot1['appointmentId'], equals('apt-1'));
+        expect(slot1.containsKey('user'), isTrue,
+            reason: 'Slot should contain user M2M relation');
+        final users1 = slot1['user'] as List;
+        expect(users1, hasLength(2),
+            reason: 'Slot-1 should have 2 users (Alice, Bob)');
+        final userIds1 =
+            users1.map((u) => (u as Map<String, dynamic>)['id']).toSet();
+        expect(userIds1, containsAll(['user-A', 'user-B']));
+
+        // Slot 2 should have 1 user
+        final slot2 = slots.firstWhere((s) =>
+                (s as Map<String, dynamic>)['id'] == 'slot-2')
+            as Map<String, dynamic>;
+        final users2 = slot2['user'] as List;
+        expect(users2, hasLength(1),
+            reason: 'Slot-2 should have 1 user (Carol)');
+        expect((users2.first as Map<String, dynamic>)['id'], equals('user-C'));
+        expect(
+            (users2.first as Map<String, dynamic>)['name'], equals('Carol'));
+        expect(
+            (users2.first as Map<String, dynamic>)['image'], equals('carol.jpg'));
+      });
+
+      test('nested M2M include with no users returns empty list', () {
+        final relationCompiler = RelationCompiler(
+          schema: m2mSchema,
+          provider: 'postgresql',
+        );
+
+        final compiled = relationCompiler.compile(
+          baseModel: 'Appointment',
+          baseAlias: 't0',
+          include: {
+            'slots': {
+              'include': {'user': true},
+            },
+          },
+        );
+
+        // Flat rows where user columns are all null (no users enrolled)
+        final flatRows = [
+          {
+            'id': 'apt-1',
+            'webinarId': 'w-1',
+            'createdAt': '2024-01-01T00:00:00Z',
+            'slots__id': 'slot-1',
+            'slots__appointmentId': 'apt-1',
+            'slots__startsAt': '2024-01-15T09:00:00Z',
+            'slots.user__id': null,
+            'slots.user__name': null,
+            'slots.user__image': null,
+          },
+        ];
+
+        final deserializer = RelationDeserializer(schema: m2mSchema);
+        final results = deserializer.deserialize(
+          rows: flatRows,
+          baseModel: 'Appointment',
+          columnAliases: compiled.columnAliases,
+          includedRelations: compiled.includedRelations,
+        );
+
+        expect(results, hasLength(1));
+        final apt = results.first;
+        final slots = apt['slots'] as List;
+        expect(slots, hasLength(1));
+
+        final slot1 = slots.first as Map<String, dynamic>;
+        expect(slot1.containsKey('user'), isTrue);
+        final users = slot1['user'] as List;
+        expect(users, isEmpty,
+            reason: 'M2M with null PKs should return empty list');
+      });
+    });
+
     group('Validation Errors (v0.3.2)', () {
       late SqlCompiler compiler;
       late SchemaRegistry schemaRegistry;
