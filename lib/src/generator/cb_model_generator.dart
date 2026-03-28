@@ -1,10 +1,12 @@
 /// Model generator using code_builder for type-safe AST generation.
 ///
 /// Generates Freezed model files, input types, filter types, and enums
-/// from Prisma schema definitions.
+/// from Prisma schema definitions. All classes built with code_builder
+/// Class/Constructor/Parameter builders — zero StringBuffer usage.
 // ignore_for_file: prefer_const_constructors
 library;
 
+import 'package:code_builder/code_builder.dart';
 import 'package:dart_style/dart_style.dart';
 import 'package:prisma_flutter_connector/src/generator/prisma_parser.dart';
 import 'package:prisma_flutter_connector/src/generator/string_utils.dart';
@@ -14,316 +16,315 @@ class CbModelGenerator {
   final PrismaSchema schema;
   late final _formatter =
       DartFormatter(languageVersion: DartFormatter.latestLanguageVersion);
+  final _emitter = DartEmitter(useNullSafetySyntax: true);
 
   CbModelGenerator(this.schema);
 
-  /// Generate Dart code for a single model.
-  ///
-  /// Because Freezed models require specific annotation patterns (`@freezed`,
-  /// `part` directives, `_$` prefixed mixins) that code_builder doesn't
-  /// natively support, we use a hybrid approach: code_builder for imports and
-  /// structure, but Code() blocks for the Freezed-specific class bodies.
   String generateModel(PrismaModel model) {
-    // Freezed models have very specific syntax requirements that are easier
-    // to handle with targeted string generation inside code_builder Code blocks.
-    // The key benefit of code_builder here is auto-formatting and structured imports.
-    final buf = StringBuffer();
+    final sn = toSnakeCase(model.name);
 
-    // Imports
-    buf.writeln("import 'package:freezed_annotation/freezed_annotation.dart';");
-    buf.writeln();
-    buf.writeln("import '../filters.dart';");
-    buf.writeln();
-
-    // Model/enum type imports
-    final imports = <String>{};
-    for (final field in model.fields) {
-      if (!_isPrimitiveType(field.type)) imports.add(field.type);
+    // Collect non-primitive type imports
+    final typeImports = <String>{};
+    for (final f in model.fields) {
+      if (!_isPrimitiveType(f.type)) typeImports.add(f.type);
     }
-    for (final imp in imports) {
-      buf.writeln("import '${toSnakeCase(imp)}.dart';");
-    }
-    if (imports.isNotEmpty) buf.writeln();
 
-    // Part files
-    buf.writeln("part '${toSnakeCase(model.name)}.freezed.dart';");
-    buf.writeln("part '${toSnakeCase(model.name)}.g.dart';");
-    buf.writeln();
+    final directives = <Directive>[
+      Directive.import('package:freezed_annotation/freezed_annotation.dart'),
+      Directive.import('../filters.dart'),
+      ...typeImports.map((t) => Directive.import('${toSnakeCase(t)}.dart')),
+      Directive.part('$sn.freezed.dart'),
+      Directive.part('$sn.g.dart'),
+    ];
 
-    // Main model class
-    buf.writeln('@freezed');
-    buf.writeln('class ${model.name} with _\$${model.name} {');
-    buf.writeln('  const factory ${model.name}({');
-    for (final field in model.fields) {
-      buf.write(_generateModelField(field));
-    }
-    buf.writeln('  }) = _${model.name};');
-    buf.writeln();
-    buf.writeln(
-        '  factory ${model.name}.fromJson(Map<String, dynamic> json) =>');
-    buf.writeln('      _\$${model.name}FromJson(json);');
-    buf.writeln('}');
-    buf.writeln();
+    final library = Library((b) => b
+      ..directives.addAll(directives)
+      ..body.addAll([
+        _buildMainClass(model),
+        _buildCreateInput(model),
+        _buildUpdateInput(model),
+        ..._buildWhereUniqueInput(model),
+        _buildWhereInput(model),
+        _buildListRelationFilter(model),
+        _buildRelationFilter(model),
+        _buildOrderByInput(model),
+      ]));
 
-    // Input types
-    buf.write(_generateCreateInput(model));
-    buf.write(_generateUpdateInput(model));
-    buf.write(_generateWhereUniqueInput(model));
-    buf.write(_generateWhereInput(model));
-    buf.write(_generateRelationFilters(model));
-    buf.write(_generateOrderByInput(model));
-
-    return _formatter.format(buf.toString());
+    return _formatter.format('${library.accept(_emitter)}');
   }
 
-  String _generateModelField(PrismaField field) {
-    final buf = StringBuffer();
+  // === Main model class ===
 
-    if (field.isRelation) {
-      buf.writeln('    @JsonKey(includeFromJson: false, includeToJson: false)');
-      final type = field.isList ? 'List<${field.type}>' : field.type;
-      buf.writeln('    $type? ${field.name},');
-      return buf.toString();
+  Class _buildMainClass(PrismaModel model) {
+    final params = <Parameter>[];
+    for (final f in model.fields) {
+      params.add(_modelFieldToParam(f));
     }
 
-    if (field.dbName != null) {
-      buf.writeln("    @JsonKey(name: '${field.dbName}')");
+    return Class((b) => b
+      ..name = model.name
+      ..annotations.add(refer('freezed'))
+      ..mixins.add(refer('_\$${model.name}'))
+      ..constructors.addAll([
+        Constructor((c) => c
+          ..factory = true
+          ..constant = true
+          ..redirect = refer('_${model.name}')
+          ..optionalParameters.addAll(params)),
+        Constructor((c) => c
+          ..factory = true
+          ..name = 'fromJson'
+          ..requiredParameters.add(Parameter((p) => p
+            ..name = 'json'
+            ..type = refer('Map<String, dynamic>')))
+          ..body = Code('return _\$${model.name}FromJson(json);')),
+      ]));
+  }
+
+  Parameter _modelFieldToParam(PrismaField f) {
+    if (f.isRelation) {
+      final type = f.isList ? 'List<${f.type}>' : f.type;
+      return Parameter((p) => p
+        ..name = f.name
+        ..named = true
+        ..annotations.add(CodeExpression(
+            Code("JsonKey(includeFromJson: false, includeToJson: false)")))
+        ..type = refer('$type?'));
     }
 
-    if (field.hasEmptyListDefault && field.isList) {
-      buf.writeln('    @Default(<${field.type}>[])');
-      buf.writeln('    List<${field.type}>? ${field.name},');
-      return buf.toString();
+    final annotations = <Expression>[];
+    if (f.dbName != null) {
+      annotations.add(CodeExpression(Code("JsonKey(name: '${f.dbName}')")));
     }
 
-    if (field.defaultValue != null && _isEnumType(field.type)) {
-      buf.writeln(
-          '    @Default(${field.type}.${toCamelCase(field.defaultValue!)})');
-      buf.writeln('    ${field.dartType} ${field.name},');
-      return buf.toString();
-    }
+    // Determine type and requiredness
+    final dartType = _toDartType(f.type);
+    String type;
+    bool isRequired = false;
 
-    final hasScalarDefault = field.defaultValue != null &&
-        !field.isRelation &&
-        !_isPrismaRuntimeDefault(field.defaultValue!);
-
-    if (hasScalarDefault) {
-      buf.writeln('    @Default(${field.defaultValue})');
-    }
-
-    final dartType = _toDartType(field.type);
-
-    if (hasScalarDefault) {
-      buf.writeln(field.isList
-          ? '    List<$dartType> ${field.name},'
-          : '    $dartType ${field.name},');
-    } else if (field.isRequired && !field.isList) {
-      buf.writeln('    required $dartType ${field.name},');
-    } else if (!field.isRequired && !field.isList) {
-      buf.writeln('    $dartType? ${field.name},');
-    } else if (field.isList && field.isRequired) {
-      buf.writeln('    required List<$dartType> ${field.name},');
+    if (f.hasEmptyListDefault && f.isList) {
+      annotations.add(CodeExpression(Code('Default(<${f.type}>[])')));
+      type = 'List<${f.type}>?';
+    } else if (f.defaultValue != null && _isEnumType(f.type)) {
+      annotations.add(CodeExpression(
+          Code('Default(${f.type}.${toCamelCase(f.defaultValue!)})')));
+      type = f.dartType;
     } else {
-      buf.writeln('    List<$dartType>? ${field.name},');
-    }
-
-    return buf.toString();
-  }
-
-  String _generateCreateInput(PrismaModel model) {
-    final buf = StringBuffer();
-    buf.writeln('/// Input for creating a new ${model.name}');
-    buf.writeln('@freezed');
-    buf.writeln(
-        'class Create${model.name}Input with _\$Create${model.name}Input {');
-    buf.writeln('  const factory Create${model.name}Input({');
-
-    for (final field in model.fields) {
-      if (field.isId ||
-          field.isCreatedAt ||
-          field.isUpdatedAt ||
-          _isRelationField(field)) {
-        continue;
-      }
-      final dartType = _toDartType(field.type);
-
-      if (field.hasEmptyListDefault && field.isList) {
-        buf.writeln('    @Default(<$dartType>[])');
-        buf.writeln('    List<$dartType>? ${field.name},');
-        continue;
-      }
-
-      if (field.defaultValue != null && _isEnumType(field.type)) {
-        buf.writeln(
-            '    @Default($dartType.${toCamelCase(field.defaultValue!)})');
-        buf.writeln('    $dartType ${field.name},');
-        continue;
-      }
-
-      if (field.isRequired && field.defaultValue == null) {
-        buf.writeln(field.isList
-            ? '    required List<$dartType> ${field.name},'
-            : '    required $dartType ${field.name},');
-      } else if (field.defaultValue != null &&
-          !_isPrismaRuntimeDefault(field.defaultValue!)) {
-        buf.writeln('    @Default(${field.defaultValue})');
-        buf.writeln(field.isList
-            ? '    List<$dartType>? ${field.name},'
-            : '    $dartType? ${field.name},');
+      final hasScalarDefault = f.defaultValue != null &&
+          !f.isRelation &&
+          !_isPrismaRuntimeDefault(f.defaultValue!);
+      if (hasScalarDefault) {
+        annotations.add(CodeExpression(Code('Default(${f.defaultValue})')));
+        type = f.isList ? 'List<$dartType>' : dartType;
+      } else if (f.isRequired && !f.isList) {
+        type = dartType;
+        isRequired = true;
+      } else if (!f.isRequired && !f.isList) {
+        type = '$dartType?';
+      } else if (f.isList && f.isRequired) {
+        type = 'List<$dartType>';
+        isRequired = true;
       } else {
-        buf.writeln(field.isList
-            ? '    List<$dartType>? ${field.name},'
-            : '    $dartType? ${field.name},');
+        type = 'List<$dartType>?';
       }
     }
 
-    buf.writeln('  }) = _Create${model.name}Input;');
-    buf.writeln();
-    buf.writeln(
-        '  factory Create${model.name}Input.fromJson(Map<String, dynamic> json) =>');
-    buf.writeln('      _\$Create${model.name}InputFromJson(json);');
-    buf.writeln('}');
-    buf.writeln();
-    return buf.toString();
+    return Parameter((p) {
+      p
+        ..name = f.name
+        ..named = true
+        ..required = isRequired
+        ..type = refer(type)
+        ..annotations.addAll(annotations);
+    });
   }
 
-  String _generateUpdateInput(PrismaModel model) {
-    final buf = StringBuffer();
-    buf.writeln('/// Input for updating an existing ${model.name}');
-    buf.writeln('@freezed');
-    buf.writeln(
-        'class Update${model.name}Input with _\$Update${model.name}Input {');
-    buf.writeln('  const factory Update${model.name}Input({');
+  // === CreateInput ===
 
-    for (final field in model.fields) {
-      if (field.isId ||
-          field.isCreatedAt ||
-          field.isUpdatedAt ||
-          _isRelationField(field)) {
+  Class _buildCreateInput(PrismaModel model) {
+    final params = <Parameter>[];
+    for (final f in model.fields) {
+      if (f.isId || f.isCreatedAt || f.isUpdatedAt || _isRelationField(f)) {
         continue;
       }
-      final dartType = _toDartType(field.type);
-      buf.writeln(field.isList
-          ? '    List<$dartType>? ${field.name},'
-          : '    $dartType? ${field.name},');
+      params.add(_createInputParam(f));
     }
 
-    buf.writeln('  }) = _Update${model.name}Input;');
-    buf.writeln();
-    buf.writeln(
-        '  factory Update${model.name}Input.fromJson(Map<String, dynamic> json) =>');
-    buf.writeln('      _\$Update${model.name}InputFromJson(json);');
-    buf.writeln('}');
-    buf.writeln();
-    return buf.toString();
+    return _freezedClass('Create${model.name}Input', params,
+        doc: '/// Input for creating a new ${model.name}');
   }
 
-  String _generateWhereUniqueInput(PrismaModel model) {
-    final uniqueFields = model.fields
-        .where((f) => (f.isId || f.isUnique) && !f.isRelation)
-        .toList();
-    if (uniqueFields.isEmpty) return '';
+  Parameter _createInputParam(PrismaField f) {
+    final dartType = _toDartType(f.type);
+    final annotations = <Expression>[];
+    String type;
+    bool isRequired = false;
 
-    final buf = StringBuffer();
-    buf.writeln('@freezed');
-    buf.writeln(
-        'class ${model.name}WhereUniqueInput with _\$${model.name}WhereUniqueInput {');
-    buf.writeln('  const factory ${model.name}WhereUniqueInput({');
-    for (final field in uniqueFields) {
-      buf.writeln(field.isList
-          ? '    List<${field.type}>? ${field.name},'
-          : '    ${field.type}? ${field.name},');
+    if (f.hasEmptyListDefault && f.isList) {
+      annotations.add(CodeExpression(Code('Default(<$dartType>[])')));
+      type = 'List<$dartType>?';
+    } else if (f.defaultValue != null && _isEnumType(f.type)) {
+      annotations.add(CodeExpression(
+          Code('Default($dartType.${toCamelCase(f.defaultValue!)})')));
+      type = dartType;
+    } else if (f.isRequired && f.defaultValue == null) {
+      type = f.isList ? 'List<$dartType>' : dartType;
+      isRequired = true;
+    } else if (f.defaultValue != null &&
+        !_isPrismaRuntimeDefault(f.defaultValue!)) {
+      annotations.add(CodeExpression(Code('Default(${f.defaultValue})')));
+      type = f.isList ? 'List<$dartType>?' : '$dartType?';
+    } else {
+      type = f.isList ? 'List<$dartType>?' : '$dartType?';
     }
-    buf.writeln('  }) = _${model.name}WhereUniqueInput;');
-    buf.writeln();
-    buf.writeln(
-        '  factory ${model.name}WhereUniqueInput.fromJson(Map<String, dynamic> json) =>');
-    buf.writeln('      _\$${model.name}WhereUniqueInputFromJson(json);');
-    buf.writeln('}');
-    buf.writeln();
-    return buf.toString();
+
+    return Parameter((p) => p
+      ..name = f.name
+      ..named = true
+      ..required = isRequired
+      ..type = refer(type)
+      ..annotations.addAll(annotations));
   }
 
-  String _generateWhereInput(PrismaModel model) {
-    final buf = StringBuffer();
-    buf.writeln('@freezed');
-    buf.writeln(
-        'class ${model.name}WhereInput with _\$${model.name}WhereInput {');
-    buf.writeln('  @JsonSerializable(explicitToJson: true)');
-    buf.writeln('  const factory ${model.name}WhereInput({');
+  // === UpdateInput ===
 
-    for (final field in model.fields) {
-      if (field.isRelation) {
-        final relType = field.isList
-            ? '${field.type}ListRelationFilter'
-            : '${field.type}RelationFilter';
-        buf.writeln('    $relType? ${field.name},');
+  Class _buildUpdateInput(PrismaModel model) {
+    final params = <Parameter>[];
+    for (final f in model.fields) {
+      if (f.isId || f.isCreatedAt || f.isUpdatedAt || _isRelationField(f)) {
         continue;
       }
-      final filterType = _getFilterType(field);
+      final dartType = _toDartType(f.type);
+      params.add(Parameter((p) => p
+        ..name = f.name
+        ..named = true
+        ..type = refer(f.isList ? 'List<$dartType>?' : '$dartType?')));
+    }
+
+    return _freezedClass('Update${model.name}Input', params,
+        doc: '/// Input for updating an existing ${model.name}');
+  }
+
+  // === WhereUniqueInput ===
+
+  List<Spec> _buildWhereUniqueInput(PrismaModel model) {
+    final uniqueFields =
+        model.fields.where((f) => (f.isId || f.isUnique) && !f.isRelation);
+    if (uniqueFields.isEmpty) return [];
+
+    final params = uniqueFields.map((f) => Parameter((p) => p
+      ..name = f.name
+      ..named = true
+      ..type = refer(f.isList ? 'List<${f.type}>?' : '${f.type}?')));
+
+    return [_freezedClass('${model.name}WhereUniqueInput', params.toList())];
+  }
+
+  // === WhereInput ===
+
+  Class _buildWhereInput(PrismaModel model) {
+    final params = <Parameter>[];
+
+    for (final f in model.fields) {
+      if (f.isRelation) {
+        final relType = f.isList
+            ? '${f.type}ListRelationFilter'
+            : '${f.type}RelationFilter';
+        params.add(Parameter((p) => p
+          ..name = f.name
+          ..named = true
+          ..type = refer('$relType?')));
+        continue;
+      }
+      final filterType = _getFilterType(f);
       if (filterType != null) {
-        buf.writeln('    $filterType? ${field.name},');
+        params.add(Parameter((p) => p
+          ..name = f.name
+          ..named = true
+          ..type = refer('$filterType?')));
       }
     }
 
-    buf.writeln('    List<${model.name}WhereInput>? AND,');
-    buf.writeln('    List<${model.name}WhereInput>? OR,');
-    buf.writeln('    ${model.name}WhereInput? NOT,');
-    buf.writeln('  }) = _${model.name}WhereInput;');
-    buf.writeln();
-    buf.writeln(
-        '  factory ${model.name}WhereInput.fromJson(Map<String, dynamic> json) =>');
-    buf.writeln('      _\$${model.name}WhereInputFromJson(json);');
-    buf.writeln('}');
-    buf.writeln();
-    return buf.toString();
+    // Logical operators
+    params.addAll([
+      Parameter((p) => p
+        ..name = 'AND'
+        ..named = true
+        ..type = refer('List<${model.name}WhereInput>?')),
+      Parameter((p) => p
+        ..name = 'OR'
+        ..named = true
+        ..type = refer('List<${model.name}WhereInput>?')),
+      Parameter((p) => p
+        ..name = 'NOT'
+        ..named = true
+        ..type = refer('${model.name}WhereInput?')),
+    ]);
+
+    final name = '${model.name}WhereInput';
+    return Class((b) => b
+      ..name = name
+      ..annotations.add(refer('freezed'))
+      ..mixins.add(refer('_\$$name'))
+      ..constructors.addAll([
+        Constructor((c) => c
+          ..factory = true
+          ..constant = true
+          ..redirect = refer('_$name')
+          ..annotations.add(
+              CodeExpression(Code('JsonSerializable(explicitToJson: true)')))
+          ..optionalParameters.addAll(params)),
+        Constructor((c) => c
+          ..factory = true
+          ..name = 'fromJson'
+          ..requiredParameters.add(Parameter((p) => p
+            ..name = 'json'
+            ..type = refer('Map<String, dynamic>')))
+          ..body = Code('return _\$${name}FromJson(json);')),
+      ]));
   }
 
-  String _generateRelationFilters(PrismaModel model) {
-    final buf = StringBuffer();
+  // === Relation filters ===
 
-    // ListRelationFilter
-    buf.writeln('@freezed');
-    buf.writeln(
-        'class ${model.name}ListRelationFilter with _\$${model.name}ListRelationFilter {');
-    buf.writeln('  const factory ${model.name}ListRelationFilter({');
-    buf.writeln('    ${model.name}WhereInput? some,');
-    buf.writeln('    ${model.name}WhereInput? every,');
-    buf.writeln('    ${model.name}WhereInput? none,');
-    buf.writeln('  }) = _${model.name}ListRelationFilter;');
-    buf.writeln();
-    buf.writeln(
-        '  factory ${model.name}ListRelationFilter.fromJson(Map<String, dynamic> json) =>');
-    buf.writeln('      _\$${model.name}ListRelationFilterFromJson(json);');
-    buf.writeln('}');
-    buf.writeln();
-
-    // RelationFilter
-    buf.writeln('@freezed');
-    buf.writeln(
-        'class ${model.name}RelationFilter with _\$${model.name}RelationFilter {');
-    buf.writeln('  const factory ${model.name}RelationFilter({');
-    buf.writeln("    @JsonKey(name: 'is') ${model.name}WhereInput? is_,");
-    buf.writeln('    ${model.name}WhereInput? isNot,');
-    buf.writeln('  }) = _${model.name}RelationFilter;');
-    buf.writeln();
-    buf.writeln(
-        '  factory ${model.name}RelationFilter.fromJson(Map<String, dynamic> json) =>');
-    buf.writeln('      _\$${model.name}RelationFilterFromJson(json);');
-    buf.writeln('}');
-    buf.writeln();
-
-    return buf.toString();
+  Class _buildListRelationFilter(PrismaModel model) {
+    final name = '${model.name}ListRelationFilter';
+    final wt = '${model.name}WhereInput?';
+    return _freezedClass(name, [
+      Parameter((p) => p
+        ..name = 'some'
+        ..named = true
+        ..type = refer(wt)),
+      Parameter((p) => p
+        ..name = 'every'
+        ..named = true
+        ..type = refer(wt)),
+      Parameter((p) => p
+        ..name = 'none'
+        ..named = true
+        ..type = refer(wt)),
+    ]);
   }
 
-  String _generateOrderByInput(PrismaModel model) {
-    final buf = StringBuffer();
-    buf.writeln('@freezed');
-    buf.writeln(
-        'class ${model.name}OrderByInput with _\$${model.name}OrderByInput {');
-    buf.writeln('  const factory ${model.name}OrderByInput({');
+  Class _buildRelationFilter(PrismaModel model) {
+    final name = '${model.name}RelationFilter';
+    final wt = '${model.name}WhereInput?';
+    return _freezedClass(name, [
+      Parameter((p) => p
+        ..name = 'is_'
+        ..named = true
+        ..annotations.add(CodeExpression(Code("JsonKey(name: 'is')")))
+        ..type = refer(wt)),
+      Parameter((p) => p
+        ..name = 'isNot'
+        ..named = true
+        ..type = refer(wt)),
+    ]);
+  }
 
-    for (final field in model.fields.where((f) =>
+  // === OrderByInput ===
+
+  Class _buildOrderByInput(PrismaModel model) {
+    final sortableFields = model.fields.where((f) =>
         !f.isRelation &&
         (f.type == 'String' ||
             f.type == 'Int' ||
@@ -331,34 +332,63 @@ class CbModelGenerator {
             f.type == 'DateTime' ||
             f.type == 'Boolean' ||
             f.isCreatedAt ||
-            f.isUpdatedAt))) {
-      buf.writeln('    SortOrder? ${field.name},');
-    }
+            f.isUpdatedAt));
 
-    buf.writeln('  }) = _${model.name}OrderByInput;');
-    buf.writeln();
-    buf.writeln(
-        '  factory ${model.name}OrderByInput.fromJson(Map<String, dynamic> json) =>');
-    buf.writeln('      _\$${model.name}OrderByInputFromJson(json);');
-    buf.writeln('}');
-    buf.writeln();
-    return buf.toString();
+    final params = sortableFields
+        .map((f) => Parameter((p) => p
+          ..name = f.name
+          ..named = true
+          ..type = refer('SortOrder?')))
+        .toList();
+
+    return _freezedClass('${model.name}OrderByInput', params);
   }
 
-  /// Generate enum class
+  // === Shared: build a @freezed class ===
+
+  Class _freezedClass(String name, List<Parameter> params, {String? doc}) {
+    return Class((b) {
+      if (doc != null) b.docs.add(doc);
+      b
+        ..name = name
+        ..annotations.add(refer('freezed'))
+        ..mixins.add(refer('_\$$name'))
+        ..constructors.addAll([
+          Constructor((c) => c
+            ..factory = true
+            ..constant = true
+            ..redirect = refer('_$name')
+            ..optionalParameters.addAll(params)),
+          Constructor((c) => c
+            ..factory = true
+            ..name = 'fromJson'
+            ..requiredParameters.add(Parameter((p) => p
+              ..name = 'json'
+              ..type = refer('Map<String, dynamic>')))
+            ..body = Code('return _\$${name}FromJson(json);')),
+        ]);
+    });
+  }
+
+  // === Enum generation ===
+
   String generateEnum(PrismaEnum enumDef) {
-    final buf = StringBuffer();
-    buf.writeln("import 'package:freezed_annotation/freezed_annotation.dart';");
-    buf.writeln();
-    buf.writeln('enum ${enumDef.name} {');
-    for (final value in enumDef.values) {
-      buf.writeln("  @JsonValue('$value')");
-      var dartValue = toCamelCase(value);
+    final values = enumDef.values.map((v) {
+      var dartValue = toCamelCase(v);
       if (_isDartReservedKeyword(dartValue)) dartValue = '${dartValue}Value';
-      buf.writeln('  $dartValue,');
-    }
-    buf.writeln('}');
-    return _formatter.format(buf.toString());
+      return EnumValue((ev) => ev
+        ..name = dartValue
+        ..annotations.add(CodeExpression(Code("JsonValue('$v')"))));
+    });
+
+    final lib = Library((b) => b
+      ..directives.add(Directive.import(
+          'package:freezed_annotation/freezed_annotation.dart'))
+      ..body.add(Enum((e) => e
+        ..name = enumDef.name
+        ..values.addAll(values))));
+
+    return _formatter.format('${lib.accept(_emitter)}');
   }
 
   /// Generate all model files.
@@ -373,11 +403,10 @@ class CbModelGenerator {
     return files;
   }
 
-  // === Helper methods (same logic as original) ===
+  // === Helpers ===
 
   bool _isEnumType(String t) => schema.enums.any((e) => e.name == t);
   bool _isModelType(String t) => schema.models.any((m) => m.name == t);
-
   bool _isRelationField(PrismaField f) => f.isRelation || _isModelType(f.type);
 
   bool _isPrimitiveType(String t) => const {
@@ -411,21 +440,21 @@ class CbModelGenerator {
         _ => t,
       };
 
-  String? _getFilterType(PrismaField field) {
-    if (field.isList) {
-      return switch (field.type) {
+  String? _getFilterType(PrismaField f) {
+    if (f.isList) {
+      return switch (f.type) {
         'String' => 'StringListFilter',
         'Int' => 'IntListFilter',
         _ => null,
       };
     }
-    return switch (field.type) {
+    return switch (f.type) {
       'String' => 'StringFilter',
       'Int' => 'IntFilter',
       'Float' || 'Decimal' => 'FloatFilter',
       'Boolean' => 'BooleanFilter',
       'DateTime' => 'DateTimeFilter',
-      _ => _isEnumType(field.type) ? '${field.type}Filter' : null,
+      _ => _isEnumType(f.type) ? '${f.type}Filter' : null,
     };
   }
 }
