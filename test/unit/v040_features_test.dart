@@ -164,8 +164,7 @@ void main() {
           fields: {
             'id': FieldInfo(
                 name: 'id', columnName: 'id', type: 'String', isId: true),
-            'name': FieldInfo(
-                name: 'name', columnName: 'name', type: 'String'),
+            'name': FieldInfo(name: 'name', columnName: 'name', type: 'String'),
           },
         ));
         compiler = SqlCompiler(provider: 'postgresql', schema: registry);

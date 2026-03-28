@@ -1164,7 +1164,8 @@ RETURNING *
                     if (field.defaultValue == 'uuid()' &&
                         !childData.containsKey(field.name)) {
                       if (provider == 'postgresql' || provider == 'supabase') {
-                        childData[field.name] = const _RawSql('gen_random_uuid()');
+                        childData[field.name] =
+                            const _RawSql('gen_random_uuid()');
                       }
                     } else if (field.defaultValue == 'now()' &&
                         !childData.containsKey(field.name)) {
