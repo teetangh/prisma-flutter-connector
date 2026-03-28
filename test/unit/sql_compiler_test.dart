@@ -3031,14 +3031,14 @@ void main() {
             .model('Appointment')
             .action(QueryAction.findMany)
             .where({
-              'webinarId': {'in': ['w-1']},
-            })
-            .include({
-              'slots': {
-                'include': {'user': true},
-              },
-            })
-            .build();
+          'webinarId': {
+            'in': ['w-1']
+          },
+        }).include({
+          'slots': {
+            'include': {'user': true},
+          },
+        }).build();
 
         final result = compilerWithSchema.compile(query);
 
@@ -3138,8 +3138,8 @@ void main() {
         expect(slots, hasLength(2), reason: 'Should have 2 unique slots');
 
         // Slot 1 should have 2 users
-        final slot1 = slots.firstWhere((s) =>
-                (s as Map<String, dynamic>)['id'] == 'slot-1')
+        final slot1 = slots.firstWhere(
+                (s) => (s as Map<String, dynamic>)['id'] == 'slot-1')
             as Map<String, dynamic>;
         expect(slot1['appointmentId'], equals('apt-1'));
         expect(slot1.containsKey('user'), isTrue,
@@ -3152,17 +3152,16 @@ void main() {
         expect(userIds1, containsAll(['user-A', 'user-B']));
 
         // Slot 2 should have 1 user
-        final slot2 = slots.firstWhere((s) =>
-                (s as Map<String, dynamic>)['id'] == 'slot-2')
+        final slot2 = slots.firstWhere(
+                (s) => (s as Map<String, dynamic>)['id'] == 'slot-2')
             as Map<String, dynamic>;
         final users2 = slot2['user'] as List;
         expect(users2, hasLength(1),
             reason: 'Slot-2 should have 1 user (Carol)');
         expect((users2.first as Map<String, dynamic>)['id'], equals('user-C'));
-        expect(
-            (users2.first as Map<String, dynamic>)['name'], equals('Carol'));
-        expect(
-            (users2.first as Map<String, dynamic>)['image'], equals('carol.jpg'));
+        expect((users2.first as Map<String, dynamic>)['name'], equals('Carol'));
+        expect((users2.first as Map<String, dynamic>)['image'],
+            equals('carol.jpg'));
       });
 
       test('nested M2M include with no users returns empty list', () {

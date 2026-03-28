@@ -132,7 +132,8 @@ class DelegateGenerator {
     buffer.writeln('    if (result == null) {');
     buffer.writeln('      throw Exception(\'Failed to create $modelName\');');
     buffer.writeln('    }');
-    buffer.writeln('    return $modelName.fromJson(_normalizeForJson(result));');
+    buffer
+        .writeln('    return $modelName.fromJson(_normalizeForJson(result));');
     buffer.writeln('  }');
     buffer.writeln();
 
@@ -269,8 +270,7 @@ class DelegateGenerator {
     buffer.writeln('    if (max != null) agg[\'_max\'] = max;');
     buffer.writeln('    if (agg.isNotEmpty) queryBuilder.aggregation(agg);');
     buffer.writeln();
-    buffer.writeln(
-        '    if (orderBy != null) queryBuilder.orderBy(orderBy);');
+    buffer.writeln('    if (orderBy != null) queryBuilder.orderBy(orderBy);');
     buffer.writeln();
     buffer.writeln(
         '    return await _executor.executeQueryAsMaps(queryBuilder.build());');
@@ -331,15 +331,20 @@ class DelegateGenerator {
     buffer.writeln('            result[entry.key] = cleanedFilter;');
     buffer.writeln('          }');
     buffer.writeln('        } else {');
-    buffer.writeln('          // Handle filter objects that weren\'t serialized (e.g., StringFilter)');
+    buffer.writeln(
+        '          // Handle filter objects that weren\'t serialized (e.g., StringFilter)');
     buffer.writeln('          try {');
-    buffer.writeln('            final serialized = (entry.value as dynamic).toJson();');
+    buffer.writeln(
+        '            final serialized = (entry.value as dynamic).toJson();');
     buffer.writeln('            if (serialized is Map) {');
     buffer.writeln('              final cleaned = <String, dynamic>{};');
-    buffer.writeln('              for (final e in (serialized as Map).entries) {');
-    buffer.writeln('                if (e.value != null) cleaned[e.key.toString()] = e.value;');
+    buffer.writeln(
+        '              for (final e in (serialized as Map).entries) {');
+    buffer.writeln(
+        '                if (e.value != null) cleaned[e.key.toString()] = e.value;');
     buffer.writeln('              }');
-    buffer.writeln('              if (cleaned.isNotEmpty) result[entry.key] = cleaned;');
+    buffer.writeln(
+        '              if (cleaned.isNotEmpty) result[entry.key] = cleaned;');
     buffer.writeln('            } else {');
     buffer.writeln('              result[entry.key] = entry.value;');
     buffer.writeln('            }');
@@ -358,30 +363,21 @@ class DelegateGenerator {
         '  /// Normalize map values for Freezed fromJson (DateTime -> String, etc.)');
     buffer.writeln(
         '  Map<String, dynamic> _normalizeForJson(Map<String, dynamic> map) {');
-    buffer.writeln(
-        '    return map.map((key, value) {');
+    buffer.writeln('    return map.map((key, value) {');
     buffer.writeln(
         '      if (value is DateTime) return MapEntry(key, value.toIso8601String());');
     buffer.writeln(
         '      if (value is Map<String, dynamic>) return MapEntry(key, _normalizeForJson(value));');
-    buffer.writeln(
-        '      if (value is List) {');
-    buffer.writeln(
-        '        return MapEntry(key, value.map((e) {');
+    buffer.writeln('      if (value is List) {');
+    buffer.writeln('        return MapEntry(key, value.map((e) {');
     buffer.writeln(
         '          if (e is Map<String, dynamic>) return _normalizeForJson(e);');
-    buffer.writeln(
-        '          if (e is DateTime) return e.toIso8601String();');
-    buffer.writeln(
-        '          return e;');
-    buffer.writeln(
-        '        }).toList());');
-    buffer.writeln(
-        '      }');
-    buffer.writeln(
-        '      return MapEntry(key, value);');
-    buffer.writeln(
-        '    });');
+    buffer.writeln('          if (e is DateTime) return e.toIso8601String();');
+    buffer.writeln('          return e;');
+    buffer.writeln('        }).toList());');
+    buffer.writeln('      }');
+    buffer.writeln('      return MapEntry(key, value);');
+    buffer.writeln('    });');
     buffer.writeln('  }');
     buffer.writeln();
 

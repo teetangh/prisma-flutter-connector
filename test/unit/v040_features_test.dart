@@ -16,8 +16,7 @@ void main() {
         final query = JsonQueryBuilder()
             .model('User')
             .action(QueryAction.findMany)
-            .orderBy({'createdAt': 'desc'})
-            .build();
+            .orderBy({'createdAt': 'desc'}).build();
 
         final result = compiler.compile(query);
         expect(result.sql, contains('ORDER BY "createdAt" DESC'));
@@ -28,13 +27,13 @@ void main() {
             .model('User')
             .action(QueryAction.findMany)
             .orderBy([
-              {'lastName': 'asc'},
-              {'firstName': 'asc'},
-            ])
-            .build();
+          {'lastName': 'asc'},
+          {'firstName': 'asc'},
+        ]).build();
 
         final result = compiler.compile(query);
-        expect(result.sql, contains('ORDER BY "lastName" ASC, "firstName" ASC'));
+        expect(
+            result.sql, contains('ORDER BY "lastName" ASC, "firstName" ASC'));
       });
 
       test('List<Map> with extended syntax works', () {
@@ -42,10 +41,11 @@ void main() {
             .model('User')
             .action(QueryAction.findMany)
             .orderBy([
-              {'createdAt': {'sort': 'desc', 'nulls': 'last'}},
-              {'name': 'asc'},
-            ])
-            .build();
+          {
+            'createdAt': {'sort': 'desc', 'nulls': 'last'}
+          },
+          {'name': 'asc'},
+        ]).build();
 
         final result = compiler.compile(query);
         expect(result.sql, contains('ORDER BY'));
@@ -91,8 +91,7 @@ void main() {
         final query = JsonQueryBuilder()
             .model('Feedback')
             .action(QueryAction.create)
-            .data({'title': 'Test feedback'})
-            .build();
+            .data({'title': 'Test feedback'}).build();
 
         final result = compiler.compile(query);
 
@@ -107,8 +106,7 @@ void main() {
         final query = JsonQueryBuilder()
             .model('Feedback')
             .action(QueryAction.create)
-            .data({'id': 'custom-id', 'title': 'Test'})
-            .build();
+            .data({'id': 'custom-id', 'title': 'Test'}).build();
 
         final result = compiler.compile(query);
 
@@ -173,14 +171,14 @@ void main() {
         compiler = SqlCompiler(provider: 'postgresql', schema: registry);
       });
 
-      test('M2M in first position of relationPath generates junction JOINs', () {
+      test('M2M in first position of relationPath generates junction JOINs',
+          () {
         final query = JsonQueryBuilder()
             .model('SlotOfAppointment')
             .action(QueryAction.findMany)
             .where({
-              ...FilterOperators.relationPath('user', {'id': 'user-1'}),
-            })
-            .build();
+          ...FilterOperators.relationPath('user', {'id': 'user-1'}),
+        }).build();
 
         final result = compiler.compile(query);
 
@@ -237,15 +235,14 @@ void main() {
             .model('appointments')
             .action(QueryAction.create)
             .data({
-              'id': 'appt-1',
-              'slots': {
-                'create': [
-                  {'startsAt': '2026-01-01T10:00:00Z'},
-                  {'startsAt': '2026-01-01T11:00:00Z'},
-                ],
-              },
-            })
-            .build();
+          'id': 'appt-1',
+          'slots': {
+            'create': [
+              {'startsAt': '2026-01-01T10:00:00Z'},
+              {'startsAt': '2026-01-01T11:00:00Z'},
+            ],
+          },
+        }).build();
 
         final result = compiler.compileWithRelations(query);
 
@@ -274,9 +271,8 @@ void main() {
         final query = JsonQueryBuilder()
             .model('Consultation')
             .action(QueryAction.groupBy)
-            .groupByFields(['requestStatus'])
-            .aggregation({'_count': true})
-            .build();
+            .groupByFields(['requestStatus']).aggregation(
+                {'_count': true}).build();
 
         final result = compiler.compile(query);
 
@@ -288,13 +284,11 @@ void main() {
         final query = JsonQueryBuilder()
             .model('Payment')
             .action(QueryAction.groupBy)
-            .groupByFields(['status'])
-            .aggregation({
-              '_count': true,
-              '_sum': {'amount': true},
-              '_avg': {'amount': true},
-            })
-            .build();
+            .groupByFields(['status']).aggregation({
+          '_count': true,
+          '_sum': {'amount': true},
+          '_avg': {'amount': true},
+        }).build();
 
         final result = compiler.compile(query);
 

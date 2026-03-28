@@ -1125,7 +1125,7 @@ RETURNING *
           }
         } else if (relation != null &&
             (relation.type == RelationType.oneToMany ||
-             relation.type == RelationType.oneToOne)) {
+                relation.type == RelationType.oneToOne)) {
           // 1:N or 1:1 nested writes: {create: [...]} or {connect: {id: ...}}
           if (value.containsKey('create')) {
             final creates = value['create'];
@@ -1153,8 +1153,7 @@ RETURNING *
             if (parentId != null) {
               for (final createData in createList) {
                 // Inject the FK pointing to parent
-                final childData =
-                    Map<String, dynamic>.from(createData);
+                final childData = Map<String, dynamic>.from(createData);
                 childData[relation.foreignKey] = parentId;
 
                 // Auto-generate UUID for child ID if the target model has @default(uuid())
@@ -1164,14 +1163,12 @@ RETURNING *
                   for (final field in targetModel.fields.values) {
                     if (field.defaultValue == 'uuid()' &&
                         !childData.containsKey(field.name)) {
-                      if (provider == 'postgresql' ||
-                          provider == 'supabase') {
+                      if (provider == 'postgresql' || provider == 'supabase') {
                         childData[field.name] = _RawSql('gen_random_uuid()');
                       }
                     } else if (field.defaultValue == 'now()' &&
                         !childData.containsKey(field.name)) {
-                      if (provider == 'postgresql' ||
-                          provider == 'supabase') {
+                      if (provider == 'postgresql' || provider == 'supabase') {
                         childData[field.name] = _RawSql('NOW()');
                       }
                     }
@@ -1179,13 +1176,12 @@ RETURNING *
                 }
 
                 // Compile child INSERT
-                final targetTableName = targetModel?.tableName ??
-                    relation.targetModel;
+                final targetTableName =
+                    targetModel?.tableName ?? relation.targetModel;
                 final childQuery = JsonQuery(
                   modelName: targetTableName,
                   action: 'create',
-                  args: JsonQueryArgs(
-                      arguments: {'data': childData}),
+                  args: JsonQueryArgs(arguments: {'data': childData}),
                 );
                 relationMutations.add(compile(childQuery));
               }
@@ -2492,8 +2488,7 @@ WHERE $joinTable.$joinColumn = $parentRef.$pkCol''';
   ///
   /// [baseAlias] - If provided, column names are prefixed with this alias
   ///   to disambiguate when JOINs are present.
-  String _buildOrderByClause(dynamic orderBy,
-      {String? baseAlias}) {
+  String _buildOrderByClause(dynamic orderBy, {String? baseAlias}) {
     if (orderBy == null) return '';
 
     // Support List<Map> for multi-column sorting

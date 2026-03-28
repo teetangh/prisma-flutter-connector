@@ -29,8 +29,7 @@ class SchemaRegistryGenerator {
         '/// It registers all models, fields, and relations from the Prisma schema.');
     buffer.writeln('library;');
     buffer.writeln();
-    buffer.writeln(
-        "import 'package:prisma_flutter_connector/$runtimeImport';");
+    buffer.writeln("import 'package:prisma_flutter_connector/$runtimeImport';");
     buffer.writeln();
 
     // Generate the registerAllModels function
@@ -113,10 +112,12 @@ class SchemaRegistryGenerator {
       if (field.isList) {
         // Could be oneToMany or manyToMany
         if (_isManyToMany(model, field, targetModel)) {
-          final junctionTable = _getJunctionTableName(model.name, targetModelName);
+          final junctionTable =
+              _getJunctionTableName(model.name, targetModelName);
           // Prisma uses A/B columns based on alphabetical model name order
           final joinCol = model.name.compareTo(targetModelName) < 0 ? 'A' : 'B';
-          final inverseCol = model.name.compareTo(targetModelName) < 0 ? 'B' : 'A';
+          final inverseCol =
+              model.name.compareTo(targetModelName) < 0 ? 'B' : 'A';
 
           entries.add(_RelationEntry(
             fieldName: field.name,
@@ -147,8 +148,8 @@ class SchemaRegistryGenerator {
 
         if (fk != null) {
           // Check if the target also has a single (non-list) back-reference → oneToOne
-          final backRef = targetModel.fields.where(
-              (f) => f.isRelation && f.type == model.name && !f.isList);
+          final backRef = targetModel.fields
+              .where((f) => f.isRelation && f.type == model.name && !f.isList);
           if (backRef.isNotEmpty) {
             entries.add(_RelationEntry(
               fieldName: field.name,
@@ -188,8 +189,8 @@ class SchemaRegistryGenerator {
     final hasExplicitFk = field.relationFromFields?.isNotEmpty == true;
     if (hasExplicitFk) return false;
 
-    final backRef = targetModel.fields.where(
-        (f) => f.isRelation && f.type == model.name && f.isList);
+    final backRef = targetModel.fields
+        .where((f) => f.isRelation && f.type == model.name && f.isList);
     return backRef.isNotEmpty;
   }
 
