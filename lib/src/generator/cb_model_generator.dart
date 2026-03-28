@@ -34,7 +34,6 @@ class CbModelGenerator {
       Directive.import('../filters.dart'),
       ...typeImports.map((t) => Directive.import('${toSnakeCase(t)}.dart')),
       Directive.part('$sn.freezed.dart'),
-      Directive.part('$sn.g.dart'),
     ];
 
     final library = Library((b) => b
@@ -48,6 +47,7 @@ class CbModelGenerator {
         _buildListRelationFilter(model),
         _buildRelationFilter(model),
         _buildOrderByInput(model),
+        ..._buildEnumConverters(model),
       ]));
 
     return _formatter.format('${library.accept(_emitter)}');
@@ -67,6 +67,9 @@ class CbModelGenerator {
       ..mixins.add(refer('_\$${model.name}'))
       ..constructors.addAll([
         Constructor((c) => c
+          ..constant = true
+          ..name = '_'),
+        Constructor((c) => c
           ..factory = true
           ..constant = true
           ..redirect = refer('_${model.name}')
@@ -77,9 +80,229 @@ class CbModelGenerator {
           ..requiredParameters.add(Parameter((p) => p
             ..name = 'json'
             ..type = refer('Map<String, dynamic>')))
-          ..body = Code('return _\$${model.name}FromJson(json);')),
-      ]));
+          ..body = Code(_generateFromJsonBody(model))),
+      ])
+      ..methods.add(Method((m) => m
+        ..name = 'toJson'
+        ..returns = refer('Map<String, dynamic>')
+        ..body = Code(_generateToJsonBody(model)))));
   }
+
+  // === Manual fromJson ===
+
+  /// Generate manual fromJson body for the main model class.
+  String _generateFromJsonBody(PrismaModel model) {
+    final args = <String>[];
+    for (final f in model.fields) {
+      if (f.isRelation) continue; // Skip relations
+      final dartType = _toDartType(f.type);
+      final key = f.dbName ?? f.name;
+      args.add('${f.name}: ${_fromJsonExpr(f, key, dartType)}');
+    }
+    return 'return ${model.name}(${args.join(', ')},);';
+  }
+
+  /// Generate a fromJson expression for a single field.
+  String _fromJsonExpr(PrismaField f, String key, String dartType) {
+    // Fields with @Default values may be absent in JSON — treat as optional with fallback
+    final hasDefault = f.defaultValue != null &&
+        !_isPrismaRuntimeDefault(f.defaultValue!) &&
+        !_isEnumType(f.type);
+    final effectiveRequired = f.isRequired && !hasDefault;
+    if (f.isList) {
+      if (_isEnumType(f.type)) {
+        return effectiveRequired
+            ? "(json['$key'] as List).map((e) => ${f.type}.values.byName(e as String)).toList()"
+            : "(json['$key'] as List?)?.map((e) => ${f.type}.values.byName(e as String)).toList()";
+      }
+      final defaultSuffix = hasDefault ? ' ?? ${f.defaultValue}' : '';
+      return effectiveRequired
+          ? "(json['$key'] as List).cast<$dartType>()"
+          : "(json['$key'] as List?)?.cast<$dartType>()$defaultSuffix";
+    }
+
+    if (_isEnumType(f.type)) {
+      // Use _fromJsonEnum helper that matches DB values (SCREAMING_CASE) to Dart values
+      final enumName = f.type;
+      if (f.defaultValue != null) {
+        final def = '$enumName.${toCamelCase(f.defaultValue!)}';
+        return "json['$key'] != null ? _\$${enumName}FromJson(json['$key'] as String) : $def";
+      }
+      return effectiveRequired
+          ? "_\$${enumName}FromJson(json['$key'] as String)"
+          : "json['$key'] != null ? _\$${enumName}FromJson(json['$key'] as String) : null";
+    }
+
+    final defaultSuffix = hasDefault ? ' ?? ${f.defaultValue}' : '';
+    return switch (dartType) {
+      'String' => effectiveRequired
+          ? "json['$key'] as String"
+          : "(json['$key'] as String?)$defaultSuffix",
+      'int' => effectiveRequired
+          ? "(json['$key'] as num).toInt()"
+          : "(json['$key'] as num?)?.toInt()$defaultSuffix",
+      'double' => effectiveRequired
+          ? "(json['$key'] as num).toDouble()"
+          : "(json['$key'] as num?)?.toDouble()$defaultSuffix",
+      'bool' => effectiveRequired
+          ? "json['$key'] as bool"
+          : "(json['$key'] as bool?)$defaultSuffix",
+      'DateTime' => effectiveRequired
+          ? "json['$key'] is DateTime ? json['$key'] as DateTime : DateTime.parse(json['$key'] as String)"
+          : "json['$key'] != null ? (json['$key'] is DateTime ? json['$key'] as DateTime : DateTime.parse(json['$key'] as String)) : null",
+      'BigInt' => effectiveRequired
+          ? "BigInt.parse(json['$key'].toString())"
+          : "json['$key'] != null ? BigInt.parse(json['$key'].toString()) : null",
+      'Map<String, dynamic>' => f.isRequired
+          ? "json['$key'] as Map<String, dynamic>"
+          : "json['$key'] as Map<String, dynamic>?",
+      _ => "json['$key'] as $dartType${f.isRequired ? '' : '?'}",
+    };
+  }
+
+  // === Manual toJson ===
+
+  /// Generate manual toJson body for the main model class.
+  String _generateToJsonBody(PrismaModel model) {
+    final entries = <String>[];
+    for (final f in model.fields) {
+      if (f.isRelation) continue;
+      final key = f.dbName ?? f.name;
+      entries.add("'$key': ${_toJsonExpr(f)}");
+    }
+    return 'return <String, dynamic>{${entries.join(', ')},};';
+  }
+
+  /// Generate a toJson expression for a single model field.
+  String _toJsonExpr(PrismaField f) {
+    final dartType = _toDartType(f.type);
+    final name = f.name;
+    final nullable = _isFieldNullableInModel(f);
+    final q = nullable ? '?' : '';
+
+    if (f.isList) {
+      if (_isEnumType(f.type)) {
+        return '$name$q.map((e) => e.name).toList()';
+      }
+      return name;
+    }
+
+    if (_isEnumType(f.type)) {
+      return '_\$${f.type}ToJson($name)';
+    }
+
+    return switch (dartType) {
+      'DateTime' => '$name$q.toIso8601String()',
+      'BigInt' => '$name$q.toString()',
+      _ => name,
+    };
+  }
+
+  /// Whether a model field is nullable in the generated Dart class.
+  bool _isFieldNullableInModel(PrismaField f) {
+    if (f.isRelation) return true;
+    if (f.hasEmptyListDefault && f.isList) return true;
+    // Enum with default but not required → type is still nullable (UserRole?)
+    if (f.defaultValue != null && _isEnumType(f.type)) return !f.isRequired;
+    final hasScalarDefault = f.defaultValue != null &&
+        !f.isRelation &&
+        !_isPrismaRuntimeDefault(f.defaultValue!);
+    if (hasScalarDefault) return false;
+    if (f.isRequired) return false;
+    return true;
+  }
+
+  /// Generate toJson body for CreateInput or UpdateInput.
+  String _generateInputToJsonBody(PrismaModel model,
+      {required bool allNullable}) {
+    final entries = <String>[];
+    for (final f in model.fields) {
+      if (f.isId || f.isCreatedAt || f.isUpdatedAt || _isRelationField(f)) {
+        continue;
+      }
+      final name = f.name;
+      final dartType = _toDartType(f.type);
+      final nullable = allNullable || _isCreateInputFieldNullable(f);
+      final q = nullable ? '?' : '';
+
+      String expr;
+      if (f.isList && _isEnumType(f.type)) {
+        expr = '$name$q.map((e) => _\$${f.type}ToJson(e)).toList()';
+      } else if (_isEnumType(f.type)) {
+        expr = '_\$${f.type}ToJson($name)';
+      } else if (dartType == 'DateTime') {
+        expr = '$name$q.toIso8601String()';
+      } else if (dartType == 'BigInt') {
+        expr = '$name$q.toString()';
+      } else {
+        expr = name;
+      }
+
+      if (nullable) {
+        entries.add("if ($name != null) '$name': $expr");
+      } else {
+        entries.add("'$name': $expr");
+      }
+    }
+    return 'return <String, dynamic>{${entries.join(', ')},};';
+  }
+
+  /// Whether a CreateInput field is nullable in the generated Dart class.
+  bool _isCreateInputFieldNullable(PrismaField f) {
+    if (f.hasEmptyListDefault && f.isList) return true;
+    if (f.defaultValue != null && _isEnumType(f.type)) return false;
+    if (f.isRequired && f.defaultValue == null) return false;
+    return true;
+  }
+
+  /// Generate toJson body for WhereUniqueInput.
+  String _generateWhereUniqueToJsonBody(PrismaModel model) {
+    final uniqueFields =
+        model.fields.where((f) => (f.isId || f.isUnique) && !f.isRelation);
+    final entries = <String>[];
+    for (final f in uniqueFields) {
+      entries.add("if (${f.name} != null) '${f.name}': ${f.name}");
+    }
+    return 'return <String, dynamic>{${entries.join(', ')},};';
+  }
+
+  /// Generate toJson body for WhereInput.
+  String _generateWhereInputToJsonBody(PrismaModel model) {
+    final entries = <String>[];
+    for (final f in model.fields) {
+      if (f.isRelation) {
+        entries.add("if (${f.name} != null) '${f.name}': ${f.name}!.toJson()");
+        continue;
+      }
+      if (_getFilterType(f) != null) {
+        entries.add("if (${f.name} != null) '${f.name}': ${f.name}!.toJson()");
+      }
+    }
+    entries.add("if (AND != null) 'AND': AND!.map((e) => e.toJson()).toList()");
+    entries.add("if (OR != null) 'OR': OR!.map((e) => e.toJson()).toList()");
+    entries.add("if (NOT != null) 'NOT': NOT!.toJson()");
+    return 'return <String, dynamic>{${entries.join(', ')},};';
+  }
+
+  /// Generate toJson body for OrderByInput.
+  String _generateOrderByToJsonBody(PrismaModel model) {
+    final sortableFields = model.fields.where((f) =>
+        !f.isRelation &&
+        (f.type == 'String' ||
+            f.type == 'Int' ||
+            f.type == 'Float' ||
+            f.type == 'DateTime' ||
+            f.type == 'Boolean' ||
+            f.isCreatedAt ||
+            f.isUpdatedAt));
+    final entries = <String>[];
+    for (final f in sortableFields) {
+      entries.add("if (${f.name} != null) '${f.name}': ${f.name}!.name");
+    }
+    return 'return <String, dynamic>{${entries.join(', ')},};';
+  }
+
+  // === Field parameter builders ===
 
   Parameter _modelFieldToParam(PrismaField f) {
     if (f.isRelation) {
@@ -151,7 +374,8 @@ class CbModelGenerator {
     }
 
     return _freezedClass('Create${model.name}Input', params,
-        doc: '/// Input for creating a new ${model.name}');
+        doc: '/// Input for creating a new ${model.name}',
+        toJsonBody: _generateInputToJsonBody(model, allNullable: false));
   }
 
   Parameter _createInputParam(PrismaField f) {
@@ -202,7 +426,8 @@ class CbModelGenerator {
     }
 
     return _freezedClass('Update${model.name}Input', params,
-        doc: '/// Input for updating an existing ${model.name}');
+        doc: '/// Input for updating an existing ${model.name}',
+        toJsonBody: _generateInputToJsonBody(model, allNullable: true));
   }
 
   // === WhereUniqueInput ===
@@ -217,7 +442,10 @@ class CbModelGenerator {
       ..named = true
       ..type = refer(f.isList ? 'List<${f.type}>?' : '${f.type}?')));
 
-    return [_freezedClass('${model.name}WhereUniqueInput', params.toList())];
+    return [
+      _freezedClass('${model.name}WhereUniqueInput', params.toList(),
+          toJsonBody: _generateWhereUniqueToJsonBody(model))
+    ];
   }
 
   // === WhereInput ===
@@ -268,11 +496,12 @@ class CbModelGenerator {
       ..mixins.add(refer('_\$$name'))
       ..constructors.addAll([
         Constructor((c) => c
+          ..constant = true
+          ..name = '_'),
+        Constructor((c) => c
           ..factory = true
           ..constant = true
           ..redirect = refer('_$name')
-          ..annotations.add(
-              CodeExpression(Code('JsonSerializable(explicitToJson: true)')))
           ..optionalParameters.addAll(params)),
         Constructor((c) => c
           ..factory = true
@@ -280,8 +509,13 @@ class CbModelGenerator {
           ..requiredParameters.add(Parameter((p) => p
             ..name = 'json'
             ..type = refer('Map<String, dynamic>')))
-          ..body = Code('return _\$${name}FromJson(json);')),
-      ]));
+          ..body =
+              Code("throw UnimplementedError('$name.fromJson not needed');")),
+      ])
+      ..methods.add(Method((m) => m
+        ..name = 'toJson'
+        ..returns = refer('Map<String, dynamic>')
+        ..body = Code(_generateWhereInputToJsonBody(model)))));
   }
 
   // === Relation filters ===
@@ -289,36 +523,49 @@ class CbModelGenerator {
   Class _buildListRelationFilter(PrismaModel model) {
     final name = '${model.name}ListRelationFilter';
     final wt = '${model.name}WhereInput?';
-    return _freezedClass(name, [
-      Parameter((p) => p
-        ..name = 'some'
-        ..named = true
-        ..type = refer(wt)),
-      Parameter((p) => p
-        ..name = 'every'
-        ..named = true
-        ..type = refer(wt)),
-      Parameter((p) => p
-        ..name = 'none'
-        ..named = true
-        ..type = refer(wt)),
-    ]);
+    return _freezedClass(
+        name,
+        [
+          Parameter((p) => p
+            ..name = 'some'
+            ..named = true
+            ..type = refer(wt)),
+          Parameter((p) => p
+            ..name = 'every'
+            ..named = true
+            ..type = refer(wt)),
+          Parameter((p) => p
+            ..name = 'none'
+            ..named = true
+            ..type = refer(wt)),
+        ],
+        toJsonBody: "return <String, dynamic>{"
+            "if (some != null) 'some': some!.toJson(), "
+            "if (every != null) 'every': every!.toJson(), "
+            "if (none != null) 'none': none!.toJson(),"
+            "};");
   }
 
   Class _buildRelationFilter(PrismaModel model) {
     final name = '${model.name}RelationFilter';
     final wt = '${model.name}WhereInput?';
-    return _freezedClass(name, [
-      Parameter((p) => p
-        ..name = 'is_'
-        ..named = true
-        ..annotations.add(CodeExpression(Code("JsonKey(name: 'is')")))
-        ..type = refer(wt)),
-      Parameter((p) => p
-        ..name = 'isNot'
-        ..named = true
-        ..type = refer(wt)),
-    ]);
+    return _freezedClass(
+        name,
+        [
+          Parameter((p) => p
+            ..name = 'is_'
+            ..named = true
+            ..annotations.add(CodeExpression(Code("JsonKey(name: 'is')")))
+            ..type = refer(wt)),
+          Parameter((p) => p
+            ..name = 'isNot'
+            ..named = true
+            ..type = refer(wt)),
+        ],
+        toJsonBody: "return <String, dynamic>{"
+            "if (is_ != null) 'is': is_!.toJson(), "
+            "if (isNot != null) 'isNot': isNot!.toJson(),"
+            "};");
   }
 
   // === OrderByInput ===
@@ -341,12 +588,14 @@ class CbModelGenerator {
           ..type = refer('SortOrder?')))
         .toList();
 
-    return _freezedClass('${model.name}OrderByInput', params);
+    return _freezedClass('${model.name}OrderByInput', params,
+        toJsonBody: _generateOrderByToJsonBody(model));
   }
 
   // === Shared: build a @freezed class ===
 
-  Class _freezedClass(String name, List<Parameter> params, {String? doc}) {
+  Class _freezedClass(String name, List<Parameter> params,
+      {String? doc, required String toJsonBody}) {
     return Class((b) {
       if (doc != null) b.docs.add(doc);
       b
@@ -355,40 +604,108 @@ class CbModelGenerator {
         ..mixins.add(refer('_\$$name'))
         ..constructors.addAll([
           Constructor((c) => c
+            ..constant = true
+            ..name = '_'),
+          Constructor((c) => c
             ..factory = true
             ..constant = true
             ..redirect = refer('_$name')
             ..optionalParameters.addAll(params)),
+          // Stub fromJson — input/filter types are serialized TO JSON
+          // (for queries), rarely FROM JSON.
           Constructor((c) => c
             ..factory = true
             ..name = 'fromJson'
             ..requiredParameters.add(Parameter((p) => p
               ..name = 'json'
               ..type = refer('Map<String, dynamic>')))
-            ..body = Code('return _\$${name}FromJson(json);')),
-        ]);
+            ..body =
+                Code("throw UnimplementedError('$name.fromJson not needed');")),
+        ])
+        ..methods.add(Method((m) => m
+          ..name = 'toJson'
+          ..returns = refer('Map<String, dynamic>')
+          ..body = Code(toJsonBody)));
     });
   }
 
   // === Enum generation ===
 
   String generateEnum(PrismaEnum enumDef) {
-    final values = enumDef.values.map((v) {
+    final values = <EnumValue>[];
+    final switchCases = <String>[];
+
+    for (final v in enumDef.values) {
       var dartValue = toCamelCase(v);
       if (_isDartReservedKeyword(dartValue)) dartValue = '${dartValue}Value';
-      return EnumValue((ev) => ev
+      values.add(EnumValue((ev) => ev
         ..name = dartValue
-        ..annotations.add(CodeExpression(Code("JsonValue('$v')"))));
-    });
+        ..annotations.add(CodeExpression(Code("JsonValue('$v')")))));
+      switchCases.add("${enumDef.name}.$dartValue => '$v'");
+    }
 
     final lib = Library((b) => b
       ..directives.add(Directive.import(
           'package:freezed_annotation/freezed_annotation.dart'))
       ..body.add(Enum((e) => e
         ..name = enumDef.name
-        ..values.addAll(values))));
+        ..values.addAll(values)
+        ..methods.add(Method((m) => m
+          ..name = 'toJson'
+          ..returns = refer('String')
+          ..body =
+              Code('return switch (this) {${switchCases.join(', ')},};'))))));
 
     return _formatter.format('${lib.accept(_emitter)}');
+  }
+
+  /// Generate enum converter functions for enums used in this model.
+  List<Spec> _buildEnumConverters(PrismaModel model) {
+    // Collect unique enum types used in this model
+    final enumTypes = <String>{};
+    for (final f in model.fields) {
+      if (!f.isRelation && _isEnumType(f.type)) {
+        enumTypes.add(f.type);
+      }
+    }
+
+    final specs = <Spec>[];
+    for (final enumName in enumTypes) {
+      final enumDef = schema.enums.where((e) => e.name == enumName).firstOrNull;
+      if (enumDef == null) continue;
+
+      // Build value→dart map entries: 'PENDING' => EnumName.pending
+      final fromEntries = <String>[];
+      final toEntries = <String>[];
+      for (final v in enumDef.values) {
+        var dartValue = toCamelCase(v);
+        if (_isDartReservedKeyword(dartValue)) dartValue = '${dartValue}Value';
+        fromEntries.add("'$v' => $enumName.$dartValue");
+        toEntries.add("$enumName.$dartValue => '$v'");
+      }
+
+      // _$EnumNameFromJson
+      specs.add(Method((m) => m
+        ..name = '_\$${enumName}FromJson'
+        ..returns = refer(enumName)
+        ..requiredParameters.add(Parameter((p) => p
+          ..name = 'value'
+          ..type = refer('String')))
+        ..body = Code(
+            'return switch (value) {${fromEntries.join(', ')}, _ => throw ArgumentError(\'Unknown $enumName: \$value\'),};')));
+
+      // _$EnumNameToJson (handles nullable)
+      specs.add(Method((m) => m
+        ..name = '_\$${enumName}ToJson'
+        ..returns = refer('String?')
+        ..requiredParameters.add(Parameter((p) => p
+          ..name = 'value'
+          ..type = refer('$enumName?')))
+        ..body = Code(
+            'if (value == null) return null; return switch (value) {${toEntries.join(', ')},};')));
+    }
+
+    return specs;
   }
 
   /// Generate all model files.

@@ -4,6 +4,26 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-03-28
+
+### Fixed
+
+#### Eliminate .g.dart dependency — manual fromJson + toJson (#52)
+- **Root cause**: json_serializable silently skips generated model files containing `StringFilter?`, `IntFilter?` types, producing zero `.g.dart` output. This breaks dart_frog builds with "toJson not defined" errors.
+- **Removed** `part '*.g.dart'` directives from all generated model and filter files
+- **Added manual `fromJson`** to main model class — handles all field types (String, int, double, bool, DateTime, BigInt, enums, lists, Map) with proper casting and DateTime ISO8601 parsing
+- **Added manual `toJson`** to every generated class:
+  - **Model**: serializes all fields (DateTime → ISO8601, Enum → `.toJson()`, BigInt → string)
+  - **CreateInput / UpdateInput**: conditional entries skipping nulls
+  - **WhereUniqueInput**: conditional map of unique/id fields
+  - **WhereInput**: calls `.toJson()` on nested filters, relation filters, and logical operators (AND/OR/NOT)
+  - **ListRelationFilter / RelationFilter**: calls `.toJson()` on nested WhereInput objects
+  - **OrderByInput**: converts SortOrder enum via `.name`
+  - **All filter types** (StringFilter, IntFilter, DateTimeFilter, etc.): conditional map with `in_` → `'in'` key mapping, DateTime → ISO8601, enum → `.toJson()`
+- **Added `const Model._()` private constructor** to all Freezed classes (required for custom methods)
+- **Added `toJson()` method to generated enums** — returns original Prisma value (e.g., `Role.admin.toJson()` → `'ADMIN'`)
+- `@freezed` kept for immutability/copyWith/equality — only JSON serialization is now manual
+
 ## [0.5.3] - 2026-03-28
 
 ### Fixed

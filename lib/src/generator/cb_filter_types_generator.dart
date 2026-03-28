@@ -22,7 +22,6 @@ class CbFilterTypesGenerator {
       ...schema.enums
           .map((e) => Directive.import('models/${toSnakeCase(e.name)}.dart')),
       Directive.part('filters.freezed.dart'),
-      Directive.part('filters.g.dart'),
     ];
 
     final body = <Spec>[
@@ -113,12 +112,16 @@ class CbFilterTypesGenerator {
   }
 
   Class _filter(String name, String doc, List<Parameter> params) {
+    final toJsonBody = _filterToJsonBody(params);
     return Class((b) => b
       ..name = name
       ..docs.add('/// Filter for $doc fields')
       ..annotations.add(refer('freezed'))
       ..mixins.add(refer('_\$$name'))
       ..constructors.addAll([
+        Constructor((c) => c
+          ..constant = true
+          ..name = '_'),
         Constructor((c) => c
           ..factory = true
           ..constant = true
@@ -130,8 +133,48 @@ class CbFilterTypesGenerator {
           ..requiredParameters.add(Parameter((p) => p
             ..name = 'json'
             ..type = refer('Map<String, dynamic>')))
-          ..body = Code('return _\$${name}FromJson(json);')),
-      ]));
+          ..body =
+              Code("throw UnimplementedError('$name.fromJson not needed');")),
+      ])
+      ..methods.add(Method((m) => m
+        ..name = 'toJson'
+        ..returns = refer('Map<String, dynamic>')
+        ..body = Code(toJsonBody))));
+  }
+
+  /// Generate toJson body for a filter class.
+  String _filterToJsonBody(List<Parameter> params) {
+    final entries = <String>[];
+    for (final p in params) {
+      final name = p.name;
+      final jsonKey = name == 'in_' ? 'in' : name;
+      final typeStr = p.type?.symbol ?? '';
+      entries.add(
+          "if ($name != null) '$jsonKey': ${_filterValueExpr(name, typeStr)}");
+    }
+    return 'return <String, dynamic>{${entries.join(', ')},};';
+  }
+
+  /// Generate the value expression for a filter param in toJson.
+  String _filterValueExpr(String name, String typeStr) {
+    final cleanType = typeStr.replaceAll('?', '');
+
+    if (cleanType == 'DateTime') return '$name!.toIso8601String()';
+    if (cleanType.startsWith('List<DateTime>')) {
+      return '$name!.map((e) => e.toIso8601String()).toList()';
+    }
+
+    // Check for enum types
+    if (schema.enums.any((e) => e.name == cleanType)) {
+      return '$name!.toJson()';
+    }
+    final listMatch = RegExp(r'List<(\w+)>').firstMatch(cleanType);
+    if (listMatch != null &&
+        schema.enums.any((e) => e.name == listMatch.group(1))) {
+      return '$name!.map((e) => e.toJson()).toList()';
+    }
+
+    return name;
   }
 
   Parameter _p(String type, String name) => Parameter((p) => p
