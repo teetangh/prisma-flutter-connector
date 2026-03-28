@@ -1,143 +1,148 @@
-/// Filter types generator using code_builder for auto-formatted output.
+/// Filter types generator using code_builder — zero StringBuffer usage.
 // ignore_for_file: prefer_const_constructors
 library;
 
+import 'package:code_builder/code_builder.dart';
 import 'package:dart_style/dart_style.dart';
 import 'package:prisma_flutter_connector/src/generator/prisma_parser.dart';
 import 'package:prisma_flutter_connector/src/generator/string_utils.dart';
 
-/// Generates filter type classes (StringFilter, IntFilter, etc.)
-/// using dart_style for auto-formatting.
+/// Generates filter type classes using code_builder AST.
 class CbFilterTypesGenerator {
   final PrismaSchema schema;
   late final _formatter =
       DartFormatter(languageVersion: DartFormatter.latestLanguageVersion);
+  final _emitter = DartEmitter(useNullSafetySyntax: true);
 
   CbFilterTypesGenerator(this.schema);
 
   String generate() {
-    final buf = StringBuffer();
+    final directives = <Directive>[
+      Directive.import('package:freezed_annotation/freezed_annotation.dart'),
+      ...schema.enums
+          .map((e) => Directive.import('models/${toSnakeCase(e.name)}.dart')),
+      Directive.part('filters.freezed.dart'),
+      Directive.part('filters.g.dart'),
+    ];
 
-    buf.writeln('/// Generated filter types for type-safe queries');
-    buf.writeln('library;');
-    buf.writeln();
-    buf.writeln("import 'package:freezed_annotation/freezed_annotation.dart';");
-    buf.writeln();
+    final body = <Spec>[
+      _filter('StringFilter', 'String', [
+        _p('String?', 'equals'),
+        _p('String?', 'not'),
+        _pJsonKey('List<String>?', 'in_', 'in'),
+        _p('List<String>?', 'notIn'),
+        _p('String?', 'contains'),
+        _p('String?', 'startsWith'),
+        _p('String?', 'endsWith'),
+        _p('String?', 'lt'),
+        _p('String?', 'lte'),
+        _p('String?', 'gt'),
+        _p('String?', 'gte'),
+      ]),
+      _filter('IntFilter', 'Int', [
+        _p('int?', 'equals'),
+        _p('int?', 'not'),
+        _pJsonKey('List<int>?', 'in_', 'in'),
+        _p('List<int>?', 'notIn'),
+        _p('int?', 'lt'),
+        _p('int?', 'lte'),
+        _p('int?', 'gt'),
+        _p('int?', 'gte'),
+      ]),
+      _filter('FloatFilter', 'Float/Decimal', [
+        _p('double?', 'equals'),
+        _p('double?', 'not'),
+        _pJsonKey('List<double>?', 'in_', 'in'),
+        _p('List<double>?', 'notIn'),
+        _p('double?', 'lt'),
+        _p('double?', 'lte'),
+        _p('double?', 'gt'),
+        _p('double?', 'gte'),
+      ]),
+      _filter('BooleanFilter', 'Boolean', [
+        _p('bool?', 'equals'),
+        _p('bool?', 'not'),
+      ]),
+      _filter('DateTimeFilter', 'DateTime', [
+        _p('DateTime?', 'equals'),
+        _p('DateTime?', 'not'),
+        _pJsonKey('List<DateTime>?', 'in_', 'in'),
+        _p('List<DateTime>?', 'notIn'),
+        _p('DateTime?', 'lt'),
+        _p('DateTime?', 'lte'),
+        _p('DateTime?', 'gt'),
+        _p('DateTime?', 'gte'),
+      ]),
+      ...schema.enums.map((e) => _filter('${e.name}Filter', e.name, [
+            _p('${e.name}?', 'equals'),
+            _p('${e.name}?', 'not'),
+            _pJsonKey('List<${e.name}>?', 'in_', 'in'),
+            _p('List<${e.name}>?', 'notIn'),
+          ])),
+      _filter('StringListFilter', 'String list', [
+        _p('String?', 'has'),
+        _p('List<String>?', 'hasEvery'),
+        _p('List<String>?', 'hasSome'),
+        _p('bool?', 'isEmpty'),
+      ]),
+      _filter('IntListFilter', 'Int list', [
+        _p('int?', 'has'),
+        _p('List<int>?', 'hasEvery'),
+        _p('List<int>?', 'hasSome'),
+        _p('bool?', 'isEmpty'),
+      ]),
+      Enum((b) => b
+        ..name = 'SortOrder'
+        ..docs.add('/// Sort order for ordering results')
+        ..values.addAll([
+          EnumValue((v) => v
+            ..name = 'asc'
+            ..annotations.add(CodeExpression(Code("JsonValue('asc')")))),
+          EnumValue((v) => v
+            ..name = 'desc'
+            ..annotations.add(CodeExpression(Code("JsonValue('desc')")))),
+        ])),
+    ];
 
-    for (final enumDef in schema.enums) {
-      buf.writeln("import 'models/${toSnakeCase(enumDef.name)}.dart';");
-    }
-    if (schema.enums.isNotEmpty) buf.writeln();
+    final library = Library((b) => b
+      ..comments.add('/// Generated filter types for type-safe queries')
+      ..directives.addAll(directives)
+      ..body.addAll(body));
 
-    buf.writeln("part 'filters.freezed.dart';");
-    buf.writeln("part 'filters.g.dart';");
-    buf.writeln();
+    return _formatter.format('${library.accept(_emitter)}');
+  }
 
-    // Core filters
-    buf.write(_freezedFilter('StringFilter', 'String', [
-      'String? equals',
-      'String? not',
-      "@JsonKey(name: 'in') List<String>? in_",
-      'List<String>? notIn',
-      'String? contains',
-      'String? startsWith',
-      'String? endsWith',
-      'String? lt',
-      'String? lte',
-      'String? gt',
-      'String? gte',
-    ]));
-
-    buf.write(_freezedFilter('IntFilter', 'Int', [
-      'int? equals',
-      'int? not',
-      "@JsonKey(name: 'in') List<int>? in_",
-      'List<int>? notIn',
-      'int? lt',
-      'int? lte',
-      'int? gt',
-      'int? gte',
-    ]));
-
-    buf.write(_freezedFilter('FloatFilter', 'Float/Decimal', [
-      'double? equals',
-      'double? not',
-      "@JsonKey(name: 'in') List<double>? in_",
-      'List<double>? notIn',
-      'double? lt',
-      'double? lte',
-      'double? gt',
-      'double? gte',
-    ]));
-
-    buf.write(_freezedFilter('BooleanFilter', 'Boolean', [
-      'bool? equals',
-      'bool? not',
-    ]));
-
-    buf.write(_freezedFilter('DateTimeFilter', 'DateTime', [
-      'DateTime? equals',
-      'DateTime? not',
-      "@JsonKey(name: 'in') List<DateTime>? in_",
-      'List<DateTime>? notIn',
-      'DateTime? lt',
-      'DateTime? lte',
-      'DateTime? gt',
-      'DateTime? gte',
-    ]));
-
-    // Enum filters
-    for (final enumDef in schema.enums) {
-      buf.write(_freezedFilter('${enumDef.name}Filter', enumDef.name, [
-        '${enumDef.name}? equals',
-        '${enumDef.name}? not',
-        "@JsonKey(name: 'in') List<${enumDef.name}>? in_",
-        'List<${enumDef.name}>? notIn',
+  Class _filter(String name, String doc, List<Parameter> params) {
+    return Class((b) => b
+      ..name = name
+      ..docs.add('/// Filter for $doc fields')
+      ..annotations.add(refer('freezed'))
+      ..mixins.add(refer('_\$$name'))
+      ..constructors.addAll([
+        Constructor((c) => c
+          ..factory = true
+          ..constant = true
+          ..redirect = refer('_$name')
+          ..optionalParameters.addAll(params)),
+        Constructor((c) => c
+          ..factory = true
+          ..name = 'fromJson'
+          ..requiredParameters.add(Parameter((p) => p
+            ..name = 'json'
+            ..type = refer('Map<String, dynamic>')))
+          ..body = Code('return _\$${name}FromJson(json);')),
       ]));
-    }
-
-    // List filters
-    buf.write(_freezedFilter('StringListFilter', 'String list', [
-      'String? has',
-      'List<String>? hasEvery',
-      'List<String>? hasSome',
-      'bool? isEmpty',
-    ]));
-
-    buf.write(_freezedFilter('IntListFilter', 'Int list', [
-      'int? has',
-      'List<int>? hasEvery',
-      'List<int>? hasSome',
-      'bool? isEmpty',
-    ]));
-
-    // SortOrder enum
-    buf.writeln('/// Sort order for ordering results');
-    buf.writeln('enum SortOrder {');
-    buf.writeln("  @JsonValue('asc')");
-    buf.writeln('  asc,');
-    buf.writeln("  @JsonValue('desc')");
-    buf.writeln('  desc,');
-    buf.writeln('}');
-
-    return _formatter.format(buf.toString());
   }
 
-  String _freezedFilter(String name, String doc, List<String> fields) {
-    final buf = StringBuffer();
-    buf.writeln('/// Filter for $doc fields');
-    buf.writeln('@freezed');
-    buf.writeln('class $name with _\$$name {');
-    buf.writeln('  const factory $name({');
-    for (final field in fields) {
-      buf.writeln('    $field,');
-    }
-    buf.writeln('  }) = _$name;');
-    buf.writeln();
-    buf.writeln('  factory $name.fromJson(Map<String, dynamic> json) =>');
-    buf.writeln('      _\$${name}FromJson(json);');
-    buf.writeln('}');
-    buf.writeln();
-    return buf.toString();
-  }
+  Parameter _p(String type, String name) => Parameter((p) => p
+    ..name = name
+    ..named = true
+    ..type = refer(type));
+
+  Parameter _pJsonKey(String type, String name, String jsonName) =>
+      Parameter((p) => p
+        ..name = name
+        ..named = true
+        ..type = refer(type)
+        ..annotations.add(CodeExpression(Code("JsonKey(name: '$jsonName')"))));
 }

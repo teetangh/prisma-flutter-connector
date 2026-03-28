@@ -4,6 +4,19 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-03-28
+
+### Changed
+
+#### Zero StringBuffer — Full code_builder Migration
+- **Rewrote `cb_model_generator` and `cb_filter_types_generator`** to use code_builder Class/Constructor/Parameter/Enum builders
+- All 5 generators now have **0 `buf.write` calls** (was 167 in v0.5.0, 917 in v0.4.0)
+- Freezed classes generated via code_builder AST: `@freezed`, `with _$Model`, `const factory ... = _Model`, `fromJson`
+- Field annotations (`@Default`, `@JsonKey`, `@JsonSerializable`) built as `CodeExpression` nodes
+
+#### Freezed Dependency
+- Constrained `freezed` dev dependency to `>=3.0.6 <3.2.0` (3.2.x requires Dart SDK >=3.7.0)
+
 ## [0.5.0] - 2026-03-28
 
 ### Changed
