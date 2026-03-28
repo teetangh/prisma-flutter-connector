@@ -57,6 +57,8 @@ class CbDelegateGenerator {
         _findUniqueOrThrow(modelName),
         _findFirst(modelName, tableName),
         _findMany(modelName, tableName),
+        _findManyRaw(modelName, tableName),
+        _findFirstRaw(modelName, tableName),
         _create(modelName, tableName),
         _createMany(modelName, tableName),
         _update(modelName, tableName),
@@ -77,19 +79,26 @@ class CbDelegateGenerator {
     ..docs.add('/// Find a single $m by unique field(s)')
     ..modifier = MethodModifier.async
     ..returns = refer('Future<$m?>')
-    ..optionalParameters.add(Parameter((p) => p
-      ..name = 'where'
-      ..named = true
-      ..required = true
-      ..type = refer('${m}WhereUniqueInput')))
+    ..optionalParameters.addAll([
+      Parameter((p) => p
+        ..name = 'where'
+        ..named = true
+        ..required = true
+        ..type = refer('${m}WhereUniqueInput')),
+      Parameter((p) => p
+        ..name = 'include'
+        ..named = true
+        ..type = refer('Map<String, dynamic>?')),
+    ])
     ..body = Code('''
-      final query = JsonQueryBuilder()
+      final queryBuilder = JsonQueryBuilder()
           .model('$t')
           .action(QueryAction.findUnique)
-          .where(_whereUniqueToJson(where))
-          .build();
+          .where(_whereUniqueToJson(where));
 
-      final result = await _executor.executeQueryAsSingleMap(query);
+      if (include != null) queryBuilder.include(include);
+
+      final result = await _executor.executeQueryAsSingleMap(queryBuilder.build());
       return result != null ? $m.fromJson(_normalizeForJson(result)) : null;
     '''));
 
@@ -125,6 +134,10 @@ class CbDelegateGenerator {
         ..name = 'orderBy'
         ..named = true
         ..type = refer('${m}OrderByInput?')),
+      Parameter((p) => p
+        ..name = 'include'
+        ..named = true
+        ..type = refer('Map<String, dynamic>?')),
     ])
     ..body = Code('''
       final queryBuilder = JsonQueryBuilder()
@@ -133,6 +146,7 @@ class CbDelegateGenerator {
 
       if (where != null) queryBuilder.where(_whereToJson(where));
       if (orderBy != null) queryBuilder.orderBy(_orderByToJson(orderBy));
+      if (include != null) queryBuilder.include(include);
 
       final result = await _executor.executeQueryAsSingleMap(queryBuilder.build());
       return result != null ? $m.fromJson(_normalizeForJson(result)) : null;
@@ -151,7 +165,7 @@ class CbDelegateGenerator {
       Parameter((p) => p
         ..name = 'orderBy'
         ..named = true
-        ..type = refer('${m}OrderByInput?')),
+        ..type = refer('dynamic')),
       Parameter((p) => p
         ..name = 'take'
         ..named = true
@@ -160,6 +174,26 @@ class CbDelegateGenerator {
         ..name = 'skip'
         ..named = true
         ..type = refer('int?')),
+      Parameter((p) => p
+        ..name = 'include'
+        ..named = true
+        ..type = refer('Map<String, dynamic>?')),
+      Parameter((p) => p
+        ..name = 'includeRequired'
+        ..named = true
+        ..type = refer('Map<String, dynamic>?')),
+      Parameter((p) => p
+        ..name = 'selectFields'
+        ..named = true
+        ..type = refer('List<String>?')),
+      Parameter((p) => p
+        ..name = 'distinct'
+        ..named = true
+        ..type = refer('bool?')),
+      Parameter((p) => p
+        ..name = 'distinctFields'
+        ..named = true
+        ..type = refer('List<String>?')),
     ])
     ..body = Code('''
       final queryBuilder = JsonQueryBuilder()
@@ -167,12 +201,116 @@ class CbDelegateGenerator {
           .action(QueryAction.findMany);
 
       if (where != null) queryBuilder.where(_whereToJson(where));
-      if (orderBy != null) queryBuilder.orderBy(_orderByToJson(orderBy));
+      if (orderBy is Map<String, dynamic>) queryBuilder.orderBy(orderBy as Map<String, dynamic>);
+      if (orderBy is List) queryBuilder.orderBy(orderBy);
+      if (orderBy is ${m}OrderByInput) queryBuilder.orderBy(_orderByToJson(orderBy as ${m}OrderByInput));
       if (take != null) queryBuilder.take(take);
       if (skip != null) queryBuilder.skip(skip);
+      if (include != null) queryBuilder.include(include);
+      if (includeRequired != null) queryBuilder.includeRequired(includeRequired);
+      if (selectFields != null) queryBuilder.selectFields(selectFields);
+      if (distinct == true) queryBuilder.distinct(distinctFields);
 
       final results = await _executor.executeQueryAsMaps(queryBuilder.build());
       return results.map((json) => $m.fromJson(_normalizeForJson(json))).toList();
+    '''));
+
+  Method _findManyRaw(String m, String t) => Method((b) => b
+    ..name = 'findManyRaw'
+    ..docs
+        .add('/// Find multiple ${m}s as raw maps (use with include/computed)')
+    ..modifier = MethodModifier.async
+    ..returns = refer('Future<List<Map<String, dynamic>>>')
+    ..optionalParameters.addAll([
+      Parameter((p) => p
+        ..name = 'where'
+        ..named = true
+        ..type = refer('Map<String, dynamic>?')),
+      Parameter((p) => p
+        ..name = 'orderBy'
+        ..named = true
+        ..type = refer('dynamic')),
+      Parameter((p) => p
+        ..name = 'take'
+        ..named = true
+        ..type = refer('int?')),
+      Parameter((p) => p
+        ..name = 'skip'
+        ..named = true
+        ..type = refer('int?')),
+      Parameter((p) => p
+        ..name = 'include'
+        ..named = true
+        ..type = refer('Map<String, dynamic>?')),
+      Parameter((p) => p
+        ..name = 'includeRequired'
+        ..named = true
+        ..type = refer('Map<String, dynamic>?')),
+      Parameter((p) => p
+        ..name = 'selectFields'
+        ..named = true
+        ..type = refer('List<String>?')),
+      Parameter((p) => p
+        ..name = 'computed'
+        ..named = true
+        ..type = refer('Map<String, ComputedField>?')),
+      Parameter((p) => p
+        ..name = 'distinct'
+        ..named = true
+        ..type = refer('bool?')),
+      Parameter((p) => p
+        ..name = 'distinctFields'
+        ..named = true
+        ..type = refer('List<String>?')),
+    ])
+    ..body = Code('''
+      final queryBuilder = JsonQueryBuilder()
+          .model('$t')
+          .action(QueryAction.findMany);
+
+      if (where != null) queryBuilder.where(where);
+      if (orderBy is Map<String, dynamic>) queryBuilder.orderBy(orderBy as Map<String, dynamic>);
+      if (orderBy is List) queryBuilder.orderBy(orderBy);
+      if (take != null) queryBuilder.take(take);
+      if (skip != null) queryBuilder.skip(skip);
+      if (include != null) queryBuilder.include(include);
+      if (includeRequired != null) queryBuilder.includeRequired(includeRequired);
+      if (selectFields != null) queryBuilder.selectFields(selectFields);
+      if (computed != null) queryBuilder.computed(computed);
+      if (distinct == true) queryBuilder.distinct(distinctFields);
+
+      return await _executor.executeQueryAsMaps(queryBuilder.build());
+    '''));
+
+  Method _findFirstRaw(String m, String t) => Method((b) => b
+    ..name = 'findFirstRaw'
+    ..docs.add('/// Find the first $m as a raw map (use with include/computed)')
+    ..modifier = MethodModifier.async
+    ..returns = refer('Future<Map<String, dynamic>?>')
+    ..optionalParameters.addAll([
+      Parameter((p) => p
+        ..name = 'where'
+        ..named = true
+        ..type = refer('Map<String, dynamic>?')),
+      Parameter((p) => p
+        ..name = 'orderBy'
+        ..named = true
+        ..type = refer('dynamic')),
+      Parameter((p) => p
+        ..name = 'include'
+        ..named = true
+        ..type = refer('Map<String, dynamic>?')),
+    ])
+    ..body = Code('''
+      final queryBuilder = JsonQueryBuilder()
+          .model('$t')
+          .action(QueryAction.findFirst);
+
+      if (where != null) queryBuilder.where(where);
+      if (orderBy is Map<String, dynamic>) queryBuilder.orderBy(orderBy as Map<String, dynamic>);
+      if (include != null) queryBuilder.include(include);
+
+      return await _executor.executeQueryAsSingleMap(queryBuilder.build());
     '''));
 
   Method _create(String m, String t) => Method((b) => b
