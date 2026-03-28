@@ -60,23 +60,23 @@ void main() {
 
       setUp(() {
         registry = SchemaRegistry();
-        registry.registerModel(ModelSchema(
+        registry.registerModel(const ModelSchema(
           name: 'Feedback',
           tableName: 'feedbacks',
           fields: {
-            'id': const FieldInfo(
+            'id': FieldInfo(
               name: 'id',
               columnName: 'id',
               type: 'String',
               isId: true,
               defaultValue: 'uuid()',
             ),
-            'title': const FieldInfo(
+            'title': FieldInfo(
               name: 'title',
               columnName: 'title',
               type: 'String',
             ),
-            'createdAt': const FieldInfo(
+            'createdAt': FieldInfo(
               name: 'createdAt',
               columnName: 'created_at',
               type: 'DateTime',
@@ -158,13 +158,13 @@ void main() {
             ),
           },
         ));
-        registry.registerModel(ModelSchema(
+        registry.registerModel(const ModelSchema(
           name: 'User',
           tableName: 'users',
           fields: {
-            'id': const FieldInfo(
+            'id': FieldInfo(
                 name: 'id', columnName: 'id', type: 'String', isId: true),
-            'name': const FieldInfo(
+            'name': FieldInfo(
                 name: 'name', columnName: 'name', type: 'String'),
           },
         ));
@@ -208,22 +208,22 @@ void main() {
             ),
           },
         ));
-        registry.registerModel(ModelSchema(
+        registry.registerModel(const ModelSchema(
           name: 'slots_of_appointment',
           tableName: 'slots_of_appointment',
           fields: {
-            'id': const FieldInfo(
+            'id': FieldInfo(
               name: 'id',
               columnName: 'id',
               type: 'String',
               isId: true,
               defaultValue: 'uuid()',
             ),
-            'appointmentId': const FieldInfo(
+            'appointmentId': FieldInfo(
                 name: 'appointmentId',
                 columnName: 'appointment_id',
                 type: 'String'),
-            'startsAt': const FieldInfo(
+            'startsAt': FieldInfo(
                 name: 'startsAt', columnName: 'starts_at', type: 'DateTime'),
           },
         ));

@@ -446,11 +446,11 @@ class SqlCompiler {
         if (data.containsKey(field.name)) continue;
         if (field.defaultValue == 'uuid()' || field.defaultValue == 'cuid()') {
           if (provider == 'postgresql' || provider == 'supabase') {
-            data[field.name] = _RawSql('gen_random_uuid()');
+            data[field.name] = const _RawSql('gen_random_uuid()');
           }
         } else if (field.defaultValue == 'now()') {
           if (provider == 'postgresql' || provider == 'supabase') {
-            data[field.name] = _RawSql('NOW()');
+            data[field.name] = const _RawSql('NOW()');
           }
         }
       }
@@ -1164,12 +1164,12 @@ RETURNING *
                     if (field.defaultValue == 'uuid()' &&
                         !childData.containsKey(field.name)) {
                       if (provider == 'postgresql' || provider == 'supabase') {
-                        childData[field.name] = _RawSql('gen_random_uuid()');
+                        childData[field.name] = const _RawSql('gen_random_uuid()');
                       }
                     } else if (field.defaultValue == 'now()' &&
                         !childData.containsKey(field.name)) {
                       if (provider == 'postgresql' || provider == 'supabase') {
-                        childData[field.name] = _RawSql('NOW()');
+                        childData[field.name] = const _RawSql('NOW()');
                       }
                     }
                   }
