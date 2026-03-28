@@ -4,6 +4,19 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-03-28
+
+### Added
+
+#### include, distinct, selectFields on Delegates
+- **`findUnique`, `findFirst` now accept `include: Map<String, dynamic>?`** for eager-loading relations
+- **`findMany` now accepts `include`, `includeRequired`, `selectFields`, `distinct`, `distinctFields`** for full query control
+- **`orderBy` on `findMany` accepts `dynamic`** — supports `Map<String, dynamic>`, `List<Map>`, or typed `OrderByInput`
+- **New `findManyRaw()`** — returns `List<Map<String, dynamic>>` instead of typed models, supports `include`, `selectFields`, `computed`, `distinct`, `includeRequired`
+- **New `findFirstRaw()`** — returns `Map<String, dynamic>?`, supports `include`
+
+These methods unlock migration of ~160 more JsonQueryBuilder usages that previously couldn't use typed delegates because they needed relation includes, field selection, or computed fields.
+
 ## [0.5.1] - 2026-03-28
 
 ### Changed
