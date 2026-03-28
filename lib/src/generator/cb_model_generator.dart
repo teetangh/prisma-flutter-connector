@@ -112,8 +112,8 @@ class CbModelGenerator {
     if (f.isList) {
       if (_isEnumType(f.type)) {
         return effectiveRequired
-            ? "(json['$key'] as List).map((e) => ${f.type}.values.byName(e as String)).toList()"
-            : "(json['$key'] as List?)?.map((e) => ${f.type}.values.byName(e as String)).toList()";
+            ? "(json['$key'] as List).map((e) => _\$${f.type}FromJson(e as String)).toList()"
+            : "(json['$key'] as List?)?.map((e) => _\$${f.type}FromJson(e as String)).toList()";
       }
       final defaultSuffix = hasDefault ? ' ?? ${f.defaultValue}' : '';
       return effectiveRequired
@@ -125,7 +125,11 @@ class CbModelGenerator {
       // Use _fromJsonEnum helper that matches DB values (SCREAMING_CASE) to Dart values
       final enumName = f.type;
       if (f.defaultValue != null) {
-        final def = '$enumName.${toCamelCase(f.defaultValue!)}';
+        var dartDefault = toCamelCase(f.defaultValue!);
+        if (_isDartReservedKeyword(dartDefault)) {
+          dartDefault = '${dartDefault}Value';
+        }
+        final def = '$enumName.$dartDefault';
         return "json['$key'] != null ? _\$${enumName}FromJson(json['$key'] as String) : $def";
       }
       return effectiveRequired
@@ -182,7 +186,7 @@ class CbModelGenerator {
 
     if (f.isList) {
       if (_isEnumType(f.type)) {
-        return '$name$q.map((e) => e.name).toList()';
+        return '$name$q.map((e) => _\$${f.type}ToJson(e)).toList()';
       }
       return name;
     }
@@ -329,8 +333,9 @@ class CbModelGenerator {
       annotations.add(CodeExpression(Code('Default(<${f.type}>[])')));
       type = 'List<${f.type}>?';
     } else if (f.defaultValue != null && _isEnumType(f.type)) {
-      annotations.add(CodeExpression(
-          Code('Default(${f.type}.${toCamelCase(f.defaultValue!)})')));
+      var enumVal = toCamelCase(f.defaultValue!);
+      if (_isDartReservedKeyword(enumVal)) enumVal = '${enumVal}Value';
+      annotations.add(CodeExpression(Code('Default(${f.type}.$enumVal)')));
       type = f.dartType;
     } else {
       final hasScalarDefault = f.defaultValue != null &&
@@ -388,8 +393,9 @@ class CbModelGenerator {
       annotations.add(CodeExpression(Code('Default(<$dartType>[])')));
       type = 'List<$dartType>?';
     } else if (f.defaultValue != null && _isEnumType(f.type)) {
-      annotations.add(CodeExpression(
-          Code('Default($dartType.${toCamelCase(f.defaultValue!)})')));
+      var enumVal = toCamelCase(f.defaultValue!);
+      if (_isDartReservedKeyword(enumVal)) enumVal = '${enumVal}Value';
+      annotations.add(CodeExpression(Code('Default($dartType.$enumVal)')));
       type = dartType;
     } else if (f.isRequired && f.defaultValue == null) {
       type = f.isList ? 'List<$dartType>' : dartType;
