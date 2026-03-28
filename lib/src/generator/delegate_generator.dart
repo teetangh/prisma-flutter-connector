@@ -51,7 +51,7 @@ class DelegateGenerator {
     buffer.writeln(
         '    final result = await _executor.executeQueryAsSingleMap(query);');
     buffer.writeln(
-        '    return result != null ? $modelName.fromJson(result) : null;');
+        '    return result != null ? $modelName.fromJson(_normalizeForJson(result)) : null;');
     buffer.writeln('  }');
     buffer.writeln();
 
@@ -86,7 +86,7 @@ class DelegateGenerator {
     buffer.writeln(
         '    final result = await _executor.executeQueryAsSingleMap(queryBuilder.build());');
     buffer.writeln(
-        '    return result != null ? $modelName.fromJson(result) : null;');
+        '    return result != null ? $modelName.fromJson(_normalizeForJson(result)) : null;');
     buffer.writeln('  }');
     buffer.writeln();
 
@@ -112,7 +112,7 @@ class DelegateGenerator {
     buffer.writeln(
         '    final results = await _executor.executeQueryAsMaps(queryBuilder.build());');
     buffer.writeln(
-        '    return results.map((json) => $modelName.fromJson(json)).toList();');
+        '    return results.map((json) => $modelName.fromJson(_normalizeForJson(json))).toList();');
     buffer.writeln('  }');
     buffer.writeln();
 
@@ -132,7 +132,7 @@ class DelegateGenerator {
     buffer.writeln('    if (result == null) {');
     buffer.writeln('      throw Exception(\'Failed to create $modelName\');');
     buffer.writeln('    }');
-    buffer.writeln('    return $modelName.fromJson(result);');
+    buffer.writeln('    return $modelName.fromJson(_normalizeForJson(result));');
     buffer.writeln('  }');
     buffer.writeln();
 
@@ -241,6 +241,42 @@ class DelegateGenerator {
     buffer.writeln('  }');
     buffer.writeln();
 
+    // GroupBy method
+    buffer.writeln('  /// Group ${modelName}s by fields with aggregations');
+    buffer.writeln('  Future<List<Map<String, dynamic>>> groupBy({');
+    buffer.writeln('    required List<String> by,');
+    buffer.writeln('    ${modelName}WhereInput? where,');
+    buffer.writeln('    bool? count,');
+    buffer.writeln('    Map<String, bool>? sum,');
+    buffer.writeln('    Map<String, bool>? avg,');
+    buffer.writeln('    Map<String, bool>? min,');
+    buffer.writeln('    Map<String, bool>? max,');
+    buffer.writeln('    dynamic orderBy,');
+    buffer.writeln('  }) async {');
+    buffer.writeln('    final queryBuilder = JsonQueryBuilder()');
+    buffer.writeln('        .model(\'$tableName\')');
+    buffer.writeln('        .action(QueryAction.groupBy)');
+    buffer.writeln('        .groupByFields(by);');
+    buffer.writeln();
+    buffer.writeln(
+        '    if (where != null) queryBuilder.where(_whereToJson(where));');
+    buffer.writeln();
+    buffer.writeln('    final agg = <String, dynamic>{};');
+    buffer.writeln('    if (count == true) agg[\'_count\'] = true;');
+    buffer.writeln('    if (sum != null) agg[\'_sum\'] = sum;');
+    buffer.writeln('    if (avg != null) agg[\'_avg\'] = avg;');
+    buffer.writeln('    if (min != null) agg[\'_min\'] = min;');
+    buffer.writeln('    if (max != null) agg[\'_max\'] = max;');
+    buffer.writeln('    if (agg.isNotEmpty) queryBuilder.aggregation(agg);');
+    buffer.writeln();
+    buffer.writeln(
+        '    if (orderBy != null) queryBuilder.orderBy(orderBy);');
+    buffer.writeln();
+    buffer.writeln(
+        '    return await _executor.executeQueryAsMaps(queryBuilder.build());');
+    buffer.writeln('  }');
+    buffer.writeln();
+
     // Helper methods for converting typed inputs to JSON
     buffer
         .writeln('  /// Convert WhereUniqueInput to JSON for JsonQueryBuilder');
@@ -295,12 +331,57 @@ class DelegateGenerator {
     buffer.writeln('            result[entry.key] = cleanedFilter;');
     buffer.writeln('          }');
     buffer.writeln('        } else {');
-    buffer.writeln('          result[entry.key] = entry.value;');
+    buffer.writeln('          // Handle filter objects that weren\'t serialized (e.g., StringFilter)');
+    buffer.writeln('          try {');
+    buffer.writeln('            final serialized = (entry.value as dynamic).toJson();');
+    buffer.writeln('            if (serialized is Map) {');
+    buffer.writeln('              final cleaned = <String, dynamic>{};');
+    buffer.writeln('              for (final e in (serialized as Map).entries) {');
+    buffer.writeln('                if (e.value != null) cleaned[e.key.toString()] = e.value;');
+    buffer.writeln('              }');
+    buffer.writeln('              if (cleaned.isNotEmpty) result[entry.key] = cleaned;');
+    buffer.writeln('            } else {');
+    buffer.writeln('              result[entry.key] = entry.value;');
+    buffer.writeln('            }');
+    buffer.writeln('          } catch (_) {');
+    buffer.writeln('            result[entry.key] = entry.value;');
+    buffer.writeln('          }');
     buffer.writeln('        }');
     buffer.writeln('      }');
     buffer.writeln('    }');
     buffer.writeln();
     buffer.writeln('    return result;');
+    buffer.writeln('  }');
+    buffer.writeln();
+
+    buffer.writeln(
+        '  /// Normalize map values for Freezed fromJson (DateTime -> String, etc.)');
+    buffer.writeln(
+        '  Map<String, dynamic> _normalizeForJson(Map<String, dynamic> map) {');
+    buffer.writeln(
+        '    return map.map((key, value) {');
+    buffer.writeln(
+        '      if (value is DateTime) return MapEntry(key, value.toIso8601String());');
+    buffer.writeln(
+        '      if (value is Map<String, dynamic>) return MapEntry(key, _normalizeForJson(value));');
+    buffer.writeln(
+        '      if (value is List) {');
+    buffer.writeln(
+        '        return MapEntry(key, value.map((e) {');
+    buffer.writeln(
+        '          if (e is Map<String, dynamic>) return _normalizeForJson(e);');
+    buffer.writeln(
+        '          if (e is DateTime) return e.toIso8601String();');
+    buffer.writeln(
+        '          return e;');
+    buffer.writeln(
+        '        }).toList());');
+    buffer.writeln(
+        '      }');
+    buffer.writeln(
+        '      return MapEntry(key, value);');
+    buffer.writeln(
+        '    });');
     buffer.writeln('  }');
     buffer.writeln();
 

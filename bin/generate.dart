@@ -19,6 +19,7 @@ import 'package:prisma_flutter_connector/src/generator/model_generator.dart';
 import 'package:prisma_flutter_connector/src/generator/delegate_generator.dart';
 import 'package:prisma_flutter_connector/src/generator/client_generator.dart';
 import 'package:prisma_flutter_connector/src/generator/filter_types_generator.dart';
+import 'package:prisma_flutter_connector/src/generator/schema_registry_generator.dart';
 import 'package:prisma_flutter_connector/src/generator/string_utils.dart';
 
 void main(List<String> arguments) async {
@@ -125,6 +126,15 @@ void main(List<String> arguments) async {
   await clientFile.writeAsString(clientCode);
   print('  ✓ Generated prisma_client.dart');
 
+  // Generate schema registry
+  print('🗂️  Generating schema registry...');
+  final schemaRegistryGenerator =
+      SchemaRegistryGenerator(schema, serverMode: serverMode);
+  final schemaRegistryCode = schemaRegistryGenerator.generate();
+  final schemaRegistryFile = File('$outputPath/schema_registry.g.dart');
+  await schemaRegistryFile.writeAsString(schemaRegistryCode);
+  print('  ✓ Generated schema_registry.g.dart');
+
   // Generate barrel export file
   print('📦 Generating barrel exports...');
   final barrelExportCode = _generateBarrelExport(schema);
@@ -164,6 +174,10 @@ String _generateBarrelExport(PrismaSchema schema) {
 
   // Export filters
   buffer.writeln("export 'filters.dart';");
+  buffer.writeln();
+
+  // Export schema registry
+  buffer.writeln("export 'schema_registry.g.dart';");
   buffer.writeln();
 
   // Export all models

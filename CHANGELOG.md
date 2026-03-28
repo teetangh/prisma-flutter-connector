@@ -4,6 +4,62 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-03-28
+
+### Added
+
+#### Auto-Generate SchemaRegistry (Issue #29)
+- **New `schema_registry_generator.dart`** - Automatically generates `schema_registry.g.dart` with all models, fields, relations, and M2M junction table metadata from the Prisma schema
+- Replaces manual 2500+ line schema registry files with a single `registerAllModels(schemaRegistry)` call
+- Exported via the barrel `index.dart` file
+
+#### Nested Writes for 1:N and 1:1 Relations (Issue #30)
+- **`compileWithRelations()` now supports `{create: [...]}` for one-to-many relations**
+- Child records are created with the parent's FK automatically injected
+- UUID/timestamp defaults are auto-generated for child records
+- `{connect: {id: ...}}` for one-to-one relations sets FK on parent row
+
+#### groupBy Method in Generated Delegates (Issue #33)
+- **Generated model delegates now include `groupBy()` method**
+- Accepts `by`, `where`, `count`, `sum`, `avg`, `min`, `max`, `orderBy` parameters
+- Delegates to the existing `QueryAction.groupBy` SQL compilation
+
+#### Multi-Column orderBy (Issue #26)
+- **`orderBy()` now accepts `List<Map>` for multi-column sorting**
+- Single `Map` usage unchanged (backward compatible)
+- Example: `.orderBy([{'lastName': 'asc'}, {'firstName': 'asc'}])`
+
+#### Connection Pooler Timeout Recovery (Issue #27)
+- **PostgresAdapter now supports automatic reconnection** after pooler/connection timeouts
+- Pass a `connectionFactory` callback to enable health checking and auto-reconnect
+- Health check runs `SELECT 1` with 5-second timeout before each query
+- No-op when `connectionFactory` is not provided (backward compatible)
+
+### Fixed
+
+#### @default(uuid/cuid/now) Auto-Generation (Issue #24)
+- **CREATE queries now auto-generate `gen_random_uuid()` and `NOW()` for PostgreSQL/Supabase** when fields have `@default(uuid())`, `@default(cuid())`, or `@default(now())` in the Prisma schema
+- Only injects defaults when the field is not explicitly provided in data
+- Uses database-native functions (no Dart-side UUID dependency)
+
+#### StringFilter/WhereInput Serialization (Issue #25)
+- **Added `@JsonSerializable(explicitToJson: true)` to generated WhereInput classes** so nested filter objects (StringFilter, IntFilter, etc.) are properly serialized to JSON
+- Added fallback in delegate `_whereToJson` that tries `.toJson()` on filter objects that aren't already Maps
+
+#### M2M Relations in relationPath Deep Filters (Issue #32)
+- **`FilterOperators.relationPath()` now supports many-to-many relations** via junction table JOINs
+- Previously returned empty results silently for M2M; now generates proper EXISTS subqueries through junction tables
+- Works in both first and subsequent positions in the relation path
+
+#### Nested Include Deserialization in Transactions (Issue #31)
+- **Verified**: v0.3.4 + v0.3.8 fixes already resolve this for all code paths
+- Both `QueryExecutor` and `TransactionExecutor` use identical `RelationDeserializer` logic
+- Stale workarounds in consumer code can be safely removed
+
+### Tests
+- Added 10 comprehensive unit tests for all v0.4.0 features
+- All 74+ existing tests pass with zero regressions
+
 ## [0.3.8] - 2026-01-10
 
 ### Fixed
