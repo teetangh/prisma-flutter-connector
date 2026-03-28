@@ -51,7 +51,7 @@ class DelegateGenerator {
     buffer.writeln(
         '    final result = await _executor.executeQueryAsSingleMap(query);');
     buffer.writeln(
-        '    return result != null ? $modelName.fromJson(result) : null;');
+        '    return result != null ? $modelName.fromJson(_normalizeForJson(result)) : null;');
     buffer.writeln('  }');
     buffer.writeln();
 
@@ -86,7 +86,7 @@ class DelegateGenerator {
     buffer.writeln(
         '    final result = await _executor.executeQueryAsSingleMap(queryBuilder.build());');
     buffer.writeln(
-        '    return result != null ? $modelName.fromJson(result) : null;');
+        '    return result != null ? $modelName.fromJson(_normalizeForJson(result)) : null;');
     buffer.writeln('  }');
     buffer.writeln();
 
@@ -112,7 +112,7 @@ class DelegateGenerator {
     buffer.writeln(
         '    final results = await _executor.executeQueryAsMaps(queryBuilder.build());');
     buffer.writeln(
-        '    return results.map((json) => $modelName.fromJson(json)).toList();');
+        '    return results.map((json) => $modelName.fromJson(_normalizeForJson(json))).toList();');
     buffer.writeln('  }');
     buffer.writeln();
 
@@ -132,7 +132,7 @@ class DelegateGenerator {
     buffer.writeln('    if (result == null) {');
     buffer.writeln('      throw Exception(\'Failed to create $modelName\');');
     buffer.writeln('    }');
-    buffer.writeln('    return $modelName.fromJson(result);');
+    buffer.writeln('    return $modelName.fromJson(_normalizeForJson(result));');
     buffer.writeln('  }');
     buffer.writeln();
 
@@ -351,6 +351,37 @@ class DelegateGenerator {
     buffer.writeln('    }');
     buffer.writeln();
     buffer.writeln('    return result;');
+    buffer.writeln('  }');
+    buffer.writeln();
+
+    buffer.writeln(
+        '  /// Normalize map values for Freezed fromJson (DateTime -> String, etc.)');
+    buffer.writeln(
+        '  Map<String, dynamic> _normalizeForJson(Map<String, dynamic> map) {');
+    buffer.writeln(
+        '    return map.map((key, value) {');
+    buffer.writeln(
+        '      if (value is DateTime) return MapEntry(key, value.toIso8601String());');
+    buffer.writeln(
+        '      if (value is Map<String, dynamic>) return MapEntry(key, _normalizeForJson(value));');
+    buffer.writeln(
+        '      if (value is List) {');
+    buffer.writeln(
+        '        return MapEntry(key, value.map((e) {');
+    buffer.writeln(
+        '          if (e is Map<String, dynamic>) return _normalizeForJson(e);');
+    buffer.writeln(
+        '          if (e is DateTime) return e.toIso8601String();');
+    buffer.writeln(
+        '          return e;');
+    buffer.writeln(
+        '        }).toList());');
+    buffer.writeln(
+        '      }');
+    buffer.writeln(
+        '      return MapEntry(key, value);');
+    buffer.writeln(
+        '    });');
     buffer.writeln('  }');
     buffer.writeln();
 
