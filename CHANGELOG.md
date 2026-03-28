@@ -4,6 +4,27 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-03-28
+
+### Changed
+
+#### Code Generation Architecture (#35)
+- **Migrated delegate generator to `code_builder` + `dart_style`** — replaces 417 lines of StringBuffer.writeln() with type-safe AST builders
+- Generated delegates are now auto-formatted by `DartFormatter`
+- New `CbDelegateGenerator` class in `lib/src/generator/cb_delegate_generator.dart`
+- Old `DelegateGenerator` preserved for backward compatibility but no longer used by CLI
+- Added `code_builder: ^4.9.0` and `dart_style: ^3.1.1` dependencies
+
+### Fixed
+
+#### JSON Deserialization for String-Based Drivers (#19)
+- **JSON columns from MySQL/SQLite are now properly parsed** — `deserializeValue()` attempts `jsonDecode()` on string values for `ColumnType.json` columns
+- PostgreSQL behavior unchanged (already returns parsed objects)
+
+### Notes
+- Version bump to 0.5.0 signals the architectural shift in code generation
+- Freezed 3.x compatibility (#23) — constraint already set to `>=2.4.1 <4.0.0`
+
 ## [0.4.0] - 2026-03-28
 
 ### Added

@@ -16,7 +16,7 @@ import 'dart:io';
 import 'package:args/args.dart';
 import 'package:prisma_flutter_connector/src/generator/prisma_parser.dart';
 import 'package:prisma_flutter_connector/src/generator/model_generator.dart';
-import 'package:prisma_flutter_connector/src/generator/delegate_generator.dart';
+import 'package:prisma_flutter_connector/src/generator/cb_delegate_generator.dart';
 import 'package:prisma_flutter_connector/src/generator/client_generator.dart';
 import 'package:prisma_flutter_connector/src/generator/filter_types_generator.dart';
 import 'package:prisma_flutter_connector/src/generator/schema_registry_generator.dart';
@@ -96,7 +96,7 @@ void main(List<String> arguments) async {
 
   // Generate Delegates (adapter-based)
   print('🔌 Generating model delegates...');
-  final delegateGenerator = DelegateGenerator(schema, serverMode: serverMode);
+  final delegateGenerator = CbDelegateGenerator(schema, serverMode: serverMode);
   final delegateFiles = delegateGenerator.generateAll();
 
   final delegatesDir = Directory('$outputPath/delegates');
