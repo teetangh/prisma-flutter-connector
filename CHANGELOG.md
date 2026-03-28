@@ -4,6 +4,31 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-03-28
+
+### Changed
+
+#### Code Generation Architecture (#35)
+- **Migrated ALL 5 generators to `code_builder` + `dart_style`**
+  - `CbDelegateGenerator` — fully code_builder (Class/Method/Field AST builders, 0 buffer.write calls)
+  - `CbClientGenerator` — fully code_builder (Class/Constructor/Method builders)
+  - `CbSchemaRegistryGenerator` — code_builder Library + Code blocks
+  - `CbModelGenerator` — dart_style auto-format, hybrid StringBuffer for Freezed-specific syntax
+  - `CbFilterTypesGenerator` — dart_style auto-format, hybrid StringBuffer for Freezed syntax
+- All generated output is auto-formatted by `DartFormatter`
+- Old StringBuffer generators preserved but unused by CLI
+- Added `code_builder: ^4.9.0` and `dart_style: ^3.0.1` dependencies
+
+### Fixed
+
+#### JSON Deserialization for String-Based Drivers (#19)
+- **JSON columns from MySQL/SQLite are now properly parsed** — `deserializeValue()` attempts `jsonDecode()` on string values for `ColumnType.json` columns
+- PostgreSQL behavior unchanged (already returns parsed objects)
+
+### Notes
+- Version bump to 0.5.0 signals the architectural shift in code generation
+- Freezed 3.x compatibility (#23) — constraint already set to `>=2.4.1 <4.0.0`
+
 ## [0.4.0] - 2026-03-28
 
 ### Added

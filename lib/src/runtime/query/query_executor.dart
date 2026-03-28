@@ -8,6 +8,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'package:prisma_flutter_connector/src/runtime/adapters/types.dart';
 import 'package:prisma_flutter_connector/src/runtime/errors/prisma_exceptions.dart';
 import 'package:prisma_flutter_connector/src/runtime/logging/query_logger.dart';
@@ -71,8 +72,15 @@ mixin ResultSetConverter {
         return value;
 
       case ColumnType.json:
-        // JSON values are typically returned as strings that need parsing
-        // or as already-parsed objects depending on the driver
+        // JSON values are returned as parsed objects by PostgreSQL but as
+        // strings by MySQL/SQLite. Try to parse strings as JSON.
+        if (value is String) {
+          try {
+            return jsonDecode(value);
+          } catch (_) {
+            return value;
+          }
+        }
         return value;
 
       case ColumnType.boolean:

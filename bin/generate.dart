@@ -15,11 +15,11 @@ library;
 import 'dart:io';
 import 'package:args/args.dart';
 import 'package:prisma_flutter_connector/src/generator/prisma_parser.dart';
-import 'package:prisma_flutter_connector/src/generator/model_generator.dart';
-import 'package:prisma_flutter_connector/src/generator/delegate_generator.dart';
-import 'package:prisma_flutter_connector/src/generator/client_generator.dart';
-import 'package:prisma_flutter_connector/src/generator/filter_types_generator.dart';
-import 'package:prisma_flutter_connector/src/generator/schema_registry_generator.dart';
+import 'package:prisma_flutter_connector/src/generator/cb_client_generator.dart';
+import 'package:prisma_flutter_connector/src/generator/cb_delegate_generator.dart';
+import 'package:prisma_flutter_connector/src/generator/cb_filter_types_generator.dart';
+import 'package:prisma_flutter_connector/src/generator/cb_model_generator.dart';
+import 'package:prisma_flutter_connector/src/generator/cb_schema_registry_generator.dart';
 import 'package:prisma_flutter_connector/src/generator/string_utils.dart';
 
 void main(List<String> arguments) async {
@@ -80,7 +80,7 @@ void main(List<String> arguments) async {
 
   // Generate models
   print('🏗️  Generating models...');
-  final modelGenerator = ModelGenerator(schema);
+  final modelGenerator = CbModelGenerator(schema);
   final modelFiles = modelGenerator.generateAll();
 
   final modelsDir = Directory('$outputPath/models');
@@ -96,7 +96,7 @@ void main(List<String> arguments) async {
 
   // Generate Delegates (adapter-based)
   print('🔌 Generating model delegates...');
-  final delegateGenerator = DelegateGenerator(schema, serverMode: serverMode);
+  final delegateGenerator = CbDelegateGenerator(schema, serverMode: serverMode);
   final delegateFiles = delegateGenerator.generateAll();
 
   final delegatesDir = Directory('$outputPath/delegates');
@@ -112,7 +112,7 @@ void main(List<String> arguments) async {
 
   // Generate filter types
   print('🔍 Generating filter types...');
-  final filterTypesGenerator = FilterTypesGenerator(schema);
+  final filterTypesGenerator = CbFilterTypesGenerator(schema);
   final filterTypesCode = filterTypesGenerator.generate();
   final filterTypesFile = File('$outputPath/filters.dart');
   await filterTypesFile.writeAsString(filterTypesCode);
@@ -120,7 +120,7 @@ void main(List<String> arguments) async {
 
   // Generate main client file (adapter-based)
   print('🎯 Generating PrismaClient...');
-  final clientGenerator = ClientGenerator(schema, serverMode: serverMode);
+  final clientGenerator = CbClientGenerator(schema, serverMode: serverMode);
   final clientCode = clientGenerator.generate();
   final clientFile = File('$outputPath/prisma_client.dart');
   await clientFile.writeAsString(clientCode);
@@ -129,7 +129,7 @@ void main(List<String> arguments) async {
   // Generate schema registry
   print('🗂️  Generating schema registry...');
   final schemaRegistryGenerator =
-      SchemaRegistryGenerator(schema, serverMode: serverMode);
+      CbSchemaRegistryGenerator(schema, serverMode: serverMode);
   final schemaRegistryCode = schemaRegistryGenerator.generate();
   final schemaRegistryFile = File('$outputPath/schema_registry.g.dart');
   await schemaRegistryFile.writeAsString(schemaRegistryCode);
