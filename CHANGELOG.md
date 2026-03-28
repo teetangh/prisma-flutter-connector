@@ -9,11 +9,15 @@ All notable changes to the Prisma Flutter Connector.
 ### Changed
 
 #### Code Generation Architecture (#35)
-- **Migrated delegate generator to `code_builder` + `dart_style`** — replaces 417 lines of StringBuffer.writeln() with type-safe AST builders
-- Generated delegates are now auto-formatted by `DartFormatter`
-- New `CbDelegateGenerator` class in `lib/src/generator/cb_delegate_generator.dart`
-- Old `DelegateGenerator` preserved for backward compatibility but no longer used by CLI
-- Added `code_builder: ^4.9.0` and `dart_style: ^3.1.1` dependencies
+- **Migrated ALL 5 generators to `code_builder` + `dart_style`**
+  - `CbDelegateGenerator` — fully code_builder (Class/Method/Field AST builders, 0 buffer.write calls)
+  - `CbClientGenerator` — fully code_builder (Class/Constructor/Method builders)
+  - `CbSchemaRegistryGenerator` — code_builder Library + Code blocks
+  - `CbModelGenerator` — dart_style auto-format, hybrid StringBuffer for Freezed-specific syntax
+  - `CbFilterTypesGenerator` — dart_style auto-format, hybrid StringBuffer for Freezed syntax
+- All generated output is auto-formatted by `DartFormatter`
+- Old StringBuffer generators preserved but unused by CLI
+- Added `code_builder: ^4.9.0` and `dart_style: ^3.0.1` dependencies
 
 ### Fixed
 
