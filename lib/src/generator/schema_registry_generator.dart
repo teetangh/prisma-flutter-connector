@@ -114,8 +114,9 @@ class SchemaRegistryGenerator {
         // Could be oneToMany or manyToMany
         if (_isManyToMany(model, field, targetModel)) {
           final junctionTable = _getJunctionTableName(model.name, targetModelName);
-          final joinCol = _getJunctionColumnName(model.name);
-          final inverseCol = _getJunctionColumnName(targetModelName);
+          // Prisma uses A/B columns based on alphabetical model name order
+          final joinCol = model.name.compareTo(targetModelName) < 0 ? 'A' : 'B';
+          final inverseCol = model.name.compareTo(targetModelName) < 0 ? 'B' : 'A';
 
           entries.add(_RelationEntry(
             fieldName: field.name,
@@ -196,15 +197,6 @@ class SchemaRegistryGenerator {
   String _getJunctionTableName(String modelA, String modelB) {
     final sorted = [modelA, modelB]..sort();
     return '_${sorted[0]}To${sorted[1]}';
-  }
-
-  /// Get the junction table column name for a model (A or B based on alphabetical order).
-  String _getJunctionColumnName(String modelName) {
-    // Prisma uses "A" and "B" columns in junction tables
-    // The model that comes first alphabetically gets "A"
-    // We can't determine this from a single model name alone, so we use a convention
-    // that's resolved at runtime. For now, return the model-side column.
-    return modelName;
   }
 
   /// Find the FK field on targetModel that references sourceModelName.

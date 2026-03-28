@@ -1141,12 +1141,13 @@ RETURNING *
                     : 'id';
 
             // Get parent ID from data (for create) or where (for update)
-            String? parentId;
+            // Keep original type (String, int, etc.) for type-safe FK values
+            dynamic parentId;
             if (query.action == 'create') {
-              parentId = data[parentPkFieldName]?.toString();
+              parentId = data[parentPkFieldName];
             } else if (query.action == 'update') {
               final where = args['where'] as Map<String, dynamic>?;
-              parentId = where?[parentPkFieldName]?.toString();
+              parentId = where?[parentPkFieldName];
             }
 
             if (parentId != null) {
