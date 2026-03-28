@@ -388,6 +388,7 @@ class ModelGenerator {
     buffer.writeln('@freezed');
     buffer.writeln(
         'class ${model.name}WhereInput with _\$${model.name}WhereInput {');
+    buffer.writeln('  @JsonSerializable(explicitToJson: true)');
     buffer.writeln('  const factory ${model.name}WhereInput({');
 
     // Add field filters (using field-level filter types)

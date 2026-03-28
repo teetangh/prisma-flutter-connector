@@ -26,13 +26,34 @@ import 'package:prisma_flutter_connector/src/runtime/adapters/types.dart';
 /// final prisma = PrismaClient(adapter: adapter);
 /// ```
 class PostgresAdapter implements SqlDriverAdapter {
-  final pg.Connection _connection;
+  pg.Connection _connection;
   final ConnectionInfo? _connectionInfo;
+  final Future<pg.Connection> Function()? _connectionFactory;
 
   PostgresAdapter(
     this._connection, {
     ConnectionInfo? connectionInfo,
-  }) : _connectionInfo = connectionInfo;
+    Future<pg.Connection> Function()? connectionFactory,
+  })  : _connectionInfo = connectionInfo,
+        _connectionFactory = connectionFactory;
+
+  /// Check if connection is alive, reconnect if factory provided.
+  Future<void> _ensureConnected() async {
+    if (_connectionFactory == null) return;
+    try {
+      await _connection.execute('SELECT 1').timeout(
+            const Duration(seconds: 5),
+          );
+    } catch (_) {
+      // Connection dead — attempt reconnect
+      try {
+        await _connection.close();
+      } catch (_) {
+        // Already closed, ignore
+      }
+      _connection = await _connectionFactory!();
+    }
+  }
 
   @override
   String get provider => 'postgresql';
@@ -43,6 +64,7 @@ class PostgresAdapter implements SqlDriverAdapter {
   @override
   Future<SqlResultSet> queryRaw(SqlQuery query) async {
     try {
+      await _ensureConnected();
       // Convert args to PostgreSQL-compatible format
       final convertedArgs = _convertArgs(query.args, query.argTypes);
 
@@ -66,6 +88,7 @@ class PostgresAdapter implements SqlDriverAdapter {
   @override
   Future<int> executeRaw(SqlQuery query) async {
     try {
+      await _ensureConnected();
       final convertedArgs = _convertArgs(query.args, query.argTypes);
 
       final result = await _connection.execute(

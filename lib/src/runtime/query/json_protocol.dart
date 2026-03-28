@@ -127,7 +127,7 @@ class JsonQueryBuilder {
   List<String>? _selectFields;
   Map<String, dynamic>? _include;
   Map<String, dynamic>? _includeRequired;
-  Map<String, dynamic>? _orderBy;
+  dynamic _orderBy;
   Map<String, dynamic>? _aggregate;
   List<String>? _groupBy;
   Map<String, ComputedField>? _computed;
@@ -236,7 +236,8 @@ class JsonQueryBuilder {
     return this;
   }
 
-  JsonQueryBuilder orderBy(Map<String, dynamic> order) {
+  /// Set ordering. Accepts a Map for single-column or List<Map> for multi-column sorting.
+  JsonQueryBuilder orderBy(dynamic order) {
     _orderBy = order;
     return this;
   }

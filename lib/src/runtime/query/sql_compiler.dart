@@ -328,7 +328,7 @@ class SqlCompiler {
 
     // Build ORDER BY clause
     // Pass baseAlias when JOINs are present to disambiguate column names
-    final orderBy = args['orderBy'] as Map<String, dynamic>?;
+    final orderBy = args['orderBy'];
     final orderByClause = _buildOrderByClause(
       orderBy,
       baseAlias: needsAlias ? baseAlias : null,
@@ -438,6 +438,24 @@ class SqlCompiler {
       throw ArgumentError('CREATE requires data');
     }
 
+    // Auto-generate @default(uuid()), @default(cuid()), @default(now()) values
+    final effectiveSchema = schema ?? schemaRegistry;
+    final model = effectiveSchema.getModel(query.modelName);
+    if (model != null) {
+      for (final field in model.fields.values) {
+        if (data.containsKey(field.name)) continue;
+        if (field.defaultValue == 'uuid()' || field.defaultValue == 'cuid()') {
+          if (provider == 'postgresql' || provider == 'supabase') {
+            data[field.name] = _RawSql('gen_random_uuid()');
+          }
+        } else if (field.defaultValue == 'now()') {
+          if (provider == 'postgresql' || provider == 'supabase') {
+            data[field.name] = _RawSql('NOW()');
+          }
+        }
+      }
+    }
+
     final tableName = _resolveTableName(query.modelName);
     final columns = <String>[];
     final placeholders = <String>[];
@@ -448,9 +466,14 @@ class SqlCompiler {
     for (final entry in data.entries) {
       // Use field name as-is (don't convert to snake_case)
       columns.add(_quoteIdentifier(entry.key));
-      placeholders.add(_placeholder(paramIndex++));
-      values.add(entry.value);
-      types.add(_inferArgType(entry.value));
+      if (entry.value is _RawSql) {
+        // Raw SQL expression (e.g., gen_random_uuid(), NOW())
+        placeholders.add((entry.value as _RawSql).sql);
+      } else {
+        placeholders.add(_placeholder(paramIndex++));
+        values.add(entry.value);
+        types.add(_inferArgType(entry.value));
+      }
     }
 
     final sql = 'INSERT INTO ${_quoteIdentifier(tableName)} '
@@ -855,7 +878,7 @@ class SqlCompiler {
     final agg = args['_aggregate'] as Map<String, dynamic>? ?? {};
     // TODO: Add HAVING support in future
     // final having = args['having'] as Map<String, dynamic>?;
-    final orderBy = args['orderBy'] as Map<String, dynamic>?;
+    final orderBy = args['orderBy'];
 
     final tableName = _resolveTableName(query.modelName);
 
@@ -1052,7 +1075,9 @@ RETURNING *
     for (final entry in data.entries) {
       final value = entry.value;
       if (value is Map<String, dynamic> &&
-          (value.containsKey('connect') || value.containsKey('disconnect'))) {
+          (value.containsKey('connect') ||
+              value.containsKey('disconnect') ||
+              value.containsKey('create'))) {
         // This is a relation operation - look up the relation info
         final relation =
             effectiveSchema.getRelation(query.modelName, entry.key);
@@ -1098,12 +1123,81 @@ RETURNING *
               ));
             }
           }
-        } else if (relation != null) {
-          // Non-M2M relation with connect/disconnect - not supported
-          throw UnsupportedError(
-            'connect/disconnect operations are only supported for many-to-many '
-            'relations. Field "${entry.key}" is a ${relation.type.name} relation.',
-          );
+        } else if (relation != null &&
+            (relation.type == RelationType.oneToMany ||
+             relation.type == RelationType.oneToOne)) {
+          // 1:N or 1:1 nested writes: {create: [...]} or {connect: {id: ...}}
+          if (value.containsKey('create')) {
+            final creates = value['create'];
+            final createList = creates is List
+                ? List<Map<String, dynamic>>.from(creates)
+                : [creates as Map<String, dynamic>];
+
+            // Get parent PK field name
+            final parentModel = effectiveSchema.getModel(query.modelName);
+            final parentPkFieldName =
+                parentModel?.primaryKeys.isNotEmpty == true
+                    ? parentModel!.primaryKeys.first.name
+                    : 'id';
+
+            // Get parent ID from data (for create) or where (for update)
+            String? parentId;
+            if (query.action == 'create') {
+              parentId = data[parentPkFieldName]?.toString();
+            } else if (query.action == 'update') {
+              final where = args['where'] as Map<String, dynamic>?;
+              parentId = where?[parentPkFieldName]?.toString();
+            }
+
+            if (parentId != null) {
+              for (final createData in createList) {
+                // Inject the FK pointing to parent
+                final childData =
+                    Map<String, dynamic>.from(createData);
+                childData[relation.foreignKey] = parentId;
+
+                // Auto-generate UUID for child ID if the target model has @default(uuid())
+                final targetModel =
+                    effectiveSchema.getModel(relation.targetModel);
+                if (targetModel != null) {
+                  for (final field in targetModel.fields.values) {
+                    if (field.defaultValue == 'uuid()' &&
+                        !childData.containsKey(field.name)) {
+                      if (provider == 'postgresql' ||
+                          provider == 'supabase') {
+                        childData[field.name] = _RawSql('gen_random_uuid()');
+                      }
+                    } else if (field.defaultValue == 'now()' &&
+                        !childData.containsKey(field.name)) {
+                      if (provider == 'postgresql' ||
+                          provider == 'supabase') {
+                        childData[field.name] = _RawSql('NOW()');
+                      }
+                    }
+                  }
+                }
+
+                // Compile child INSERT
+                final targetTableName = targetModel?.tableName ??
+                    relation.targetModel;
+                final childQuery = JsonQuery(
+                  modelName: targetTableName,
+                  action: 'create',
+                  args: JsonQueryArgs(
+                      arguments: {'data': childData}),
+                );
+                relationMutations.add(compile(childQuery));
+              }
+            }
+          }
+
+          if (value.containsKey('connect')) {
+            // 1:1 connect: set FK on parent row
+            final connectData = value['connect'] as Map<String, dynamic>;
+            final targetPkValue = connectData.values.first;
+            // The FK is on the current model → set it in cleanData
+            cleanData[relation.foreignKey] = targetPkValue;
+          }
         }
         // If relation is null, the field will be passed through and likely fail
         // downstream with a more specific error about the unknown field
@@ -2301,9 +2395,23 @@ WHERE $joinTable.$joinColumn = $parentRef.$pkCol''';
             linkToBaseCondition =
                 '"$alias".${_quoteIdentifier(relation.references.first)} = "$baseAlias".${_quoteIdentifier(relation.foreignKey)}';
           case RelationType.manyToMany:
-            // Many-to-many relations not yet supported (requires junction table)
-            // TODO(v0.3.0): Add many-to-many support via junction table joins
-            return ('', [], []);
+            // M2M: FROM junction table, JOIN to target
+            if (relation.joinTable == null ||
+                relation.joinColumn == null ||
+                relation.inverseJoinColumn == null) {
+              return ('', [], []);
+            }
+            final junctionTable = _quoteIdentifier(relation.joinTable!);
+            final junctionAlias = 'rp_jt$aliasCounter';
+            aliasCounter++;
+            // FROM junction, link junction to base
+            fromTable = junctionTable;
+            fromAlias = junctionAlias;
+            linkToBaseCondition =
+                '"$junctionAlias".${_quoteIdentifier(relation.joinColumn!)} = "$baseAlias"."id"';
+            // JOIN target table from junction
+            joinClauses.add(
+                'LEFT JOIN $targetTable "$alias" ON "$alias"."id" = "$junctionAlias".${_quoteIdentifier(relation.inverseJoinColumn!)}');
         }
       } else {
         // Subsequent relations: these are JOINs
@@ -2319,9 +2427,19 @@ WHERE $joinTable.$joinColumn = $parentRef.$pkCol''';
             joinCondition =
                 '"$alias".${_quoteIdentifier(relation.references.first)} = "$previousAlias".${_quoteIdentifier(relation.foreignKey)}';
           case RelationType.manyToMany:
-            // Many-to-many relations not yet supported (requires junction table)
-            // TODO(v0.3.0): Add many-to-many support via junction table joins
-            return ('', [], []);
+            // M2M in subsequent position: junction table JOIN then target JOIN
+            if (relation.joinTable == null ||
+                relation.joinColumn == null ||
+                relation.inverseJoinColumn == null) {
+              return ('', [], []);
+            }
+            final junctionTable = _quoteIdentifier(relation.joinTable!);
+            final junctionAlias = 'rp_jt$aliasCounter';
+            aliasCounter++;
+            joinClauses.add(
+                'LEFT JOIN $junctionTable "$junctionAlias" ON "$junctionAlias".${_quoteIdentifier(relation.joinColumn!)} = "$previousAlias"."id"');
+            joinCondition =
+                '"$alias"."id" = "$junctionAlias".${_quoteIdentifier(relation.inverseJoinColumn!)}';
         }
 
         joinClauses.add('LEFT JOIN $targetTable "$alias" ON $joinCondition');
@@ -2373,9 +2491,23 @@ WHERE $joinTable.$joinColumn = $parentRef.$pkCol''';
   ///
   /// [baseAlias] - If provided, column names are prefixed with this alias
   ///   to disambiguate when JOINs are present.
-  String _buildOrderByClause(Map<String, dynamic>? orderBy,
+  String _buildOrderByClause(dynamic orderBy,
       {String? baseAlias}) {
-    if (orderBy == null || orderBy.isEmpty) return '';
+    if (orderBy == null) return '';
+
+    // Support List<Map> for multi-column sorting
+    if (orderBy is List) {
+      final parts = <String>[];
+      for (final item in orderBy) {
+        if (item is Map<String, dynamic>) {
+          final clause = _buildOrderByClause(item, baseAlias: baseAlias);
+          if (clause.isNotEmpty) parts.add(clause);
+        }
+      }
+      return parts.join(', ');
+    }
+
+    if (orderBy is! Map<String, dynamic> || orderBy.isEmpty) return '';
 
     final clauses = <String>[];
 
@@ -2487,4 +2619,11 @@ WHERE $joinTable.$joinColumn = $parentRef.$pkCol''';
       return false;
     }
   }
+}
+
+/// Marker class for raw SQL expressions in data values.
+/// Used internally to insert database functions like gen_random_uuid(), NOW().
+class _RawSql {
+  final String sql;
+  const _RawSql(this.sql);
 }
