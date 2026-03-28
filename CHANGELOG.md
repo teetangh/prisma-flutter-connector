@@ -4,6 +4,12 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-03-28
+
+### Fixed
+- Remove redundant `as` casts after `is` type checks in findMany/findManyRaw orderBy handling
+- Add missing `List` orderBy support in `findFirstRaw` (consistent with findManyRaw)
+
 ## [0.5.2] - 2026-03-28
 
 ### Added

@@ -201,9 +201,9 @@ class CbDelegateGenerator {
           .action(QueryAction.findMany);
 
       if (where != null) queryBuilder.where(_whereToJson(where));
-      if (orderBy is Map<String, dynamic>) queryBuilder.orderBy(orderBy as Map<String, dynamic>);
+      if (orderBy is Map<String, dynamic>) queryBuilder.orderBy(orderBy);
       if (orderBy is List) queryBuilder.orderBy(orderBy);
-      if (orderBy is ${m}OrderByInput) queryBuilder.orderBy(_orderByToJson(orderBy as ${m}OrderByInput));
+      if (orderBy is ${m}OrderByInput) queryBuilder.orderBy(_orderByToJson(orderBy));
       if (take != null) queryBuilder.take(take);
       if (skip != null) queryBuilder.skip(skip);
       if (include != null) queryBuilder.include(include);
@@ -269,7 +269,7 @@ class CbDelegateGenerator {
           .action(QueryAction.findMany);
 
       if (where != null) queryBuilder.where(where);
-      if (orderBy is Map<String, dynamic>) queryBuilder.orderBy(orderBy as Map<String, dynamic>);
+      if (orderBy is Map<String, dynamic>) queryBuilder.orderBy(orderBy);
       if (orderBy is List) queryBuilder.orderBy(orderBy);
       if (take != null) queryBuilder.take(take);
       if (skip != null) queryBuilder.skip(skip);
@@ -307,7 +307,8 @@ class CbDelegateGenerator {
           .action(QueryAction.findFirst);
 
       if (where != null) queryBuilder.where(where);
-      if (orderBy is Map<String, dynamic>) queryBuilder.orderBy(orderBy as Map<String, dynamic>);
+      if (orderBy is Map<String, dynamic>) queryBuilder.orderBy(orderBy);
+      if (orderBy is List) queryBuilder.orderBy(orderBy);
       if (include != null) queryBuilder.include(include);
 
       return await _executor.executeQueryAsSingleMap(queryBuilder.build());
