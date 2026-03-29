@@ -7,12 +7,15 @@ import 'package:dart_style/dart_style.dart';
 import 'package:prisma_flutter_connector/src/generator/prisma_parser.dart';
 import 'package:prisma_flutter_connector/src/generator/string_utils.dart';
 
+final _listTypeRe = RegExp(r'List<(\w+)>');
+
 /// Generates filter type classes using code_builder AST.
 class CbFilterTypesGenerator {
   final PrismaSchema schema;
   late final _formatter =
       DartFormatter(languageVersion: DartFormatter.latestLanguageVersion);
   final _emitter = DartEmitter(useNullSafetySyntax: true);
+  late final _enumNames = {for (final e in schema.enums) e.name};
 
   CbFilterTypesGenerator(this.schema);
 
@@ -165,12 +168,11 @@ class CbFilterTypesGenerator {
     }
 
     // Check for enum types
-    if (schema.enums.any((e) => e.name == cleanType)) {
+    if (_enumNames.contains(cleanType)) {
       return '$name!.toJson()';
     }
-    final listMatch = RegExp(r'List<(\w+)>').firstMatch(cleanType);
-    if (listMatch != null &&
-        schema.enums.any((e) => e.name == listMatch.group(1))) {
+    final listMatch = _listTypeRe.firstMatch(cleanType);
+    if (listMatch != null && _enumNames.contains(listMatch.group(1))) {
       return '$name!.map((e) => e.toJson()).toList()';
     }
 

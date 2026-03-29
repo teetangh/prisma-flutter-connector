@@ -675,9 +675,10 @@ class CbModelGenerator {
       }
     }
 
+    final enumMap = {for (final e in schema.enums) e.name: e};
     final specs = <Spec>[];
     for (final enumName in enumTypes) {
-      final enumDef = schema.enums.where((e) => e.name == enumName).firstOrNull;
+      final enumDef = enumMap[enumName];
       if (enumDef == null) continue;
 
       // Build value→dart map entries: 'PENDING' => EnumName.pending
