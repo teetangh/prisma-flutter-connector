@@ -128,8 +128,9 @@ class CbSchemaRegistryGenerator {
           ));
         }
       } else {
-        final fk = _findForeignKeyOnModel(model, target) ??
-            _findForeignKeyFromField(field);
+        // Use this field's own @relation(fields: [...]) first, then fall back to convention
+        final fk = _findForeignKeyFromField(field) ??
+            _findForeignKeyOnModel(model, target);
         if (fk == null) continue;
 
         final backRef = targetModel.fields
