@@ -4,6 +4,22 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.5.5] - 2026-04-04
+
+### Fixed
+
+#### Parser: Brace-counting for model body extraction
+- **Fixed inline comments with `{` or `}` truncating model parsing** — e.g., `preferences Json? // e.g., { preferredDates: [] }` caused everything after the `}` in the comment to be lost (userId, webinarId, classId fields dropped from Waitlist model)
+- Replaced `[^}]+` regex with brace-counting `_extractBlocks()` method for both model and enum parsing
+
+#### Parser: Implicit relation detection
+- **Fixed fields referencing other models not being marked as relations** when they lack an explicit `@relation` attribute (e.g., `subDomains SubDomain[]` on Domain)
+- Parser now checks if `fieldType` is a known model name in addition to checking for `@relation`
+
+#### Schema Registry: Correct FK for multi-relation models
+- **Fixed wrong foreign key when a model has multiple relations to the same target** (e.g., ModerationReport has both `reportedBy` and `targetUser` pointing to User)
+- Now uses the field's own `@relation(fields: [...])` first instead of picking the first matching relation on the model
+
 ## [0.5.4] - 2026-03-28
 
 ### Fixed

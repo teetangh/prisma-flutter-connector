@@ -422,11 +422,11 @@ class PrismaParser {
       datasourceProvider = datasourceMatch.group(1)!;
     }
 
-    // Extract enums
-    final enumPattern = RegExp(r'enum\s+(\w+)\s*\{([^}]+)\}', multiLine: true);
-    for (final match in enumPattern.allMatches(schemaContent)) {
-      final name = match.group(1)!;
-      final body = match.group(2)!;
+    // Extract enums (use brace-counting to handle comments with braces)
+    final enumBlocks = _extractBlocks(schemaContent, 'enum');
+    for (final block in enumBlocks) {
+      final name = block.name;
+      final body = block.body;
       final values = body
           .split('\n')
           .map((line) {
@@ -447,18 +447,16 @@ class PrismaParser {
     final modelNameMap = <String, String>{}; // originalName -> dartName
 
     // First pass: collect all model name mappings
-    final modelPattern =
-        RegExp(r'model\s+(\w+)\s*\{([^}]+)\}', multiLine: true);
-    for (final match in modelPattern.allMatches(schemaContent)) {
-      final originalModelName = match.group(1)!;
-      final modelResult = _handleReservedKeyword(originalModelName, 'model');
-      modelNameMap[originalModelName] = modelResult.dartName;
+    final modelBlocks = _extractBlocks(schemaContent, 'model');
+    for (final block in modelBlocks) {
+      final modelResult = _handleReservedKeyword(block.name, 'model');
+      modelNameMap[block.name] = modelResult.dartName;
     }
 
     // Second pass: parse models with resolved type names
-    for (final match in modelPattern.allMatches(schemaContent)) {
-      final originalModelName = match.group(1)!;
-      final modelBody = match.group(2)!;
+    for (final block in modelBlocks) {
+      final originalModelName = block.name;
+      final modelBody = block.body;
 
       // Handle reserved keywords - auto-rename if needed
       final modelResult = _handleReservedKeyword(originalModelName, 'model');
@@ -527,8 +525,11 @@ class PrismaParser {
             }
           }
 
-          // Check if it's a relation
-          final isRelation = attributes.contains('@relation');
+          // Check if it's a relation — explicit (@relation) or implicit (type is a model)
+          final baseFieldType =
+              fieldType.replaceAll('?', '').replaceAll('[]', '');
+          final isRelation = attributes.contains('@relation') ||
+              modelNameMap.containsKey(baseFieldType);
           String? relationName;
           List<String>? relationFromFields;
           List<String>? relationToFields;
@@ -637,6 +638,29 @@ class PrismaParser {
     );
   }
 
+  /// Extract model/enum blocks using brace counting instead of [^}] regex.
+  ///
+  /// Handles inline comments containing `{` or `}` which break simple regex.
+  List<_Block> _extractBlocks(String content, String keyword) {
+    final blocks = <_Block>[];
+    final pattern = RegExp('$keyword\\s+(\\w+)\\s*\\{');
+    for (final match in pattern.allMatches(content)) {
+      final name = match.group(1)!;
+      final start = match.end; // position after the opening {
+      var depth = 1;
+      var i = start;
+      while (i < content.length && depth > 0) {
+        final ch = content[i];
+        if (ch == '{') depth++;
+        if (ch == '}') depth--;
+        i++;
+      }
+      // i is now past the closing }, body is between start and i-1
+      blocks.add(_Block(name: name, body: content.substring(start, i - 1)));
+    }
+    return blocks;
+  }
+
   /// Extracts content inside @default(...) handling nested parentheses.
   ///
   /// For example:
@@ -669,4 +693,11 @@ class PrismaParser {
     // Content is from contentStart to i-1 (excluding closing paren)
     return attributes.substring(contentStart, i - 1);
   }
+}
+
+/// A named block extracted from a Prisma schema (model or enum).
+class _Block {
+  final String name;
+  final String body;
+  const _Block({required this.name, required this.body});
 }
