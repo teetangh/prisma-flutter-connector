@@ -4,6 +4,37 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-06-12
+
+### Added
+
+#### Parser: `@map` / `@@map` support
+- **Model-level `@@map("table_name")`** is now parsed into `PrismaModel.dbName`, so generated delegates and the schema registry target the mapped database table (e.g., `model User { ... @@map("users") }` → `FROM "users"`). Explicit `@@map` takes precedence over reserved-keyword renames.
+- **Field-level `@map("column_name")`** is now parsed into `PrismaField.dbName`, flowing into generated `@JsonKey` annotations, JSON serialization keys, and schema-registry column names (e.g., `status AppointmentStatus @map("requestStatus")`). Priority: explicit `@map` > reserved-keyword rename > PascalCase normalization.
+
+#### SqlCompiler: field → column translation for `@map`-ed fields
+- **WHERE keys, INSERT columns, UPDATE SET keys, and ORDER BY keys now resolve Dart field names to database column names** via the schema registry (`where: {'status': ...}` compiles to `"requestStatus" = $1` when the field carries `@map("requestStatus")`). This makes typed-delegate CRUD correct on mapped columns end-to-end — generated Create/Update/Where inputs emit Dart field names, which the compiler now maps.
+- **Pass-through fallback preserved**: keys that are not registered field names (legacy JsonQueryBuilder callers using literal column names) compile unchanged, including inside `AND`/`OR`/`NOT` recursion.
+
+#### SqlCompiler: `@updatedAt` auto-fill
+- **`create`/`createMany` now fill `@updatedAt` columns** (NOW() on PostgreSQL/Supabase, ISO-8601 parameter elsewhere) — previously every typed-delegate create on a table with `updatedAt DateTime @updatedAt` failed with a NOT NULL violation.
+- **`update`/`updateMany` refresh `@updatedAt`** unless the caller supplied a value (Prisma semantics). New `FieldInfo.isUpdatedAt` flag, emitted by the registry generator.
+
+#### PostgresAdapter: enum[] / custom array decoding
+- **Custom enum array columns (e.g. `SessionType[]`) now decode to `List<String>`** instead of raw PostgreSQL wire-format bytes. Handles both the binary ARRAY wire format and text array literals (`{A,B,"c d",NULL}`), with NULL elements preserved.
+
+#### Registry generator: one-to-one FK on the target model
+- **Relations whose foreign key lives on the TARGET model** (e.g. `Program.licensedSeatConfig` where `LicensedSeatConfig.programId` owns the `@relation`) are now emitted as `isOwner: false` with the target's real FK, instead of fabricating a nonexistent `<fieldName>Id` column on the parent — fixes `column tN.id does not exist` on nested includes.
+
+### Fixed
+
+#### Parser: enum block attributes treated as values
+- **`@@map("...")` inside an enum body is no longer emitted as an enum value** (previously generated invalid Dart identifiers and broke compilation for schemas using mapped enums, e.g. BetterAuth/Prisma 7 schemas).
+- **Value-level attributes on enum values are stripped** — `ACTIVE @map("active")` now parses as `ACTIVE`.
+
+#### Delegate generator: models without unique scalar fields
+- **Models whose only identifier is a composite `@@id([a, b])`** (no field-level `@id`/`@unique`) no longer generate delegates referencing a nonexistent `WhereUniqueInput` class. `findUnique`, `findUniqueOrThrow`, `update`, and `delete` are omitted for such models; `findFirst`, `findMany`, `updateMany`, `deleteMany`, `create`, and `count` remain available.
+
 ## [0.5.5] - 2026-04-04
 
 ### Fixed
