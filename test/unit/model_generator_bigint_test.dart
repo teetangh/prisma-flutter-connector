@@ -55,7 +55,7 @@ model Wallet {
     });
 
     group('fromJson', () {
-      test('BigInt with default falls back to BigInt.parse('<default>')', () {
+      test("BigInt with default falls back to BigInt.parse('<default>')", () {
         final flat = flatten(generateWallet());
 
         expect(

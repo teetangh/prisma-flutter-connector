@@ -24,11 +24,13 @@ jobs:
 
     steps:
       - name: Check if Supabase secrets are configured
+        id: check
         run: |
           if [[ -z "${{ secrets.SUPABASE_URL }}" ]] || \
              [[ -z "${{ secrets.SUPABASE_ANON_KEY }}" ]] || \
              [[ -z "${{ secrets.SUPABASE_DATABASE_URL }}" ]] || \
              [[ -z "${{ secrets.SUPABASE_DIRECT_URL }}" ]]; then
+            echo "should-run=false" >> "$GITHUB_OUTPUT"
             echo "⚠️  Supabase secrets not configured"
             echo ""
             echo "To run Supabase tests, configure these repository secrets:"
@@ -50,28 +52,34 @@ jobs:
               exit 0
             fi
           fi
+          echo "should-run=true" >> "$GITHUB_OUTPUT"
           echo "✓ All Supabase secrets found - proceeding with tests"
 
       - name: Checkout code
+        if: steps.check.outputs.should-run == 'true'
         uses: actions/checkout@v4
         with:
           submodules: 'recursive'
 
       - name: Setup Node.js
+        if: steps.check.outputs.should-run == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - name: Setup Flutter
+        if: steps.check.outputs.should-run == 'true'
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.27.0'
           channel: 'stable'
 
       - name: Install Prisma CLI
+        if: steps.check.outputs.should-run == 'true'
         run: npm install -g prisma@5
 
       - name: Setup environment variables
+        if: steps.check.outputs.should-run == 'true'
         working-directory: test/integration/supabase
         run: |
           cat > .env << EOF
@@ -83,6 +91,7 @@ jobs:
           EOF
 
       - name: Run database migrations
+        if: steps.check.outputs.should-run == 'true'
         working-directory: test/integration/supabase
         run: prisma migrate deploy
         env:
@@ -90,6 +99,7 @@ jobs:
           SUPABASE_DIRECT_URL: ${{ secrets.SUPABASE_DIRECT_URL }}
 
       - name: Generate Prisma Client
+        if: steps.check.outputs.should-run == 'true'
         working-directory: test/integration/supabase
         run: prisma generate
         env:
@@ -97,20 +107,23 @@ jobs:
           SUPABASE_DIRECT_URL: ${{ secrets.SUPABASE_DIRECT_URL }}
 
       - name: Get Flutter dependencies
+        if: steps.check.outputs.should-run == 'true'
         run: flutter pub get
 
       - name: Generate Dart code from Prisma schema
+        if: steps.check.outputs.should-run == 'true'
         run: |
           dart run prisma_flutter_connector:generate \
             --schema test/integration/supabase/schema.prisma \
             --output test/integration/supabase/generated/
 
       - name: Run Supabase integration tests
+        if: steps.check.outputs.should-run == 'true'
         run: flutter test test/integration/supabase/supabase_test.dart --coverage
 
       - name: Upload coverage
         uses: codecov/codecov-action@v3
-        if: success()
+        if: success() && steps.check.outputs.should-run == 'true'
         with:
           files: ./coverage/lcov.info
           flags: supabase-integration
