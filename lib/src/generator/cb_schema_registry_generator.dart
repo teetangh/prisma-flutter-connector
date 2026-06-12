@@ -69,6 +69,7 @@ class CbSchemaRegistryGenerator {
       if (field.isId) parts.add('isId: true');
       if (field.isUnique) parts.add('isUnique: true');
       if (!field.isRequired) parts.add('isNullable: true');
+      if (field.isUpdatedAt) parts.add('isUpdatedAt: true');
       if (field.defaultValue != null) {
         parts.add("defaultValue: '${field.defaultValue}'");
       }
@@ -128,10 +129,39 @@ class CbSchemaRegistryGenerator {
           ));
         }
       } else {
-        // Use this field's own @relation(fields: [...]) first, then fall back to convention
-        final fk = _findForeignKeyFromField(field) ??
-            _findForeignKeyOnModel(model, target);
-        if (fk == null) continue;
+        // FK on THIS model: the field's own @relation(fields: [...]) or a
+        // sibling scalar declared by another relation field to the same
+        // target.
+        final ownFk = (field.relationFromFields?.isNotEmpty ?? false)
+            ? field.relationFromFields!.first
+            : _findForeignKeyOnModel(model, target);
+
+        if (ownFk == null) {
+          // FK on the TARGET model (e.g. Program.licensedSeatConfig where
+          // LicensedSeatConfig.programId owns the relation): non-owner
+          // one-to-one joined via the target's FK back to our PK.
+          final targetBack = targetModel.fields
+              .where((f) =>
+                  f.isRelation &&
+                  f.type == model.name &&
+                  !f.isList &&
+                  (f.relationFromFields?.isNotEmpty ?? false))
+              .firstOrNull;
+          if (targetBack != null) {
+            entries.add(_RelEntry(
+              fieldName: field.name,
+              code: "RelationInfo.oneToOne("
+                  "name: '${field.name}', "
+                  "targetModel: '$target', "
+                  "foreignKey: '${targetBack.relationFromFields!.first}', "
+                  "isOwner: false)",
+            ));
+            continue;
+          }
+        }
+
+        // Last resort keeps the historical convention-based guess.
+        final fk = ownFk ?? '${toLowerCamelCase(field.type)}Id';
 
         final backRef = targetModel.fields
             .where((f) => f.isRelation && f.type == model.name && !f.isList);
@@ -193,13 +223,6 @@ class CbSchemaRegistryGenerator {
       }
     }
     return null;
-  }
-
-  String? _findForeignKeyFromField(PrismaField field) {
-    if (field.relationFromFields?.isNotEmpty == true) {
-      return field.relationFromFields!.first;
-    }
-    return '${toLowerCamelCase(field.type)}Id';
   }
 
   String _prismaTypeToDartType(String t) => switch (t) {

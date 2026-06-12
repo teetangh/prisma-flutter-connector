@@ -139,6 +139,11 @@ class FieldInfo {
   /// Whether this field is a relation (not stored in DB).
   final bool isRelation;
 
+  /// Whether this field carries Prisma's @updatedAt attribute (the column is
+  /// NOT NULL with no database default — Prisma clients supply the timestamp
+  /// on every create/update).
+  final bool isUpdatedAt;
+
   /// Default value expression (if any).
   final String? defaultValue;
 
@@ -150,6 +155,7 @@ class FieldInfo {
     this.isUnique = false,
     this.isNullable = false,
     this.isRelation = false,
+    this.isUpdatedAt = false,
     this.defaultValue,
   });
 
