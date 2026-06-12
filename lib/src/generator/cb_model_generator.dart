@@ -137,6 +137,17 @@ class CbModelGenerator {
           : "json['$key'] != null ? _\$${enumName}FromJson(json['$key'] as String) : null";
     }
 
+    // BigInt cannot use @Default (no const constructor), so fields with a
+    // literal default are required in the Dart class and fromJson supplies
+    // the fallback via BigInt.from()
+    if (dartType == 'BigInt') {
+      final parse = "BigInt.parse(json['$key'].toString())";
+      if (hasDefault) {
+        return "json['$key'] != null ? $parse : BigInt.from(${f.defaultValue})";
+      }
+      return f.isRequired ? parse : "json['$key'] != null ? $parse : null";
+    }
+
     final defaultSuffix = hasDefault ? ' ?? ${f.defaultValue}' : '';
     return switch (dartType) {
       'String' => effectiveRequired
@@ -154,9 +165,6 @@ class CbModelGenerator {
       'DateTime' => effectiveRequired
           ? "json['$key'] is DateTime ? json['$key'] as DateTime : DateTime.parse(json['$key'] as String)"
           : "json['$key'] != null ? (json['$key'] is DateTime ? json['$key'] as DateTime : DateTime.parse(json['$key'] as String)) : null",
-      'BigInt' => effectiveRequired
-          ? "BigInt.parse(json['$key'].toString())"
-          : "json['$key'] != null ? BigInt.parse(json['$key'].toString()) : null",
       'Map<String, dynamic>' => f.isRequired
           ? "json['$key'] as Map<String, dynamic>"
           : "json['$key'] as Map<String, dynamic>?",
@@ -341,7 +349,12 @@ class CbModelGenerator {
       final hasScalarDefault = f.defaultValue != null &&
           !f.isRelation &&
           !_isPrismaRuntimeDefault(f.defaultValue!);
-      if (hasScalarDefault) {
+      if (hasScalarDefault && dartType == 'BigInt') {
+        // BigInt has no const constructor → @Default is impossible; the
+        // fromJson fallback (BigInt.from) supplies the schema default
+        type = dartType;
+        isRequired = true;
+      } else if (hasScalarDefault) {
         annotations.add(CodeExpression(Code('Default(${f.defaultValue})')));
         type = f.isList ? 'List<$dartType>' : dartType;
       } else if (f.isRequired && !f.isList) {
@@ -402,7 +415,11 @@ class CbModelGenerator {
       isRequired = true;
     } else if (f.defaultValue != null &&
         !_isPrismaRuntimeDefault(f.defaultValue!)) {
-      annotations.add(CodeExpression(Code('Default(${f.defaultValue})')));
+      if (dartType != 'BigInt') {
+        // BigInt has no const constructor → no @Default; leave the field
+        // nullable and let the database apply the schema default
+        annotations.add(CodeExpression(Code('Default(${f.defaultValue})')));
+      }
       type = f.isList ? 'List<$dartType>?' : '$dartType?';
     } else {
       type = f.isList ? 'List<$dartType>?' : '$dartType?';
