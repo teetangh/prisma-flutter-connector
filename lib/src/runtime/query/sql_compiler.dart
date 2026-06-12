@@ -87,6 +87,20 @@ class SqlCompiler {
     return modelName;
   }
 
+  /// Resolve a Dart field name to its database column name via the registry.
+  ///
+  /// Handles field-level @map directives transparently (e.g. Dart field
+  /// `status` → column `requestStatus`). Falls back to the field name as-is,
+  /// so callers that already pass real column names (legacy JsonQueryBuilder
+  /// usage) keep working unchanged.
+  String _resolveColumnName(String? modelName, String field) {
+    if (modelName == null) return field;
+    final effectiveSchema = schema ?? schemaRegistry;
+    final column =
+        effectiveSchema.getModel(modelName)?.fields[field]?.columnName;
+    return column ?? field;
+  }
+
   /// Check if strict model validation is enabled (instance or global).
   bool get _isStrictValidationEnabled =>
       _strictModelValidation ?? strictModelValidation;
@@ -332,6 +346,7 @@ class SqlCompiler {
     final orderByClause = _buildOrderByClause(
       orderBy,
       baseAlias: needsAlias ? baseAlias : null,
+      modelName: query.modelName,
     );
 
     // Build LIMIT/OFFSET
@@ -438,19 +453,26 @@ class SqlCompiler {
       throw ArgumentError('CREATE requires data');
     }
 
-    // Auto-generate @default(uuid()), @default(cuid()), @default(now()) values
+    // Auto-generate @default(uuid()), @default(cuid()), @default(now()) and
+    // @updatedAt values. @updatedAt columns are NOT NULL with no database
+    // default — Prisma clients supply the timestamp on every create.
     final effectiveSchema = schema ?? schemaRegistry;
     final model = effectiveSchema.getModel(query.modelName);
     if (model != null) {
       for (final field in model.fields.values) {
-        if (data.containsKey(field.name)) continue;
+        if (data.containsKey(field.name) ||
+            data.containsKey(field.columnName)) {
+          continue;
+        }
         if (field.defaultValue == 'uuid()' || field.defaultValue == 'cuid()') {
           if (provider == 'postgresql' || provider == 'supabase') {
             data[field.name] = const _RawSql('gen_random_uuid()');
           }
-        } else if (field.defaultValue == 'now()') {
+        } else if (field.defaultValue == 'now()' || field.isUpdatedAt) {
           if (provider == 'postgresql' || provider == 'supabase') {
             data[field.name] = const _RawSql('NOW()');
+          } else {
+            data[field.name] = DateTime.now().toUtc().toIso8601String();
           }
         }
       }
@@ -464,8 +486,9 @@ class SqlCompiler {
 
     var paramIndex = 1;
     for (final entry in data.entries) {
-      // Use field name as-is (don't convert to snake_case)
-      columns.add(_quoteIdentifier(entry.key));
+      // Resolve @map-ed Dart field names to column names
+      columns.add(
+          _quoteIdentifier(_resolveColumnName(query.modelName, entry.key)));
       if (entry.value is _RawSql) {
         // Raw SQL expression (e.g., gen_random_uuid(), NOW())
         placeholders.add((entry.value as _RawSql).sql);
@@ -512,8 +535,10 @@ class SqlCompiler {
 
     final tableName = _resolveTableName(query.modelName);
     final firstRow = dataList.first as Map<String, dynamic>;
-    // Use field names as-is (don't convert to snake_case)
-    final columns = firstRow.keys.map((k) => _quoteIdentifier(k)).toList();
+    // Resolve @map-ed Dart field names to column names
+    final columns = firstRow.keys
+        .map((k) => _quoteIdentifier(_resolveColumnName(query.modelName, k)))
+        .toList();
 
     final valueSets = <String>[];
     final values = <dynamic>[];
@@ -556,6 +581,19 @@ class SqlCompiler {
 
     final tableName = _resolveTableName(query.modelName);
 
+    // Prisma semantics: @updatedAt columns refresh on every update unless
+    // the caller supplied them explicitly.
+    final model = (schema ?? schemaRegistry).getModel(query.modelName);
+    if (model != null) {
+      for (final field in model.fields.values) {
+        if (field.isUpdatedAt &&
+            !data.containsKey(field.name) &&
+            !data.containsKey(field.columnName)) {
+          data[field.name] = DateTime.now().toUtc().toIso8601String();
+        }
+      }
+    }
+
     // Build SET clause
     final setClauses = <String>[];
     final values = <dynamic>[];
@@ -563,9 +601,10 @@ class SqlCompiler {
     var paramIndex = 1;
 
     for (final entry in data.entries) {
-      // Use field name as-is (don't convert to snake_case)
+      // Resolve @map-ed Dart field names to column names
       setClauses.add(
-          '${_quoteIdentifier(entry.key)} = ${_placeholder(paramIndex++)}');
+          '${_quoteIdentifier(_resolveColumnName(query.modelName, entry.key))}'
+          ' = ${_placeholder(paramIndex++)}');
       values.add(entry.value);
       types.add(_inferArgType(entry.value));
     }
@@ -937,7 +976,8 @@ class SqlCompiler {
     }
 
     if (orderBy != null) {
-      sql.write(' ORDER BY ${_buildOrderByClause(orderBy)}');
+      sql.write(
+          ' ORDER BY ${_buildOrderByClause(orderBy, modelName: query.modelName)}');
     }
 
     return SqlQuery(
@@ -1901,11 +1941,13 @@ RETURNING *
       }
 
       // Handle field conditions
-      // Use field name as-is (don't convert to snake_case)
-      // Prefix with table alias if baseAlias is provided (for disambiguating JOINs)
+      // Resolve @map-ed Dart field names to column names (pass-through for
+      // keys that are already column names). Prefix with table alias if
+      // baseAlias is provided (for disambiguating JOINs).
+      final resolvedField = _resolveColumnName(modelName, field);
       final columnName = baseAlias != null
-          ? '"$baseAlias".${_quoteIdentifier(field)}'
-          : _quoteIdentifier(field);
+          ? '"$baseAlias".${_quoteIdentifier(resolvedField)}'
+          : _quoteIdentifier(resolvedField);
 
       if (value is Map<String, dynamic>) {
         // Validate that all keys are known operators before processing
@@ -2489,7 +2531,8 @@ WHERE $joinTable.$joinColumn = $parentRef.$pkCol''';
   ///
   /// [baseAlias] - If provided, column names are prefixed with this alias
   ///   to disambiguate when JOINs are present.
-  String _buildOrderByClause(dynamic orderBy, {String? baseAlias}) {
+  String _buildOrderByClause(dynamic orderBy,
+      {String? baseAlias, String? modelName}) {
     if (orderBy == null) return '';
 
     // Support List<Map> for multi-column sorting
@@ -2497,7 +2540,8 @@ WHERE $joinTable.$joinColumn = $parentRef.$pkCol''';
       final parts = <String>[];
       for (final item in orderBy) {
         if (item is Map<String, dynamic>) {
-          final clause = _buildOrderByClause(item, baseAlias: baseAlias);
+          final clause = _buildOrderByClause(item,
+              baseAlias: baseAlias, modelName: modelName);
           if (clause.isNotEmpty) parts.add(clause);
         }
       }
@@ -2509,11 +2553,13 @@ WHERE $joinTable.$joinColumn = $parentRef.$pkCol''';
     final clauses = <String>[];
 
     for (final entry in orderBy.entries) {
-      // Use field name as-is (don't convert to snake_case)
-      // Prefix with table alias if baseAlias is provided
+      // Resolve @map-ed Dart field names to column names (pass-through for
+      // keys that are already column names). Prefix with table alias if
+      // baseAlias is provided.
+      final resolvedField = _resolveColumnName(modelName, entry.key);
       final field = baseAlias != null
-          ? '"$baseAlias".${_quoteIdentifier(entry.key)}'
-          : _quoteIdentifier(entry.key);
+          ? '"$baseAlias".${_quoteIdentifier(resolvedField)}'
+          : _quoteIdentifier(resolvedField);
 
       String direction;
       String? nullsPosition;
