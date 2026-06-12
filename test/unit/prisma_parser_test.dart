@@ -1068,6 +1068,114 @@ model Profile {
         expect(postModel.relations[0].targetModel, 'User');
       });
     });
+
+    group('@map and @@map support', () {
+      test('model-level @@map sets table name', () {
+        const schema = '''
+model User {
+  id    String @id @default(cuid())
+  email String @unique
+
+  @@map("users")
+}
+''';
+
+        final result = parser.parse(schema);
+
+        final userModel = result.models.first;
+        expect(userModel.name, 'User');
+        expect(userModel.dbName, 'users');
+        expect(userModel.tableName, 'users');
+      });
+
+      test('field-level @map sets column name and keeps Dart name', () {
+        const schema = '''
+model Consultation {
+  id     String            @id @default(cuid())
+  status AppointmentStatus @default(PENDING) @map("requestStatus")
+}
+
+enum AppointmentStatus {
+  PENDING
+  APPROVED
+}
+''';
+
+        final result = parser.parse(schema);
+
+        final model = result.models.first;
+        final statusField = model.fields.firstWhere((f) => f.name == 'status');
+        expect(statusField.dbName, 'requestStatus');
+        expect(statusField.type, 'AppointmentStatus');
+      });
+
+      test('enum-level @@map is not treated as a value', () {
+        const schema = '''
+enum AppointmentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+
+  @@map("RequestStatus")
+}
+''';
+
+        final result = parser.parse(schema);
+
+        final parsedEnum = result.enums.first;
+        expect(parsedEnum.name, 'AppointmentStatus');
+        expect(parsedEnum.values, ['PENDING', 'APPROVED', 'REJECTED']);
+      });
+
+      test('enum value-level @map keeps only the value identifier', () {
+        const schema = '''
+enum Status {
+  ACTIVE   @map("active")
+  INACTIVE @map("inactive")
+}
+''';
+
+        final result = parser.parse(schema);
+
+        expect(result.enums.first.values, ['ACTIVE', 'INACTIVE']);
+      });
+
+      test('explicit @@map wins over reserved keyword rename', () {
+        const schema = '''
+model class {
+  id String @id
+
+  @@map("classes")
+}
+''';
+
+        final result = parser.parse(schema);
+
+        final model = result.models.first;
+        expect(model.name, 'ClassModel');
+        expect(model.tableName, 'classes');
+      });
+    });
+
+    group('Composite @@id models', () {
+      test('model with only composite @@id has no unique scalar fields', () {
+        const schema = '''
+model OrgInvoiceCounter {
+  organizationId String
+  fiscalYear     String
+  lastNumber     Int    @default(0)
+
+  @@id([organizationId, fiscalYear])
+}
+''';
+
+        final result = parser.parse(schema);
+
+        final model = result.models.first;
+        expect(model.fields.any((f) => (f.isId || f.isUnique) && !f.isRelation),
+            false);
+      });
+    });
   });
 
   group('GeneratorError', () {

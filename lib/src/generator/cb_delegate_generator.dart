@@ -31,13 +31,16 @@ class CbDelegateGenerator {
         Directive.import('../models/${toSnakeCase(modelName)}.dart'),
         Directive.import('../filters.dart'),
       ])
-      ..body.add(_buildDelegateClass(modelName, tableName)));
+      ..body.add(_buildDelegateClass(modelName, tableName,
+          hasUniqueFields: model.fields
+              .any((f) => (f.isId || f.isUnique) && !f.isRelation))));
 
     final emitter = DartEmitter(useNullSafetySyntax: true);
     return _formatter.format('${library.accept(emitter)}');
   }
 
-  Class _buildDelegateClass(String modelName, String tableName) {
+  Class _buildDelegateClass(String modelName, String tableName,
+      {required bool hasUniqueFields}) {
     return Class((b) => b
       ..name = '${modelName}Delegate'
       ..docs.addAll([
@@ -53,22 +56,24 @@ class CbDelegateGenerator {
           ..name = '_executor'
           ..toThis = true))))
       ..methods.addAll([
-        _findUnique(modelName, tableName),
-        _findUniqueOrThrow(modelName),
+        // Models without any unique scalar field (e.g. composite @@id only)
+        // have no WhereUniqueInput, so unique-keyed methods are omitted
+        if (hasUniqueFields) _findUnique(modelName, tableName),
+        if (hasUniqueFields) _findUniqueOrThrow(modelName),
         _findFirst(modelName, tableName),
         _findMany(modelName, tableName),
         _findManyRaw(modelName, tableName),
         _findFirstRaw(modelName, tableName),
         _create(modelName, tableName),
         _createMany(modelName, tableName),
-        _update(modelName, tableName),
+        if (hasUniqueFields) _update(modelName, tableName),
         _updateMany(modelName, tableName),
-        _delete(modelName, tableName),
+        if (hasUniqueFields) _delete(modelName, tableName),
         _deleteMany(modelName, tableName),
         _count(modelName, tableName),
         _groupBy(modelName, tableName),
         _normalizeForJson(),
-        _whereUniqueToJson(modelName),
+        if (hasUniqueFields) _whereUniqueToJson(modelName),
         _whereToJson(modelName),
         _orderByToJson(modelName),
       ]));
