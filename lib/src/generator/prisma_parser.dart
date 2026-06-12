@@ -467,10 +467,21 @@ class PrismaParser {
       final modelName = modelResult.dartName;
 
       // Explicit @@map("table_name") takes precedence over reserved-keyword
-      // renames for the database table name
-      final modelMapMatch =
-          RegExp(r'@@map\(\s*"([^"]+)"\s*\)').firstMatch(modelBody);
-      final modelDbName = modelMapMatch?.group(1) ?? modelResult.dbName;
+      // renames for the database table name. Match line-by-line with
+      // comments stripped so a commented-out `// @@map("x")` is ignored.
+      String? explicitTableName;
+      for (final line in modelBody.split('\n')) {
+        var active = line;
+        final commentIndex = active.indexOf('//');
+        if (commentIndex >= 0) active = active.substring(0, commentIndex);
+        final match =
+            RegExp(r'^@@map\(\s*"([^"]+)"\s*\)').firstMatch(active.trim());
+        if (match != null) {
+          explicitTableName = match.group(1);
+          break;
+        }
+      }
+      final modelDbName = explicitTableName ?? modelResult.dbName;
 
       if (modelResult.warning != null) {
         warnings.add(modelResult.warning!);

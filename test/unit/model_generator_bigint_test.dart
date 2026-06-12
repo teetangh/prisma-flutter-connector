@@ -55,14 +55,14 @@ model Wallet {
     });
 
     group('fromJson', () {
-      test('BigInt with default falls back to BigInt.from(<default>)', () {
+      test('BigInt with default falls back to BigInt.parse('<default>')', () {
         final flat = flatten(generateWallet());
 
         expect(
             flat,
             contains("balancePaise: json['balancePaise'] != null "
                 "? BigInt.parse(json['balancePaise'].toString()) "
-                ": BigInt.from(0)"));
+                ": BigInt.parse('0')"));
       });
 
       test('required BigInt without default uses plain BigInt.parse', () {

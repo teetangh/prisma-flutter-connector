@@ -283,12 +283,16 @@ class PostgresAdapter implements SqlDriverAdapter {
   /// cleanly as such an array (callers fall back to plain UTF-8 decode).
   static List<String?>? parsePgBinaryArray(List<int> bytes) {
     if (bytes.length < 12) return null;
-    final data = ByteData.sublistView(Uint8List.fromList(bytes));
+    // The driver already hands us a Uint8List; only copy when it doesn't,
+    // and decode elements as views over the same buffer (no per-element
+    // sublist copies).
+    final u8 = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
+    final data = ByteData.sublistView(u8);
     final ndim = data.getInt32(0);
     final hasNull = data.getInt32(4);
     if (hasNull != 0 && hasNull != 1) return null;
-    if (ndim == 0) return bytes.length == 12 ? <String?>[] : null;
-    if (ndim != 1 || bytes.length < 20) return null;
+    if (ndim == 0) return u8.length == 12 ? <String?>[] : null;
+    if (ndim != 1 || u8.length < 20) return null;
 
     final size = data.getInt32(12);
     if (size < 0 || size > 100000) return null;
@@ -296,19 +300,19 @@ class PostgresAdapter implements SqlDriverAdapter {
     final elements = <String?>[];
     var offset = 20;
     for (var i = 0; i < size; i++) {
-      if (offset + 4 > bytes.length) return null;
+      if (offset + 4 > u8.length) return null;
       final len = data.getInt32(offset);
       offset += 4;
       if (len == -1) {
         elements.add(null);
         continue;
       }
-      if (len < 0 || offset + len > bytes.length) return null;
-      elements.add(utf8.decode(bytes.sublist(offset, offset + len),
+      if (len < 0 || offset + len > u8.length) return null;
+      elements.add(utf8.decode(Uint8List.sublistView(u8, offset, offset + len),
           allowMalformed: true));
       offset += len;
     }
-    return offset == bytes.length ? elements : null;
+    return offset == u8.length ? elements : null;
   }
 
   /// Parse a PostgreSQL text-format array literal ({A,B,"c d",NULL}) into a

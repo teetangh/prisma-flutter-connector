@@ -139,11 +139,12 @@ class CbModelGenerator {
 
     // BigInt cannot use @Default (no const constructor), so fields with a
     // literal default are required in the Dart class and fromJson supplies
-    // the fallback via BigInt.from()
+    // the fallback. BigInt.parse on a string literal is precision-safe on
+    // all platforms (BigInt.from would round through a JS double on web).
     if (dartType == 'BigInt') {
       final parse = "BigInt.parse(json['$key'].toString())";
       if (hasDefault) {
-        return "json['$key'] != null ? $parse : BigInt.from(${f.defaultValue})";
+        return "json['$key'] != null ? $parse : BigInt.parse('${f.defaultValue}')";
       }
       return f.isRequired ? parse : "json['$key'] != null ? $parse : null";
     }

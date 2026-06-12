@@ -21,7 +21,7 @@ All notable changes to the Prisma Flutter Connector.
 - **`update`/`updateMany` refresh `@updatedAt`** unless the caller supplied a value (Prisma semantics). New `FieldInfo.isUpdatedAt` flag, emitted by the registry generator.
 
 #### PostgresAdapter: enum[] / custom array decoding
-- **Custom enum array columns (e.g. `SessionType[]`) now decode to `List<String>`** instead of raw PostgreSQL wire-format bytes. Handles both the binary ARRAY wire format and text array literals (`{A,B,"c d",NULL}`), with NULL elements preserved.
+- **Custom enum array columns (e.g. `SessionType[]`) now decode to `List<String?>`** instead of raw PostgreSQL wire-format bytes. Handles both the binary ARRAY wire format and text array literals (`{A,B,"c d",NULL}`), with NULL elements preserved.
 
 #### Registry generator: one-to-one FK on the target model
 - **Relations whose foreign key lives on the TARGET model** (e.g. `Program.licensedSeatConfig` where `LicensedSeatConfig.programId` owns the `@relation`) are now emitted as `isOwner: false` with the target's real FK, instead of fabricating a nonexistent `<fieldName>Id` column on the parent — fixes `column tN.id does not exist` on nested includes.
