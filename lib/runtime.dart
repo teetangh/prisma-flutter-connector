@@ -104,3 +104,4 @@ export 'src/runtime/errors/prisma_exceptions.dart';
 
 // Query logging (debugging and monitoring)
 export 'src/runtime/logging/query_logger.dart';
+export 'src/runtime/logging/sentry_query_logger.dart';

@@ -66,6 +66,18 @@ and composite-key addressing — retiring the need for hand-built
   (`LIKE`), `array_contains` (`@>`), numeric `lt`/`lte`/`gt`/`gte`.
 - **`BigIntFilter` + `BytesFilter`**; BigInt/Bytes columns map to them.
 
+#### Sentry error reporting (bundled)
+- **`SentryQueryLogger`** (a `QueryLogger`) forwards failed queries to Sentry
+  via `captureException` with SQL/operation/model context — a no-op unless the
+  host app has already initialized Sentry (`Sentry.isEnabled`), so it's always
+  safe to include. Plug it into the executor's `logger` (compose with
+  `ConsoleQueryLogger` via `CompositeQueryLogger`).
+- **`PrismaSentry.init(...)`** convenience for standalone/tooling use that owns
+  Sentry itself (DSN via arg or the `SENTRY_DSN` dart-define). Apps that already
+  call `Sentry.init`/`SentryFlutter.init` should skip this and just add the
+  logger. New dependency: `sentry: ">=8.0.0 <10.0.0"` (wide range so sentry
+  8.x and 9.x consumers both resolve).
+
 #### Connection pooling (#70)
 - **`PostgresAdapter.pooled(pg.Pool)`** runs non-transactional statements on
   connections borrowed from the pool; each transaction pins a dedicated pool

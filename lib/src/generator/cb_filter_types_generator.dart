@@ -25,19 +25,45 @@ class CbFilterTypesGenerator {
     ];
 
     final body = <Spec>[
-      _filter('StringFilter', 'String', [
-        _p('String?', 'equals'),
-        _p('String?', 'not'),
-        _pJsonKey('List<String>?', 'in_', 'in'),
-        _p('List<String>?', 'notIn'),
-        _p('String?', 'contains'),
-        _p('String?', 'startsWith'),
-        _p('String?', 'endsWith'),
-        _p('String?', 'lt'),
-        _p('String?', 'lte'),
-        _p('String?', 'gt'),
-        _p('String?', 'gte'),
-      ]),
+      _filter(
+        'StringFilter',
+        'String',
+        [
+          _p('String?', 'equals'),
+          _p('String?', 'not'),
+          _pJsonKey('List<String>?', 'in_', 'in'),
+          _p('List<String>?', 'notIn'),
+          _p('String?', 'contains'),
+          _p('String?', 'startsWith'),
+          _p('String?', 'endsWith'),
+          _p('String?', 'lt'),
+          _p('String?', 'lte'),
+          _p('String?', 'gt'),
+          _p('String?', 'gte'),
+          // 'insensitive' → case-insensitive contains/startsWith/endsWith.
+          _p('String?', 'mode'),
+        ],
+        // When mode is set, wrap the string-search operators as
+        // {value, mode} so the compiler emits ILIKE (matches Prisma).
+        toJsonBodyOverride: '''
+          String? m = mode;
+          Object? wrap(String? v) =>
+              (v != null && m != null) ? <String, dynamic>{'value': v, 'mode': m} : v;
+          return <String, dynamic>{
+            if (equals != null) 'equals': equals,
+            if (not != null) 'not': not,
+            if (in_ != null) 'in': in_,
+            if (notIn != null) 'notIn': notIn,
+            if (contains != null) 'contains': wrap(contains),
+            if (startsWith != null) 'startsWith': wrap(startsWith),
+            if (endsWith != null) 'endsWith': wrap(endsWith),
+            if (lt != null) 'lt': lt,
+            if (lte != null) 'lte': lte,
+            if (gt != null) 'gt': gt,
+            if (gte != null) 'gte': gte,
+          };
+        ''',
+      ),
       _filter('IntFilter', 'Int', [
         _p('int?', 'equals'),
         _p('int?', 'not'),
@@ -142,8 +168,9 @@ class CbFilterTypesGenerator {
     return _formatter.format('${library.accept(_emitter)}');
   }
 
-  Class _filter(String name, String doc, List<Parameter> params) {
-    final toJsonBody = _filterToJsonBody(params);
+  Class _filter(String name, String doc, List<Parameter> params,
+      {String? toJsonBodyOverride}) {
+    final toJsonBody = toJsonBodyOverride ?? _filterToJsonBody(params);
     return Class((b) => b
       ..name = name
       ..docs.add('/// Filter for $doc fields')

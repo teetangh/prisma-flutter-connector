@@ -31,6 +31,10 @@ dependencies:
   json_annotation: ^4.9.0
   mysql1: ^0.20.0
   postgres: ^3.0.0
+  # Wide range so consumers on sentry 8.x (e.g. the mobile backend) and 9.x
+  # (the Flutter app) both resolve; the connector only uses the stable
+  # captureException / isEnabled surface.
+  sentry: ">=8.0.0 <10.0.0"
   sqflite: ^2.3.0
   supabase_flutter: ^2.5.0
   web_socket_channel: ">=2.4.0 <4.0.0"
