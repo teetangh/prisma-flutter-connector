@@ -25,19 +25,45 @@ class CbFilterTypesGenerator {
     ];
 
     final body = <Spec>[
-      _filter('StringFilter', 'String', [
-        _p('String?', 'equals'),
-        _p('String?', 'not'),
-        _pJsonKey('List<String>?', 'in_', 'in'),
-        _p('List<String>?', 'notIn'),
-        _p('String?', 'contains'),
-        _p('String?', 'startsWith'),
-        _p('String?', 'endsWith'),
-        _p('String?', 'lt'),
-        _p('String?', 'lte'),
-        _p('String?', 'gt'),
-        _p('String?', 'gte'),
-      ]),
+      _filter(
+        'StringFilter',
+        'String',
+        [
+          _p('String?', 'equals'),
+          _p('String?', 'not'),
+          _pJsonKey('List<String>?', 'in_', 'in'),
+          _p('List<String>?', 'notIn'),
+          _p('String?', 'contains'),
+          _p('String?', 'startsWith'),
+          _p('String?', 'endsWith'),
+          _p('String?', 'lt'),
+          _p('String?', 'lte'),
+          _p('String?', 'gt'),
+          _p('String?', 'gte'),
+          // 'insensitive' → case-insensitive contains/startsWith/endsWith.
+          _p('String?', 'mode'),
+        ],
+        // When mode is set, wrap the string-search operators as
+        // {value, mode} so the compiler emits ILIKE (matches Prisma).
+        toJsonBodyOverride: '''
+          String? m = mode;
+          Object? wrap(String? v) =>
+              (v != null && m != null) ? <String, dynamic>{'value': v, 'mode': m} : v;
+          return <String, dynamic>{
+            if (equals != null) 'equals': equals,
+            if (not != null) 'not': not,
+            if (in_ != null) 'in': in_,
+            if (notIn != null) 'notIn': notIn,
+            if (contains != null) 'contains': wrap(contains),
+            if (startsWith != null) 'startsWith': wrap(startsWith),
+            if (endsWith != null) 'endsWith': wrap(endsWith),
+            if (lt != null) 'lt': lt,
+            if (lte != null) 'lte': lte,
+            if (gt != null) 'gt': gt,
+            if (gte != null) 'gte': gte,
+          };
+        ''',
+      ),
       _filter('IntFilter', 'Int', [
         _p('int?', 'equals'),
         _p('int?', 'not'),
@@ -90,6 +116,32 @@ class CbFilterTypesGenerator {
         _p('List<int>?', 'hasSome'),
         _p('bool?', 'isEmpty'),
       ]),
+      _filter('BigIntFilter', 'BigInt', [
+        _p('BigInt?', 'equals'),
+        _p('BigInt?', 'not'),
+        _pJsonKey('List<BigInt>?', 'in_', 'in'),
+        _p('List<BigInt>?', 'notIn'),
+        _p('BigInt?', 'lt'),
+        _p('BigInt?', 'lte'),
+        _p('BigInt?', 'gt'),
+        _p('BigInt?', 'gte'),
+      ]),
+      _filter('BytesFilter', 'Bytes', [
+        _p('List<int>?', 'equals'),
+        _p('List<int>?', 'not'),
+      ]),
+      _filter('JsonFilter', 'Json (PostgreSQL jsonb)', [
+        _p('List<String>?', 'path'),
+        _p('Object?', 'equals'),
+        _pJsonKey('String?', 'stringContains', 'string_contains'),
+        _pJsonKey('String?', 'stringStartsWith', 'string_starts_with'),
+        _pJsonKey('String?', 'stringEndsWith', 'string_ends_with'),
+        _pJsonKey('Object?', 'arrayContains', 'array_contains'),
+        _p('Object?', 'lt'),
+        _p('Object?', 'lte'),
+        _p('Object?', 'gt'),
+        _p('Object?', 'gte'),
+      ]),
       Enum((b) => b
         ..name = 'SortOrder'
         ..docs.add('/// Sort order for ordering results')
@@ -104,15 +156,21 @@ class CbFilterTypesGenerator {
     ];
 
     final library = Library((b) => b
-      ..comments.add('/// Generated filter types for type-safe queries')
+      ..comments.addAll([
+        '/// Generated filter types for type-safe queries',
+        // @JsonKey on freezed constructor params (e.g. `in`, `string_contains`)
+        // is a valid pattern but trips this lint; suppress it file-wide.
+        'ignore_for_file: invalid_annotation_target',
+      ])
       ..directives.addAll(directives)
       ..body.addAll(body));
 
     return _formatter.format('${library.accept(_emitter)}');
   }
 
-  Class _filter(String name, String doc, List<Parameter> params) {
-    final toJsonBody = _filterToJsonBody(params);
+  Class _filter(String name, String doc, List<Parameter> params,
+      {String? toJsonBodyOverride}) {
+    final toJsonBody = toJsonBodyOverride ?? _filterToJsonBody(params);
     return Class((b) => b
       ..name = name
       ..docs.add('/// Filter for $doc fields')
@@ -162,6 +220,10 @@ class CbFilterTypesGenerator {
     if (cleanType == 'DateTime') return '$name!.toIso8601String()';
     if (cleanType.startsWith('List<DateTime>')) {
       return '$name!.map((e) => e.toIso8601String()).toList()';
+    }
+    if (cleanType == 'BigInt') return '$name!.toString()';
+    if (cleanType.startsWith('List<BigInt>')) {
+      return '$name!.map((e) => e.toString()).toList()';
     }
 
     // Check for enum types

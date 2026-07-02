@@ -42,8 +42,13 @@ mixin ResultSetConverter {
         final columnName = result.columnNames[i];
         final value = i < row.length ? row[i] : null;
 
-        // Convert snake_case column names to camelCase (unless preserving aliases)
-        final key = preserveAliases ? columnName : snakeToCamelCase(columnName);
+        // Keep raw DB column names as keys. Generated models deserialize by
+        // column name (`@JsonKey(name: '<@map column>')` / manual fromJson
+        // reading the DB column), so camelCasing here would desync `@map`-ed
+        // columns (e.g. `author_id` -> `authorId`) from what fromJson reads.
+        // (`preserveAliases` is retained for API compatibility; both branches
+        // now keep the raw column/alias.)
+        final key = columnName;
 
         map[key] = deserializeValue(value, result.columnTypes[i]);
       }
@@ -128,6 +133,30 @@ abstract class BaseExecutor {
 
   /// Execute a count query.
   Future<int> executeCount(JsonQuery query);
+
+  /// Run [callback] inside a transaction.
+  ///
+  /// On a root executor this opens a new transaction. On an executor that is
+  /// already inside a transaction, it reuses the ambient transaction so a
+  /// nested `$transaction` flattens instead of failing (PostgreSQL has no true
+  /// nested transactions). [isolationLevel] is honoured only when a new
+  /// transaction is opened.
+  Future<T> runTransaction<T>(
+    Future<T> Function(BaseExecutor) callback, {
+    IsolationLevel? isolationLevel,
+  });
+
+  /// Close the underlying connection. No-op when inside a transaction (a
+  /// transaction does not own the adapter's connection lifecycle).
+  Future<void> dispose();
+
+  /// Run a create/update whose data contains nested relation operations
+  /// (connect/disconnect/create), atomically, and return the RETURNING row.
+  /// On a root executor this opens a transaction; inside a transaction it
+  /// reuses the ambient one.
+  Future<Map<String, dynamic>?> executeMutationWithRelationsReturning(
+    JsonQuery query,
+  );
 }
 
 /// Executes Prisma queries against a database adapter.
@@ -405,10 +434,16 @@ class QueryExecutor with ResultSetConverter implements BaseExecutor {
 
     // Execute main mutation
     final result = await adapter.queryRaw(compiled.mainQuery);
+    final mainRow =
+        result.rows.isNotEmpty ? resultSetToMaps(result).first : null;
 
-    // Execute relation mutations if any
-    if (compiled.hasRelationMutations) {
-      for (final relationQuery in compiled.relationMutations) {
+    // Rebuild relation mutations from the RETURNING row so DB-generated parent
+    // ids (e.g. @default(uuid())) are used, not the compile-time (null) id.
+    final relationMutations =
+        compiler.buildRelationMutationsFromResult(query, mainRow);
+
+    if (relationMutations.isNotEmpty) {
+      for (final relationQuery in relationMutations) {
         try {
           await adapter.executeRaw(relationQuery);
         } catch (e, s) {
@@ -430,10 +465,7 @@ class QueryExecutor with ResultSetConverter implements BaseExecutor {
     }
 
     // Return the created/updated record
-    if (result.rows.isNotEmpty) {
-      return resultSetToMaps(result).first;
-    }
-    return null;
+    return mainRow;
   }
 
   /// Execute a mutation with relation operations inside a transaction.
@@ -467,17 +499,18 @@ class QueryExecutor with ResultSetConverter implements BaseExecutor {
 
       // Execute main mutation
       final result = await txExecutor.transaction.queryRaw(compiled.mainQuery);
+      final mainRow =
+          result.rows.isNotEmpty ? resultSetToMaps(result).first : null;
 
-      // Execute relation mutations
-      for (final relationQuery in compiled.relationMutations) {
+      // Rebuild relation mutations from the RETURNING row so DB-generated
+      // parent ids are used (fixes nested writes on @default(uuid()) create).
+      final relationMutations =
+          compiler.buildRelationMutationsFromResult(query, mainRow);
+      for (final relationQuery in relationMutations) {
         await txExecutor.transaction.executeRaw(relationQuery);
       }
 
-      // Return the created/updated record
-      if (result.rows.isNotEmpty) {
-        return resultSetToMaps(result).first;
-      }
-      return null;
+      return mainRow;
     }, isolationLevel: isolationLevel);
   }
 
@@ -620,7 +653,21 @@ class QueryExecutor with ResultSetConverter implements BaseExecutor {
     }
   }
 
+  @override
+  Future<T> runTransaction<T>(
+    Future<T> Function(BaseExecutor) callback, {
+    IsolationLevel? isolationLevel,
+  }) =>
+      executeInTransaction<T>(callback, isolationLevel: isolationLevel);
+
+  @override
+  Future<Map<String, dynamic>?> executeMutationWithRelationsReturning(
+    JsonQuery query,
+  ) =>
+      executeMutationWithRelationsAtomic(query);
+
   /// Close the adapter connection.
+  @override
   Future<void> dispose() async {
     await adapter.dispose();
   }
@@ -756,5 +803,38 @@ class TransactionExecutor with ResultSetConverter implements BaseExecutor {
     if (count is String) return int.parse(count);
 
     return 0;
+  }
+
+  @override
+  Future<T> runTransaction<T>(
+    Future<T> Function(BaseExecutor) callback, {
+    IsolationLevel? isolationLevel,
+  }) async {
+    // Already inside a transaction: reuse the ambient one (nested
+    // $transaction flattens). PostgreSQL has no true nested transactions and
+    // the isolation level cannot change mid-transaction, so it is ignored.
+    return callback(this);
+  }
+
+  @override
+  Future<Map<String, dynamic>?> executeMutationWithRelationsReturning(
+    JsonQuery query,
+  ) async {
+    // Runs within the ambient transaction (no new BEGIN).
+    final compiled = compiler.compileWithRelations(query);
+    final result = await transaction.queryRaw(compiled.mainQuery);
+    final mainRow =
+        result.rows.isNotEmpty ? resultSetToMaps(result).first : null;
+    final relationMutations =
+        compiler.buildRelationMutationsFromResult(query, mainRow);
+    for (final relationQuery in relationMutations) {
+      await transaction.executeRaw(relationQuery);
+    }
+    return mainRow;
+  }
+
+  @override
+  Future<void> dispose() async {
+    // No-op: the transaction does not own the adapter's connection lifecycle.
   }
 }

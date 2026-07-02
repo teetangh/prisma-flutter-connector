@@ -168,6 +168,47 @@ void main() {
           .build());
       expect(ok.sql, 'SELECT * FROM "users"');
     });
+
+    test('groupBy resolves @map field to column and aliases back', () {
+      final q = JsonQueryBuilder()
+          .model('User')
+          .action(QueryAction.groupBy)
+          .groupByFields(['status']).aggregation({'_count': true}).build();
+      final r = compiler.compile(q);
+      // Dart field 'status' -> column "requestStatus"; SELECT aliases it back
+      expect(r.sql, contains('"requestStatus" AS "status"'));
+      expect(r.sql, contains('GROUP BY "requestStatus"'));
+      expect(r.sql, contains('COUNT(*)'));
+    });
+
+    test('aggregate resolves @map field in function arg, aliases by field', () {
+      final q = JsonQueryBuilder()
+          .model('User')
+          .action(QueryAction.aggregate)
+          .aggregation({
+        '_count': true,
+        '_min': {'status': true},
+      }).build();
+      final r = compiler.compile(q);
+      // MIN over the DB column, alias keeps the Dart field name
+      expect(r.sql, contains('MIN("requestStatus") AS "_min_status"'));
+      expect(r.sql, contains('COUNT(*)'));
+    });
+
+    test('upsert resolves @map conflict + column names', () {
+      final q = JsonQueryBuilder()
+          .model('User')
+          .action(QueryAction.upsert)
+          .where({'id': 'u1'}).data({
+        'create': {'id': 'u1', 'status': 'PENDING'},
+        'update': {'status': 'APPROVED'},
+      }).build();
+      final r = compiler.compile(q);
+      expect(r.sql, contains('INSERT INTO "users"'));
+      expect(r.sql, contains('"requestStatus"'));
+      expect(r.sql, contains('ON CONFLICT ("id")'));
+      expect(r.sql, isNot(contains('"status"')));
+    });
   });
 
   group('SqlCompiler with @@map-ed registry (sqlite)', () {

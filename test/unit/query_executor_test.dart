@@ -11,6 +11,7 @@ class MockAdapter implements SqlDriverAdapter {
   int nextExecuteResult = 0;
   Exception? shouldThrow;
   MockTransaction? mockTransaction;
+  int startTransactionCount = 0;
 
   @override
   String get provider => 'postgresql';
@@ -66,6 +67,7 @@ class MockAdapter implements SqlDriverAdapter {
 
   @override
   Future<Transaction> startTransaction([IsolationLevel? isolationLevel]) async {
+    startTransactionCount++;
     // Return pre-configured mock if set, otherwise create new one
     mockTransaction ??= MockTransaction();
     return mockTransaction!;
@@ -321,7 +323,10 @@ void main() {
         expect(result, isEmpty);
       });
 
-      test('converts snake_case columns to camelCase', () async {
+      test('preserves raw DB column names as keys', () async {
+        // Generated models deserialize by DB column name (@map), so the
+        // executor must NOT camelCase columns — that would desync @map-ed
+        // columns like `author_id` from what fromJson reads.
         final query = JsonQueryBuilder()
             .model('User')
             .action(QueryAction.findMany)
@@ -341,10 +346,10 @@ void main() {
 
         final result = await executor.executeQueryAsMaps(query);
 
-        expect(result[0].containsKey('userId'), true);
-        expect(result[0].containsKey('firstName'), true);
-        expect(result[0].containsKey('createdAt'), true);
-        expect(result[0].containsKey('user_id'), false);
+        expect(result[0].containsKey('user_id'), true);
+        expect(result[0].containsKey('first_name'), true);
+        expect(result[0].containsKey('created_at'), true);
+        expect(result[0].containsKey('userId'), false);
       });
 
       test('deserializes DateTime values', () async {
@@ -363,8 +368,8 @@ void main() {
 
         final result = await executor.executeQueryAsMaps(query);
 
-        expect(result[0]['createdAt'], isA<DateTime>());
-        final date = result[0]['createdAt'] as DateTime;
+        expect(result[0]['created_at'], isA<DateTime>());
+        final date = result[0]['created_at'] as DateTime;
         expect(date.year, 2024);
         expect(date.month, 1);
         expect(date.day, 15);
@@ -387,7 +392,7 @@ void main() {
 
         final result = await executor.executeQueryAsMaps(query);
 
-        expect(result[0]['createdAt'], testDate);
+        expect(result[0]['created_at'], testDate);
       });
 
       test('deserializes date values', () async {
@@ -406,7 +411,7 @@ void main() {
 
         final result = await executor.executeQueryAsMaps(query);
 
-        expect(result[0]['birthDate'], isA<DateTime>());
+        expect(result[0]['birth_date'], isA<DateTime>());
       });
 
       test('converts SQLite boolean (int to bool)', () async {
@@ -426,8 +431,8 @@ void main() {
 
         final result = await executor.executeQueryAsMaps(query);
 
-        expect(result[0]['isActive'], true);
-        expect(result[1]['isActive'], false);
+        expect(result[0]['is_active'], true);
+        expect(result[1]['is_active'], false);
       });
 
       test('handles null values', () async {
@@ -651,6 +656,50 @@ void main() {
       });
     });
 
+    group('runTransaction (#68)', () {
+      test('QueryExecutor.runTransaction opens a transaction and commits',
+          () async {
+        final result = await executor.runTransaction((tx) async {
+          expect(tx, isA<TransactionExecutor>());
+          return 'ok';
+        });
+
+        expect(result, 'ok');
+        expect(mockAdapter.startTransactionCount, 1);
+        expect(mockAdapter.mockTransaction!.committed, true);
+      });
+
+      test('nested runTransaction flattens onto the ambient transaction',
+          () async {
+        late BaseExecutor outerTx;
+        late BaseExecutor innerTx;
+
+        await executor.runTransaction((tx) async {
+          outerTx = tx;
+          return tx.runTransaction((inner) async {
+            innerTx = inner;
+            return null;
+          });
+        });
+
+        // Only one BEGIN, and the nested call reused the same executor.
+        expect(mockAdapter.startTransactionCount, 1);
+        expect(identical(innerTx, outerTx), true);
+        expect(mockAdapter.mockTransaction!.committed, true);
+      });
+
+      test('TransactionExecutor.dispose is a no-op (does not break the tx)',
+          () async {
+        final result = await executor.runTransaction((tx) async {
+          await tx.dispose(); // must not close the shared connection
+          return 'still-usable';
+        });
+
+        expect(result, 'still-usable');
+        expect(mockAdapter.mockTransaction!.committed, true);
+      });
+    });
+
     group('TransactionExecutor', () {
       test('executeQueryAsMaps works within transaction', () async {
         // Pre-configure the mock transaction before executor uses it
@@ -730,7 +779,7 @@ void main() {
         expect(result, isNull);
       });
 
-      test('converts snake_case to camelCase in transaction', () async {
+      test('preserves raw column names in transaction', () async {
         final txMock = MockTransaction();
         txMock.nextQueryResult = const SqlResultSet(
           columnNames: ['user_id', 'created_at'],
@@ -752,8 +801,8 @@ void main() {
           return null;
         });
 
-        expect(result![0].containsKey('userId'), true);
-        expect(result![0].containsKey('createdAt'), true);
+        expect(result![0].containsKey('user_id'), true);
+        expect(result![0].containsKey('created_at'), true);
       });
     });
 
@@ -840,7 +889,7 @@ void main() {
 
       final result = await executor.executeQueryAsMaps(query);
 
-      expect(result[0].containsKey('userProfilePictureUrl'), true);
+      expect(result[0].containsKey('user_profile_picture_url'), true);
     });
 
     test('handles already camelCase columns', () async {

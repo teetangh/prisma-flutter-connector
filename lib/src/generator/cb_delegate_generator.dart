@@ -29,18 +29,25 @@ class CbDelegateGenerator {
       ..directives.addAll([
         Directive.import('package:prisma_flutter_connector/$runtimeImport'),
         Directive.import('../models/${toSnakeCase(modelName)}.dart'),
-        Directive.import('../filters.dart'),
       ])
       ..body.add(_buildDelegateClass(modelName, tableName,
           hasUniqueFields: model.fields
-              .any((f) => (f.isId || f.isUnique) && !f.isRelation))));
+                  .any((f) => (f.isId || f.isUnique) && !f.isRelation) ||
+              model.compositeUniques.isNotEmpty,
+          relationFields: model.fields
+              .where((f) => f.isRelation)
+              .map((f) => f.name)
+              .toList())));
 
     final emitter = DartEmitter(useNullSafetySyntax: true);
     return _formatter.format('${library.accept(emitter)}');
   }
 
   Class _buildDelegateClass(String modelName, String tableName,
-      {required bool hasUniqueFields}) {
+      {required bool hasUniqueFields, required List<String> relationFields}) {
+    final relLiteral = relationFields.isEmpty
+        ? 'const <String>{}'
+        : '{${relationFields.map((n) => "'$n'").join(', ')}}';
     return Class((b) => b
       ..name = '${modelName}Delegate'
       ..docs.addAll([
@@ -61,17 +68,21 @@ class CbDelegateGenerator {
         if (hasUniqueFields) _findUnique(modelName, tableName),
         if (hasUniqueFields) _findUniqueOrThrow(modelName),
         _findFirst(modelName, tableName),
-        _findMany(modelName, tableName),
+        _findFirstOrThrow(modelName),
+        _findMany(modelName, tableName, hasUniqueFields),
         _findManyRaw(modelName, tableName),
         _findFirstRaw(modelName, tableName),
-        _create(modelName, tableName),
+        _create(modelName, tableName, relLiteral),
         _createMany(modelName, tableName),
-        if (hasUniqueFields) _update(modelName, tableName),
+        _createManyAndReturn(modelName, tableName),
+        if (hasUniqueFields) _update(modelName, tableName, relLiteral),
+        if (hasUniqueFields) _upsert(modelName, tableName),
         _updateMany(modelName, tableName),
         if (hasUniqueFields) _delete(modelName, tableName),
         _deleteMany(modelName, tableName),
         _count(modelName, tableName),
         _groupBy(modelName, tableName),
+        _aggregate(modelName, tableName),
         _normalizeForJson(),
         if (hasUniqueFields) _whereUniqueToJson(modelName),
         _whereToJson(modelName),
@@ -93,7 +104,7 @@ class CbDelegateGenerator {
       Parameter((p) => p
         ..name = 'include'
         ..named = true
-        ..type = refer('Map<String, dynamic>?')),
+        ..type = refer('${m}Include?')),
     ])
     ..body = Code('''
       final queryBuilder = JsonQueryBuilder()
@@ -101,7 +112,7 @@ class CbDelegateGenerator {
           .action(QueryAction.findUnique)
           .where(_whereUniqueToJson(where));
 
-      if (include != null) queryBuilder.include(include);
+      if (include != null) queryBuilder.include(include.toJson());
 
       final result = await _executor.executeQueryAsSingleMap(queryBuilder.build());
       return result != null ? $m.fromJson(_normalizeForJson(result)) : null;
@@ -142,7 +153,7 @@ class CbDelegateGenerator {
       Parameter((p) => p
         ..name = 'include'
         ..named = true
-        ..type = refer('Map<String, dynamic>?')),
+        ..type = refer('${m}Include?')),
     ])
     ..body = Code('''
       final queryBuilder = JsonQueryBuilder()
@@ -151,13 +162,41 @@ class CbDelegateGenerator {
 
       if (where != null) queryBuilder.where(_whereToJson(where));
       if (orderBy != null) queryBuilder.orderBy(_orderByToJson(orderBy));
-      if (include != null) queryBuilder.include(include);
+      if (include != null) queryBuilder.include(include.toJson());
 
       final result = await _executor.executeQueryAsSingleMap(queryBuilder.build());
       return result != null ? $m.fromJson(_normalizeForJson(result)) : null;
     '''));
 
-  Method _findMany(String m, String t) => Method((b) => b
+  Method _findFirstOrThrow(String m) => Method((b) => b
+    ..name = 'findFirstOrThrow'
+    ..docs.add('/// Find the first $m matching criteria, or throw if none')
+    ..modifier = MethodModifier.async
+    ..returns = refer('Future<$m>')
+    ..optionalParameters.addAll([
+      Parameter((p) => p
+        ..name = 'where'
+        ..named = true
+        ..type = refer('${m}WhereInput?')),
+      Parameter((p) => p
+        ..name = 'orderBy'
+        ..named = true
+        ..type = refer('${m}OrderByInput?')),
+      Parameter((p) => p
+        ..name = 'include'
+        ..named = true
+        ..type = refer('${m}Include?')),
+    ])
+    ..body = Code('''
+      final result =
+          await findFirst(where: where, orderBy: orderBy, include: include);
+      if (result == null) {
+        throw Exception('$m not found');
+      }
+      return result;
+    '''));
+
+  Method _findMany(String m, String t, bool hasUniqueFields) => Method((b) => b
     ..name = 'findMany'
     ..docs.add('/// Find multiple ${m}s with optional filters')
     ..modifier = MethodModifier.async
@@ -182,7 +221,7 @@ class CbDelegateGenerator {
       Parameter((p) => p
         ..name = 'include'
         ..named = true
-        ..type = refer('Map<String, dynamic>?')),
+        ..type = refer('${m}Include?')),
       Parameter((p) => p
         ..name = 'includeRequired'
         ..named = true
@@ -199,6 +238,11 @@ class CbDelegateGenerator {
         ..name = 'distinctFields'
         ..named = true
         ..type = refer('List<String>?')),
+      if (hasUniqueFields)
+        Parameter((p) => p
+          ..name = 'cursor'
+          ..named = true
+          ..type = refer('${m}WhereUniqueInput?')),
     ])
     ..body = Code('''
       final queryBuilder = JsonQueryBuilder()
@@ -211,7 +255,8 @@ class CbDelegateGenerator {
       if (orderBy is ${m}OrderByInput) queryBuilder.orderBy(_orderByToJson(orderBy));
       if (take != null) queryBuilder.take(take);
       if (skip != null) queryBuilder.skip(skip);
-      if (include != null) queryBuilder.include(include);
+      ${hasUniqueFields ? 'if (cursor != null) queryBuilder.cursor(_whereUniqueToJson(cursor));' : ''}
+      if (include != null) queryBuilder.include(include.toJson());
       if (includeRequired != null) queryBuilder.includeRequired(includeRequired);
       if (selectFields != null) queryBuilder.selectFields(selectFields);
       if (distinct == true) queryBuilder.distinct(distinctFields);
@@ -319,7 +364,7 @@ class CbDelegateGenerator {
       return await _executor.executeQueryAsSingleMap(queryBuilder.build());
     '''));
 
-  Method _create(String m, String t) => Method((b) => b
+  Method _create(String m, String t, String relLiteral) => Method((b) => b
     ..name = 'create'
     ..docs.add('/// Create a new $m')
     ..modifier = MethodModifier.async
@@ -330,11 +375,21 @@ class CbDelegateGenerator {
       ..required = true
       ..type = refer('Create${m}Input')))
     ..body = Code('''
+      final data0 = data.toJson();
       final query = JsonQueryBuilder()
           .model('$t')
           .action(QueryAction.create)
-          .data(data.toJson())
+          .data(data0)
           .build();
+
+      const relationFields = $relLiteral;
+      if (data0.keys.any(relationFields.contains)) {
+        final row = await _executor.executeMutationWithRelationsReturning(query);
+        if (row == null) {
+          throw Exception('Failed to create $m');
+        }
+        return $m.fromJson(_normalizeForJson(row));
+      }
 
       final result = await _executor.executeQueryAsSingleMap(query);
       if (result == null) {
@@ -348,22 +403,55 @@ class CbDelegateGenerator {
     ..docs.add('/// Create multiple ${m}s')
     ..modifier = MethodModifier.async
     ..returns = refer('Future<int>')
-    ..optionalParameters.add(Parameter((p) => p
-      ..name = 'data'
-      ..named = true
-      ..required = true
-      ..type = refer('List<Create${m}Input>')))
+    ..optionalParameters.addAll([
+      Parameter((p) => p
+        ..name = 'data'
+        ..named = true
+        ..required = true
+        ..type = refer('List<Create${m}Input>')),
+      Parameter((p) => p
+        ..name = 'skipDuplicates'
+        ..named = true
+        ..type = refer('bool?')),
+    ])
     ..body = Code('''
-      final query = JsonQueryBuilder()
+      final queryBuilder = JsonQueryBuilder()
           .model('$t')
           .action(QueryAction.createMany)
-          .data({'data': data.map((d) => d.toJson()).toList()})
-          .build();
+          .data({'data': data.map((d) => d.toJson()).toList()});
+      if (skipDuplicates == true) queryBuilder.skipDuplicates();
 
-      return await _executor.executeMutation(query);
+      return await _executor.executeMutation(queryBuilder.build());
     '''));
 
-  Method _update(String m, String t) => Method((b) => b
+  Method _createManyAndReturn(String m, String t) => Method((b) => b
+    ..name = 'createManyAndReturn'
+    ..docs.add('/// Create multiple ${m}s and return the created rows')
+    ..modifier = MethodModifier.async
+    ..returns = refer('Future<List<$m>>')
+    ..optionalParameters.addAll([
+      Parameter((p) => p
+        ..name = 'data'
+        ..named = true
+        ..required = true
+        ..type = refer('List<Create${m}Input>')),
+      Parameter((p) => p
+        ..name = 'skipDuplicates'
+        ..named = true
+        ..type = refer('bool?')),
+    ])
+    ..body = Code('''
+      final queryBuilder = JsonQueryBuilder()
+          .model('$t')
+          .action(QueryAction.createManyAndReturn)
+          .data({'data': data.map((d) => d.toJson()).toList()});
+      if (skipDuplicates == true) queryBuilder.skipDuplicates();
+
+      final results = await _executor.executeQueryAsMaps(queryBuilder.build());
+      return results.map((json) => $m.fromJson(_normalizeForJson(json))).toList();
+    '''));
+
+  Method _update(String m, String t, String relLiteral) => Method((b) => b
     ..name = 'update'
     ..docs.add('/// Update a $m')
     ..modifier = MethodModifier.async
@@ -381,17 +469,60 @@ class CbDelegateGenerator {
         ..type = refer('Update${m}Input')),
     ])
     ..body = Code('''
+      final data0 = data.toJson();
       final query = JsonQueryBuilder()
           .model('$t')
           .action(QueryAction.update)
           .where(_whereUniqueToJson(where))
-          .data(data.toJson())
+          .data(data0)
           .build();
 
-      await _executor.executeMutation(query);
+      const relationFields = $relLiteral;
+      if (data0.keys.any(relationFields.contains)) {
+        await _executor.executeMutationWithRelationsReturning(query);
+      } else {
+        await _executor.executeMutation(query);
+      }
 
       // Fetch the updated record
       return await findUniqueOrThrow(where: where);
+    '''));
+
+  Method _upsert(String m, String t) => Method((b) => b
+    ..name = 'upsert'
+    ..docs.add('/// Create a $m, or update it if the unique key already exists')
+    ..modifier = MethodModifier.async
+    ..returns = refer('Future<$m>')
+    ..optionalParameters.addAll([
+      Parameter((p) => p
+        ..name = 'where'
+        ..named = true
+        ..required = true
+        ..type = refer('${m}WhereUniqueInput')),
+      Parameter((p) => p
+        ..name = 'create'
+        ..named = true
+        ..required = true
+        ..type = refer('Create${m}Input')),
+      Parameter((p) => p
+        ..name = 'update'
+        ..named = true
+        ..required = true
+        ..type = refer('Update${m}Input')),
+    ])
+    ..body = Code('''
+      final query = JsonQueryBuilder()
+          .model('$t')
+          .action(QueryAction.upsert)
+          .where(_whereUniqueToJson(where))
+          .data({'create': create.toJson(), 'update': update.toJson()})
+          .build();
+
+      final result = await _executor.executeQueryAsSingleMap(query);
+      if (result == null) {
+        throw Exception('Failed to upsert $m');
+      }
+      return $m.fromJson(_normalizeForJson(result));
     '''));
 
   Method _updateMany(String m, String t) => Method((b) => b
@@ -546,6 +677,62 @@ class CbDelegateGenerator {
       return await _executor.executeQueryAsMaps(queryBuilder.build());
     '''));
 
+  Method _aggregate(String m, String t) => Method((b) => b
+    ..name = 'aggregate'
+    ..docs.add('/// Aggregate over ${m}s (count/sum/avg/min/max)')
+    ..modifier = MethodModifier.async
+    ..returns = refer('Future<Map<String, dynamic>>')
+    ..optionalParameters.addAll([
+      Parameter((p) => p
+        ..name = 'where'
+        ..named = true
+        ..type = refer('${m}WhereInput?')),
+      Parameter((p) => p
+        ..name = 'count'
+        ..named = true
+        ..type = refer('bool?')),
+      Parameter((p) => p
+        ..name = 'sum'
+        ..named = true
+        ..type = refer('Map<String, bool>?')),
+      Parameter((p) => p
+        ..name = 'avg'
+        ..named = true
+        ..type = refer('Map<String, bool>?')),
+      Parameter((p) => p
+        ..name = 'min'
+        ..named = true
+        ..type = refer('Map<String, bool>?')),
+      Parameter((p) => p
+        ..name = 'max'
+        ..named = true
+        ..type = refer('Map<String, bool>?')),
+      Parameter((p) => p
+        ..name = 'countFiltered'
+        ..named = true
+        ..type = refer('List<Map<String, dynamic>>?')),
+    ])
+    ..body = Code('''
+      final queryBuilder = JsonQueryBuilder()
+          .model('$t')
+          .action(QueryAction.aggregate);
+
+      if (where != null) queryBuilder.where(_whereToJson(where));
+
+      final agg = <String, dynamic>{};
+      if (count == true) agg['_count'] = true;
+      if (sum != null) agg['_sum'] = sum;
+      if (avg != null) agg['_avg'] = avg;
+      if (min != null) agg['_min'] = min;
+      if (max != null) agg['_max'] = max;
+      if (countFiltered != null) agg['_countFiltered'] = countFiltered;
+      queryBuilder.aggregation(agg);
+
+      final result =
+          await _executor.executeQueryAsSingleMap(queryBuilder.build());
+      return result ?? <String, dynamic>{};
+    '''));
+
   Method _normalizeForJson() => Method((b) => b
     ..name = '_normalizeForJson'
     ..docs.add(
@@ -625,7 +812,7 @@ class CbDelegateGenerator {
               final serialized = (entry.value as dynamic).toJson();
               if (serialized is Map) {
                 final cleaned = <String, dynamic>{};
-                for (final e in (serialized as Map).entries) {
+                for (final e in serialized.entries) {
                   if (e.value != null) cleaned[e.key.toString()] = e.value;
                 }
                 if (cleaned.isNotEmpty) result[entry.key] = cleaned;

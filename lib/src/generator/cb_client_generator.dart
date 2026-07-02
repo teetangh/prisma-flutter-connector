@@ -23,14 +23,11 @@ class CbClientGenerator {
       Directive.import('package:prisma_flutter_connector/$runtimeImport'),
     ];
 
-    // Import delegates and models
+    // The client class exposes delegates only; model types never appear in its
+    // surface, so it imports delegates but not model files.
     for (final model in schema.models) {
       final sn = toSnakeCase(model.name);
       directives.add(Directive.import('delegates/${sn}_delegate.dart'));
-    }
-    for (final model in schema.models) {
-      final sn = toSnakeCase(model.name);
-      directives.add(Directive.import('models/$sn.dart'));
     }
 
     final library = Library((b) => b
@@ -135,8 +132,7 @@ class CbClientGenerator {
             ..named = true
             ..type = refer('IsolationLevel?')))
           ..body = Code('''
-            final queryExecutor = _executor as QueryExecutor;
-            return await queryExecutor.executeInTransaction((txExecutor) async {
+            return await _executor.runTransaction((txExecutor) async {
               final txClient = PrismaClient._transaction(txExecutor);
               return await callback(txClient);
             }, isolationLevel: isolationLevel);
@@ -148,8 +144,7 @@ class CbClientGenerator {
           ..modifier = MethodModifier.async
           ..returns = refer('Future<void>')
           ..body = Code('''
-            final queryExecutor = _executor as QueryExecutor;
-            await queryExecutor.dispose();
+            await _executor.dispose();
           ''')),
       ]));
   }

@@ -4,6 +4,109 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-02
+
+The **complete-ORM** release: the typed `PrismaClient` surface now covers
+transactions, upsert, aggregate, nested writes, typed include-hydration,
+cursor pagination, JSON/scalar-list/BigInt/Bytes filters, connection pooling,
+and composite-key addressing — retiring the need for hand-built
+`JsonQueryBuilder`/raw queries in application code.
+
+### Added
+
+#### Transactions (#68)
+- **`$transaction((tx) async { ... })`** runs through a polymorphic
+  `runTransaction` on the executor. Nested `$transaction` calls flatten onto
+  the ambient transaction instead of crashing (`_executor as QueryExecutor`
+  no longer throws inside a tx). `$disconnect()` now routes through
+  `dispose()`.
+
+#### Upsert (#66)
+- **`upsert({where, create, update})`** delegate over the existing
+  `INSERT ... ON CONFLICT` compiler. `WhereUniqueInput` → conflict columns
+  (with `@map` resolution); `@default(uuid/cuid/now)` and `@updatedAt` are
+  autofilled on the create arm and `@updatedAt` refreshed on the update arm.
+  Guarded on models with a unique key (including composite).
+
+#### Aggregate (#65)
+- **`aggregate()`** delegate (`_count`/`_avg`/`_sum`/`_min`/`_max`, `HAVING`)
+  with `@map`-resolved aggregate arguments, plus the previously-missing
+  **`findFirstOrThrow`** delegate.
+
+#### Composite unique / `@@id` / `@@unique` addressing (#C6)
+- Generated **compound `WhereUniqueInput`** classes let
+  `findUnique`/`update`/`delete`/`upsert` target composite keys. The compound
+  `toJson` flattens into individual field equalities, so the compiler needs no
+  compound-key awareness and upsert gets the correct multi-column
+  `ON CONFLICT`.
+
+#### Typed include + relation hydration (#67)
+- **`fromJson` hydrates nested relations** into typed models (to-one →
+  `Related?`, to-many → `List<Related>`), and generated **`XInclude`** classes
+  give `findMany/findFirst/findUnique/findFirstOrThrow` a typed `include:`
+  argument — retiring `findManyRaw`/`findFirstRaw` for typed results.
+
+#### Full nested writes (#64)
+- Create/Update inputs carry an optional **`<Model><Relation>WriteInput`** per
+  relation (`connect`/`disconnect`/`create`). Delegate `create`/`update`
+  detect relation ops and route to an atomic relations engine; relation
+  mutations resolve the parent PK from the main mutation's `RETURNING` row
+  (fixes DB-generated-uuid parents). To-one `connect` inlines the FK; to-many
+  `create` emits child INSERTs. A belongsTo `create` throws `UnsupportedError`
+  (parent-first ordering unsupported — create the parent + `connect`).
+
+#### Filters (#69)
+- **Cursor pagination**: `JsonQueryBuilder.cursor()` + typed delegate `cursor:`
+  param derive a canonical keyset predicate from the cursor value and
+  `orderBy` (inclusive of the cursor row; pair with `skip:1`).
+- **Scalar-list (array) filters**: `has`/`hasSome`/`hasEvery`/`isEmpty`
+  (`= ANY`/`&&`/`@>`/`cardinality`).
+- **JSON(B) filters** (PostgreSQL/Supabase): `path` addressing via `#>`/`#>>`
+  with `equals`(`::jsonb`), `string_contains`/`_starts_with`/`_ends_with`
+  (`LIKE`), `array_contains` (`@>`), numeric `lt`/`lte`/`gt`/`gte`.
+- **`BigIntFilter` + `BytesFilter`**; BigInt/Bytes columns map to them.
+
+#### Sentry error reporting (bundled)
+- **`SentryQueryLogger`** (a `QueryLogger`) forwards failed queries to Sentry
+  via `captureException` with SQL/operation/model context — a no-op unless the
+  host app has already initialized Sentry (`Sentry.isEnabled`), so it's always
+  safe to include. Plug it into the executor's `logger` (compose with
+  `ConsoleQueryLogger` via `CompositeQueryLogger`).
+- **`PrismaSentry.init(...)`** convenience for standalone/tooling use that owns
+  Sentry itself (DSN via arg or the `SENTRY_DSN` dart-define). Apps that already
+  call `Sentry.init`/`SentryFlutter.init` should skip this and just add the
+  logger. New dependency: `sentry: ">=8.0.0 <10.0.0"` (wide range so sentry
+  8.x and 9.x consumers both resolve).
+
+#### Connection pooling (#70)
+- **`PostgresAdapter.pooled(pg.Pool)`** runs non-transactional statements on
+  connections borrowed from the pool; each transaction pins a dedicated pool
+  connection for its lifetime (via `withConnection` + a release completer) so
+  all statements share one physical connection. `dispose()` closes the pool.
+
+#### Other ORM gaps
+- **Atomic numeric updates**: `{increment/decrement/multiply/divide/set: n}`
+  compile to `col = col ± ?` (applies to `update` and `updateMany`).
+- **`createManyAndReturn`** (`INSERT ... RETURNING *`, typed rows) and
+  **`skipDuplicates`** (`ON CONFLICT DO NOTHING`) on `createMany`.
+- **Nested-include depth guard**: recursion capped at `maxIncludeDepth` (5),
+  throwing on pathological/cyclic include graphs.
+
+### Fixed
+- **`@map` resolution in write paths** (#C3): upsert conflict columns, groupBy
+  `by`/aggregate fields, and many-to-many connect/disconnect + `EXISTS`
+  subqueries now resolve Dart field names to DB columns via the registry.
+- **To-one relation filters** (#C2): `is`/`isNot` in `where` now compile
+  (EXISTS / NOT EXISTS with null-target semantics) instead of throwing;
+  `is`/`isNot` on a to-many relation is rejected.
+
+### Notes
+- Batch `$transaction([...])` (array form) is intentionally **not** provided:
+  delegate methods execute eagerly (no lazy promises), so the callback form
+  `$transaction((tx) async { ... })` is the supported API.
+- Soft-delete stays a documented `deletedAt: null` filter pattern; full
+  `$extends` middleware remains out of scope.
+
 ## [0.6.0] - 2026-06-12
 
 ### Added

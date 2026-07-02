@@ -3621,5 +3621,429 @@ void main() {
         );
       });
     });
+
+    group('scalar-list (array) filters', () {
+      final c = SqlCompiler(provider: 'postgresql');
+
+      test('has -> = ANY(col)', () {
+        final q = JsonQueryBuilder()
+            .model('Post')
+            .action(QueryAction.findMany)
+            .where({
+          'tags': {'has': 'dart'}
+        }).build();
+        final r = c.compile(q);
+        expect(r.sql, contains('= ANY("tags")'));
+        expect(r.args, ['dart']);
+      });
+
+      test('hasSome -> && ARRAY[...]', () {
+        final q = JsonQueryBuilder()
+            .model('Post')
+            .action(QueryAction.findMany)
+            .where({
+          'tags': {
+            'hasSome': ['a', 'b']
+          }
+        }).build();
+        final r = c.compile(q);
+        expect(r.sql, contains('"tags" && ARRAY['));
+        expect(r.args, ['a', 'b']);
+      });
+
+      test('hasEvery -> @> ARRAY[...]', () {
+        final q = JsonQueryBuilder()
+            .model('Post')
+            .action(QueryAction.findMany)
+            .where({
+          'tags': {
+            'hasEvery': ['a', 'b']
+          }
+        }).build();
+        final r = c.compile(q);
+        expect(r.sql, contains('"tags" @> ARRAY['));
+        expect(r.args, ['a', 'b']);
+      });
+
+      test('isEmpty true/false -> cardinality', () {
+        final empty = c.compile(JsonQueryBuilder()
+            .model('Post')
+            .action(QueryAction.findMany)
+            .where({
+          'tags': {'isEmpty': true}
+        }).build());
+        expect(empty.sql, contains('cardinality("tags"), 0) = 0'));
+
+        final nonEmpty = c.compile(JsonQueryBuilder()
+            .model('Post')
+            .action(QueryAction.findMany)
+            .where({
+          'tags': {'isEmpty': false}
+        }).build());
+        expect(nonEmpty.sql, contains('cardinality("tags"), 0) > 0'));
+      });
+
+      test('hasSome [] overlaps nothing; hasEvery [] matches all', () {
+        final some = c.compile(JsonQueryBuilder()
+            .model('Post')
+            .action(QueryAction.findMany)
+            .where({
+          'tags': {'hasSome': <String>[]}
+        }).build());
+        expect(some.sql, contains('(1=0)'));
+        final every = c.compile(JsonQueryBuilder()
+            .model('Post')
+            .action(QueryAction.findMany)
+            .where({
+          'tags': {'hasEvery': <String>[]}
+        }).build());
+        expect(every.sql, contains('(1=1)'));
+      });
+    });
+
+    group('to-one relation filters (is/isNot)', () {
+      late SqlCompiler c;
+
+      setUp(() {
+        final schema = SchemaRegistry();
+        schema.registerModel(const ModelSchema(
+          name: 'Product',
+          tableName: 'Product',
+          fields: {
+            'id': FieldInfo(
+                name: 'id', columnName: 'id', type: 'String', isId: true),
+            'name': FieldInfo(name: 'name', columnName: 'name', type: 'String'),
+          },
+        ));
+        schema.registerModel(ModelSchema(
+          name: 'Review',
+          tableName: 'Review',
+          fields: const {
+            'id': FieldInfo(
+                name: 'id', columnName: 'id', type: 'String', isId: true),
+            'productId': FieldInfo(
+                name: 'productId', columnName: 'productId', type: 'String'),
+          },
+          relations: {
+            'product': RelationInfo.manyToOne(
+              name: 'product',
+              targetModel: 'Product',
+              foreignKey: 'productId',
+            ),
+          },
+        ));
+        c = SqlCompiler(provider: 'postgresql', schema: schema);
+      });
+
+      test('is: {cond} -> EXISTS on the to-one target', () {
+        final q = JsonQueryBuilder()
+            .model('Review')
+            .action(QueryAction.findMany)
+            .where({
+          'product': {
+            'is': {'name': 'Widget'}
+          }
+        }).build();
+        final r = c.compile(q);
+        expect(r.sql, contains('EXISTS'));
+        expect(r.sql, isNot(contains('NOT EXISTS')));
+        expect(r.sql, contains('FROM "Product"'));
+        expect(r.args, ['Widget']);
+      });
+
+      test('isNot: {cond} -> NOT EXISTS on the to-one target', () {
+        final q = JsonQueryBuilder()
+            .model('Review')
+            .action(QueryAction.findMany)
+            .where({
+          'product': {
+            'isNot': {'name': 'Widget'}
+          }
+        }).build();
+        final r = c.compile(q);
+        expect(r.sql, contains('NOT EXISTS'));
+        expect(r.args, ['Widget']);
+      });
+
+      test('is: null -> NOT EXISTS (relation absent)', () {
+        final q = JsonQueryBuilder()
+            .model('Review')
+            .action(QueryAction.findMany)
+            .where({
+          'product': {'is': null}
+        }).build();
+        final r = c.compile(q);
+        expect(r.sql, contains('NOT EXISTS'));
+      });
+
+      test('isNot: null -> EXISTS (relation present)', () {
+        final q = JsonQueryBuilder()
+            .model('Review')
+            .action(QueryAction.findMany)
+            .where({
+          'product': {'isNot': null}
+        }).build();
+        final r = c.compile(q);
+        expect(r.sql, contains('EXISTS'));
+        expect(r.sql, isNot(contains('NOT EXISTS')));
+      });
+
+      test('is/isNot on a to-many relation throws', () {
+        final schema = SchemaRegistry();
+        schema.registerModel(ModelSchema(
+          name: 'Product',
+          tableName: 'Product',
+          fields: const {
+            'id': FieldInfo(
+                name: 'id', columnName: 'id', type: 'String', isId: true),
+          },
+          relations: {
+            'reviews': RelationInfo.oneToMany(
+              name: 'reviews',
+              targetModel: 'Review',
+              foreignKey: 'productId',
+            ),
+          },
+        ));
+        schema.registerModel(const ModelSchema(
+          name: 'Review',
+          tableName: 'Review',
+          fields: {
+            'id': FieldInfo(
+                name: 'id', columnName: 'id', type: 'String', isId: true),
+            'productId': FieldInfo(
+                name: 'productId', columnName: 'productId', type: 'String'),
+          },
+        ));
+        final cc = SqlCompiler(provider: 'postgresql', schema: schema);
+        final q = JsonQueryBuilder()
+            .model('Product')
+            .action(QueryAction.findMany)
+            .where({
+          'reviews': {
+            'is': {'id': 'x'}
+          }
+        }).build();
+        expect(() => cc.compile(q), throwsArgumentError);
+      });
+    });
+
+    group('Nested writes (#64)', () {
+      late SchemaRegistry nestedSchema;
+      late SqlCompiler compiler;
+
+      setUp(() {
+        nestedSchema = SchemaRegistry();
+        nestedSchema.registerModel(ModelSchema(
+          name: 'Product',
+          tableName: 'Product',
+          fields: {
+            'id': const FieldInfo(
+                name: 'id', columnName: 'id', type: 'String', isId: true),
+            'authorId': const FieldInfo(
+                name: 'authorId', columnName: 'authorId', type: 'String'),
+          },
+          relations: {
+            'reviews': RelationInfo.oneToMany(
+                name: 'reviews',
+                targetModel: 'Review',
+                foreignKey: 'productId'),
+            'author': RelationInfo.manyToOne(
+                name: 'author', targetModel: 'User', foreignKey: 'authorId'),
+          },
+        ));
+        nestedSchema.registerModel(const ModelSchema(
+          name: 'Review',
+          tableName: 'Review',
+          fields: {
+            'id': FieldInfo(
+                name: 'id', columnName: 'id', type: 'String', isId: true),
+            'productId': FieldInfo(
+                name: 'productId', columnName: 'productId', type: 'String'),
+          },
+        ));
+        nestedSchema.registerModel(const ModelSchema(
+          name: 'User',
+          tableName: 'users',
+          fields: {
+            'id': FieldInfo(
+                name: 'id', columnName: 'id', type: 'String', isId: true),
+          },
+        ));
+        compiler = SqlCompiler(provider: 'postgresql', schema: nestedSchema);
+      });
+
+      test('to-one connect sets the FK inline on the main INSERT', () {
+        final query = JsonQueryBuilder()
+            .model('Product')
+            .action(QueryAction.create)
+            .data({
+          'id': 'p1',
+          'author': {
+            'connect': {'id': 'u1'}
+          },
+        }).build();
+
+        final compiled = compiler.compileWithRelations(query);
+        expect(compiled.mainQuery.sql, contains('authorId'));
+        expect(compiled.mainQuery.args, contains('u1'));
+        // connect-only to-one has no separate mutation
+        expect(compiled.relationMutations, isEmpty);
+      });
+
+      test('to-many create emits a child INSERT carrying the parent FK', () {
+        final query = JsonQueryBuilder()
+            .model('Product')
+            .action(QueryAction.create)
+            .data({
+          'id': 'p1',
+          'reviews': {
+            'create': [
+              {'id': 'r1'}
+            ]
+          },
+        }).build();
+
+        final compiled = compiler.compileWithRelations(query);
+        expect(compiled.relationMutations, hasLength(1));
+        final child = compiled.relationMutations.first;
+        expect(child.sql, contains('Review'));
+        expect(child.sql, contains('productId'));
+        expect(child.args, contains('p1'));
+      });
+
+      test('belongsTo create throws instead of silently dropping data', () {
+        final query = JsonQueryBuilder()
+            .model('Product')
+            .action(QueryAction.create)
+            .data({
+          'id': 'p1',
+          'author': {
+            'create': {'id': 'u1'}
+          },
+        }).build();
+
+        expect(() => compiler.compileWithRelations(query),
+            throwsA(isA<UnsupportedError>()));
+      });
+    });
+
+    group('Cursor pagination (#69)', () {
+      late SqlCompiler compiler;
+      setUp(() => compiler = SqlCompiler(provider: 'postgresql'));
+
+      test('single-field cursor asc -> inclusive >= predicate', () {
+        final q = JsonQueryBuilder()
+            .model('Post')
+            .action(QueryAction.findMany)
+            .orderBy({'id': 'asc'})
+            .cursor({'id': 'abc'})
+            .skip(1)
+            .build();
+        final r = compiler.compile(q);
+        expect(r.sql, contains('"id" >= \$1'));
+        expect(r.sql, contains('OFFSET 1'));
+        expect(r.args, equals(['abc']));
+      });
+
+      test('single-field cursor desc -> inclusive <= predicate', () {
+        final q = JsonQueryBuilder()
+            .model('Post')
+            .action(QueryAction.findMany)
+            .orderBy({'createdAt': 'desc'}).cursor({'createdAt': 't'}).build();
+        final r = compiler.compile(q);
+        expect(r.sql, contains('"createdAt" <= \$1'));
+      });
+
+      test('multi-field cursor -> canonical keyset OR-expansion', () {
+        final q = JsonQueryBuilder()
+            .model('Post')
+            .action(QueryAction.findMany)
+            .orderBy([
+          {'score': 'desc'},
+          {'id': 'asc'}
+        ]).cursor({'score': 10, 'id': 'x'}).build();
+        final r = compiler.compile(q);
+        // (score < ?) OR (score = ? AND id >= ?)
+        expect(r.sql, contains('"score" < \$1'));
+        expect(r.sql, contains('"score" = \$2 AND "id" >= \$3'));
+        expect(r.args, equals([10, 10, 'x']));
+      });
+
+      test('cursor ANDs onto an existing WHERE', () {
+        final q = JsonQueryBuilder()
+            .model('Post')
+            .action(QueryAction.findMany)
+            .where({'published': true}).orderBy({'id': 'asc'}).cursor(
+                {'id': 'abc'}).build();
+        final r = compiler.compile(q);
+        expect(r.sql, contains('WHERE ('));
+        expect(r.sql, contains(') AND ('));
+        expect(r.args, equals([true, 'abc']));
+      });
+    });
+
+    group('JSON filters (#69)', () {
+      late SqlCompiler compiler;
+      setUp(() => compiler = SqlCompiler(provider: 'postgresql'));
+
+      test('path + equals -> #> ... = ?::jsonb', () {
+        final q = JsonQueryBuilder()
+            .model('Event')
+            .action(QueryAction.findMany)
+            .where({
+          'meta': {
+            'path': ['a', 'b'],
+            'equals': 'v'
+          }
+        }).build();
+        final r = compiler.compile(q);
+        expect(r.sql, contains('"meta" #> \'{a,b}\' = \$1::jsonb'));
+        expect(r.args, equals(['"v"']));
+      });
+
+      test('string_contains -> #>> ... LIKE', () {
+        final q = JsonQueryBuilder()
+            .model('Event')
+            .action(QueryAction.findMany)
+            .where({
+          'meta': {
+            'path': ['name'],
+            'string_contains': 'foo'
+          }
+        }).build();
+        final r = compiler.compile(q);
+        expect(r.sql, contains('"meta" #>> \'{name}\' LIKE \$1'));
+        expect(r.args, equals(['%foo%']));
+      });
+
+      test('array_contains -> @> ?::jsonb', () {
+        final q = JsonQueryBuilder()
+            .model('Event')
+            .action(QueryAction.findMany)
+            .where({
+          'tags': {
+            'array_contains': ['x']
+          }
+        }).build();
+        final r = compiler.compile(q);
+        expect(r.sql, contains('"tags" @> \$1::jsonb'));
+        expect(r.args, equals(['["x"]']));
+      });
+
+      test('non-postgres provider rejects JSON filters', () {
+        final sqlite = SqlCompiler(provider: 'sqlite');
+        final q = JsonQueryBuilder()
+            .model('Event')
+            .action(QueryAction.findMany)
+            .where({
+          'meta': {
+            'path': ['a'],
+            'equals': 1
+          }
+        }).build();
+        expect(() => sqlite.compile(q), throwsA(isA<UnsupportedError>()));
+      });
+    });
   });
 }

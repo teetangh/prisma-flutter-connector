@@ -23,10 +23,13 @@ class CbModelGenerator {
   String generateModel(PrismaModel model) {
     final sn = toSnakeCase(model.name);
 
-    // Collect non-primitive type imports
+    // Collect non-primitive type imports (excluding the model's own type,
+    // which would be a redundant self-import for self-relations).
     final typeImports = <String>{};
     for (final f in model.fields) {
-      if (!_isPrimitiveType(f.type)) typeImports.add(f.type);
+      if (!_isPrimitiveType(f.type) && f.type != model.name) {
+        typeImports.add(f.type);
+      }
     }
 
     final directives = <Directive>[
@@ -37,6 +40,11 @@ class CbModelGenerator {
     ];
 
     final library = Library((b) => b
+      ..comments.add(
+        // @JsonKey on freezed constructor params (@map columns, relation
+        // fields) is a valid pattern that trips this lint; suppress file-wide.
+        'ignore_for_file: invalid_annotation_target',
+      )
       ..directives.addAll(directives)
       ..body.addAll([
         _buildMainClass(model),
@@ -47,6 +55,8 @@ class CbModelGenerator {
         _buildListRelationFilter(model),
         _buildRelationFilter(model),
         _buildOrderByInput(model),
+        _buildInclude(model),
+        ..._buildRelationWriteInputs(model),
         ..._buildEnumConverters(model),
       ]));
 
@@ -91,15 +101,36 @@ class CbModelGenerator {
   // === Manual fromJson ===
 
   /// Generate manual fromJson body for the main model class.
+  ///
+  /// Relation fields ARE hydrated when present in the JSON (produced by an
+  /// `include`): the RelationDeserializer nests related rows under the
+  /// relation key, and here we deserialize them into the typed relation
+  /// model. Absent keys (no include) leave the relation null / empty.
   String _generateFromJsonBody(PrismaModel model) {
     final args = <String>[];
     for (final f in model.fields) {
-      if (f.isRelation) continue; // Skip relations
+      if (f.isRelation) {
+        args.add('${f.name}: ${_relationFromJsonExpr(f)}');
+        continue;
+      }
       final dartType = _toDartType(f.type);
       final key = f.dbName ?? f.name;
       args.add('${f.name}: ${_fromJsonExpr(f, key, dartType)}');
     }
     return 'return ${model.name}(${args.join(', ')},);';
+  }
+
+  /// fromJson expression for a relation field (nested typed model / list).
+  String _relationFromJsonExpr(PrismaField f) {
+    final key = f.name; // relation keys are not @map-ed
+    if (f.isList) {
+      return "(json['$key'] as List?)"
+          "?.map((e) => ${f.type}.fromJson(e as Map<String, dynamic>))"
+          ".toList() ?? const []";
+    }
+    return "json['$key'] != null "
+        "? ${f.type}.fromJson(json['$key'] as Map<String, dynamic>) "
+        ": null";
   }
 
   /// Generate a fromJson expression for a single field.
@@ -257,6 +288,10 @@ class CbModelGenerator {
         entries.add("'$name': $expr");
       }
     }
+    // Nested relation writes (create/connect/disconnect) are always optional.
+    for (final f in model.fields.where((f) => f.isRelation)) {
+      entries.add("if (${f.name} != null) '${f.name}': ${f.name}!.toJson()");
+    }
     return 'return <String, dynamic>{${entries.join(', ')},};';
   }
 
@@ -269,6 +304,11 @@ class CbModelGenerator {
   }
 
   /// Generate toJson body for WhereUniqueInput.
+  ///
+  /// Compound keys are FLATTENED into their individual field equalities, so
+  /// the SQL compiler needs no compound-key awareness: findUnique/update/
+  /// delete get `col_a = ? AND col_b = ?` and upsert gets the right
+  /// `ON CONFLICT (col_a, col_b)`.
   String _generateWhereUniqueToJsonBody(PrismaModel model) {
     final uniqueFields =
         model.fields.where((f) => (f.isId || f.isUnique) && !f.isRelation);
@@ -276,8 +316,17 @@ class CbModelGenerator {
     for (final f in uniqueFields) {
       entries.add("if (${f.name} != null) '${f.name}': ${f.name}");
     }
+    for (final key in model.compositeUniques) {
+      final fieldName = key.join('_');
+      entries.add('if ($fieldName != null) ...$fieldName!.toJson()');
+    }
     return 'return <String, dynamic>{${entries.join(', ')},};';
   }
+
+  /// The generated compound-unique input type name, e.g.
+  /// `OrgInvoiceCounterOrganizationIdFiscalYearCompoundUnique`.
+  String _compoundTypeName(PrismaModel model, List<String> key) =>
+      '${model.name}${key.map((k) => k[0].toUpperCase() + k.substring(1)).join()}CompoundUnique';
 
   /// Generate toJson body for WhereInput.
   String _generateWhereInputToJsonBody(PrismaModel model) {
@@ -391,6 +440,7 @@ class CbModelGenerator {
       }
       params.add(_createInputParam(f));
     }
+    _addRelationWriteParams(model, params);
 
     return _freezedClass('Create${model.name}Input', params,
         doc: '/// Input for creating a new ${model.name}',
@@ -448,6 +498,7 @@ class CbModelGenerator {
         ..named = true
         ..type = refer(f.isList ? 'List<$dartType>?' : '$dartType?')));
     }
+    _addRelationWriteParams(model, params);
 
     return _freezedClass('Update${model.name}Input', params,
         doc: '/// Input for updating an existing ${model.name}',
@@ -457,19 +508,51 @@ class CbModelGenerator {
   // === WhereUniqueInput ===
 
   List<Spec> _buildWhereUniqueInput(PrismaModel model) {
-    final uniqueFields =
-        model.fields.where((f) => (f.isId || f.isUnique) && !f.isRelation);
-    if (uniqueFields.isEmpty) return [];
+    final uniqueFields = model.fields
+        .where((f) => (f.isId || f.isUnique) && !f.isRelation)
+        .toList();
+    final composites = model.compositeUniques;
+    if (uniqueFields.isEmpty && composites.isEmpty) return [];
 
-    final params = uniqueFields.map((f) => Parameter((p) => p
-      ..name = f.name
-      ..named = true
-      ..type = refer(f.isList ? 'List<${f.type}>?' : '${f.type}?')));
+    final specs = <Spec>[];
+    final params = <Parameter>[];
 
-    return [
-      _freezedClass('${model.name}WhereUniqueInput', params.toList(),
-          toJsonBody: _generateWhereUniqueToJsonBody(model))
-    ];
+    for (final f in uniqueFields) {
+      params.add(Parameter((p) => p
+        ..name = f.name
+        ..named = true
+        ..type = refer(f.isList ? 'List<${f.type}>?' : '${f.type}?')));
+    }
+
+    // One compound-unique input class per @@id/@@unique composite key.
+    for (final key in composites) {
+      final typeName = _compoundTypeName(model, key);
+      params.add(Parameter((p) => p
+        ..name = key.join('_')
+        ..named = true
+        ..type = refer('$typeName?')));
+
+      final compoundParams = <Parameter>[];
+      final entries = <String>[];
+      for (final fieldName in key) {
+        final f = model.fields.firstWhere((mf) => mf.name == fieldName,
+            orElse: () => throw StateError(
+                'Composite key field "$fieldName" not found on ${model.name}'));
+        compoundParams.add(Parameter((p) => p
+          ..name = fieldName
+          ..named = true
+          ..required = true
+          ..type = refer(_toDartType(f.type))));
+        entries.add("'$fieldName': $fieldName");
+      }
+      specs.add(_freezedClass(typeName, compoundParams,
+          doc: '/// Compound unique key ($key) for ${model.name}',
+          toJsonBody: 'return <String, dynamic>{${entries.join(', ')},};'));
+    }
+
+    specs.add(_freezedClass('${model.name}WhereUniqueInput', params,
+        toJsonBody: _generateWhereUniqueToJsonBody(model)));
+    return specs;
   }
 
   // === WhereInput ===
@@ -590,6 +673,113 @@ class CbModelGenerator {
             "if (is_ != null) 'is': is_!.toJson(), "
             "if (isNot != null) 'isNot': isNot!.toJson(),"
             "};");
+  }
+
+  // === Nested relation write inputs (create/connect/disconnect) ===
+
+  String _relationWriteTypeName(PrismaModel model, PrismaField f) =>
+      '${model.name}${f.name[0].toUpperCase()}${f.name.substring(1)}WriteInput';
+
+  /// Append one optional nested-write param per relation to a Create/Update
+  /// input's param list, typed to the relation's `${...}WriteInput` class.
+  void _addRelationWriteParams(PrismaModel model, List<Parameter> params) {
+    for (final f in model.fields.where((f) => f.isRelation)) {
+      params.add(Parameter((p) => p
+        ..name = f.name
+        ..named = true
+        ..type = refer('${_relationWriteTypeName(model, f)}?')));
+    }
+  }
+
+  /// Whether the related model exposes a WhereUniqueInput (field-level unique
+  /// or a composite key) — required for connect/disconnect.
+  bool _relatedHasWhereUnique(String relatedModel) {
+    final m = schema.models.where((m) => m.name == relatedModel).firstOrNull;
+    if (m == null) return false;
+    return m.fields.any((f) => (f.isId || f.isUnique) && !f.isRelation) ||
+        m.compositeUniques.isNotEmpty;
+  }
+
+  /// One nested-write input per relation: `connect`/`disconnect` (when the
+  /// related model has a unique key) and `create`. toJson yields the shape the
+  /// relation-mutation compiler consumes.
+  List<Spec> _buildRelationWriteInputs(PrismaModel model) {
+    final specs = <Spec>[];
+    for (final f in model.fields.where((f) => f.isRelation)) {
+      final related = f.type;
+      final canConnect = _relatedHasWhereUnique(related);
+      final params = <Parameter>[];
+      final entries = <String>[];
+
+      if (f.isList) {
+        if (canConnect) {
+          params.add(Parameter((p) => p
+            ..name = 'connect'
+            ..named = true
+            ..type = refer('List<${related}WhereUniqueInput>?')));
+          params.add(Parameter((p) => p
+            ..name = 'disconnect'
+            ..named = true
+            ..type = refer('List<${related}WhereUniqueInput>?')));
+          entries.add(
+              "if (connect != null) 'connect': connect!.map((e) => e.toJson()).toList()");
+          entries.add(
+              "if (disconnect != null) 'disconnect': disconnect!.map((e) => e.toJson()).toList()");
+        }
+        params.add(Parameter((p) => p
+          ..name = 'create'
+          ..named = true
+          ..type = refer('List<Create${related}Input>?')));
+        entries.add(
+            "if (create != null) 'create': create!.map((e) => e.toJson()).toList()");
+      } else {
+        if (canConnect) {
+          params.add(Parameter((p) => p
+            ..name = 'connect'
+            ..named = true
+            ..type = refer('${related}WhereUniqueInput?')));
+          entries.add("if (connect != null) 'connect': connect!.toJson()");
+        }
+        params.add(Parameter((p) => p
+          ..name = 'create'
+          ..named = true
+          ..type = refer('Create${related}Input?')));
+        entries.add("if (create != null) 'create': create!.toJson()");
+      }
+
+      specs.add(_freezedClass(_relationWriteTypeName(model, f), params,
+          doc: '/// Nested write for ${model.name}.${f.name}',
+          toJsonBody: 'return <String, dynamic>{${entries.join(', ')},};'));
+    }
+    return specs;
+  }
+
+  // === Include (typed relation selection) ===
+
+  /// Typed include class: one `${RelatedModel}Include?` field per relation.
+  /// A non-null nested include includes that relation (empty = include with no
+  /// deeper relations); toJson yields the compiler's include-map shape.
+  Class _buildInclude(PrismaModel model) {
+    final relations = model.fields.where((f) => f.isRelation).toList();
+    final params = <Parameter>[];
+    // Statement-style toJson (no runtime helper): an empty nested include
+    // serializes to `true` (include, no deeper relations); a non-empty one
+    // nests via {'include': ...}, matching the relation compiler's shape.
+    final stmts = <String>['final map = <String, dynamic>{};'];
+    for (final f in relations) {
+      params.add(Parameter((p) => p
+        ..name = f.name
+        ..named = true
+        ..type = refer('${f.type}Include?')));
+      stmts.add("if (${f.name} != null) {"
+          " final n = ${f.name}!.toJson();"
+          " map['${f.name}'] = n.isEmpty ? true : <String, dynamic>{'include': n};"
+          " }");
+    }
+    stmts.add('return map;');
+    return _freezedClass('${model.name}Include', params,
+        doc: '/// Typed include for ${model.name} relations',
+        toJsonBody: stmts.join('\n'));
   }
 
   // === OrderByInput ===
@@ -795,6 +985,9 @@ class CbModelGenerator {
       'Float' || 'Decimal' => 'FloatFilter',
       'Boolean' => 'BooleanFilter',
       'DateTime' => 'DateTimeFilter',
+      'Json' => 'JsonFilter',
+      'BigInt' => 'BigIntFilter',
+      'Bytes' => 'BytesFilter',
       _ => _isEnumType(f.type) ? '${f.type}Filter' : null,
     };
   }

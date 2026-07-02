@@ -7,6 +7,8 @@
 /// via FFI, but this pure Dart version is easier to debug and works everywhere.
 library;
 
+import 'dart:convert';
+
 import 'package:prisma_flutter_connector/src/runtime/adapters/types.dart';
 import 'package:prisma_flutter_connector/src/runtime/query/json_protocol.dart';
 import 'package:prisma_flutter_connector/src/runtime/query/relation_compiler.dart';
@@ -191,6 +193,9 @@ class SqlCompiler {
       case 'createMany':
         return _compileCreateManyQuery(query);
 
+      case 'createManyAndReturn':
+        return _compileCreateManyQuery(query, andReturn: true);
+
       case 'update':
         return _compileUpdateQuery(query);
 
@@ -340,6 +345,29 @@ class SqlCompiler {
       startIndex: computedArgs.length + 1,
     );
 
+    // Cursor pagination (#69): derive a keyset predicate from `cursor` + the
+    // orderBy sequence and AND it onto the WHERE clause. Inclusive of the
+    // cursor row (use `skip: 1` to exclude it, matching Prisma semantics).
+    var effectiveWhere = whereClause;
+    var cursorArgs = <dynamic>[];
+    var cursorTypes = <ArgType>[];
+    final cursor = args['cursor'];
+    if (cursor is Map<String, dynamic> && cursor.isNotEmpty) {
+      final (cc, cv, ct) = _buildCursorClause(
+        cursor,
+        args['orderBy'],
+        modelName: query.modelName,
+        baseAlias: needsAlias ? baseAlias : null,
+        startIndex: computedArgs.length + 1 + whereArgs.length,
+      );
+      if (cc.isNotEmpty) {
+        effectiveWhere =
+            effectiveWhere.isEmpty ? cc : '($effectiveWhere) AND ($cc)';
+        cursorArgs = cv;
+        cursorTypes = ct;
+      }
+    }
+
     // Build ORDER BY clause
     // Pass baseAlias when JOINs are present to disambiguate column names
     final orderBy = args['orderBy'];
@@ -385,15 +413,21 @@ class SqlCompiler {
           'SELECT $distinctClause$selectClause FROM ${_quoteIdentifier(tableName)}');
     }
 
-    if (whereClause.isNotEmpty) {
-      sql.write(' WHERE $whereClause');
+    if (effectiveWhere.isNotEmpty) {
+      sql.write(' WHERE $effectiveWhere');
     }
 
     if (orderByClause.isNotEmpty) {
       sql.write(' ORDER BY $orderByClause');
     }
 
-    if (single) {
+    // `single` (findUnique/findFirst) normally caps at one row — but a to-many
+    // include multiplies rows via JOIN, so LIMIT 1 would truncate the child
+    // collection. Suppress it then and let the deserializer group + the caller
+    // take the first parent. To-one-only includes stay capped.
+    final singleWithToMany =
+        single && _includeHasToMany(query.modelName, include);
+    if (single && !singleWithToMany) {
       sql.write(' LIMIT 1');
     } else if (take != null) {
       sql.write(' LIMIT $take');
@@ -403,9 +437,9 @@ class SqlCompiler {
       sql.write(' OFFSET $skip');
     }
 
-    // Combine computed field args (first) with WHERE args (second)
-    final allArgs = [...computedArgs, ...whereArgs];
-    final allTypes = [...computedTypes, ...whereTypes];
+    // Combine computed field args (first), WHERE args, then cursor args.
+    final allArgs = [...computedArgs, ...whereArgs, ...cursorArgs];
+    final allTypes = [...computedTypes, ...whereTypes, ...cursorTypes];
 
     // Collect computed field names for preservation during relation deserialization
     final computedFieldNamesList =
@@ -444,6 +478,50 @@ class SqlCompiler {
     return include.isEmpty ? null : include;
   }
 
+  /// Fill in `@default(uuid()/cuid()/now())` and `@updatedAt` values not
+  /// supplied by the caller. Shared by `create` and `createMany`.
+  void _autofillCreateDefaults(Map<String, dynamic> data, ModelSchema? model) {
+    if (model == null) return;
+    final isPg = provider == 'postgresql' || provider == 'supabase';
+    for (final field in model.fields.values) {
+      if (data.containsKey(field.name) || data.containsKey(field.columnName)) {
+        continue;
+      }
+      if (field.defaultValue == 'uuid()' || field.defaultValue == 'cuid()') {
+        if (isPg) data[field.name] = const _RawSql('gen_random_uuid()');
+      } else if (field.defaultValue == 'now()' || field.isUpdatedAt) {
+        data[field.name] = isPg
+            ? const _RawSql('NOW()')
+            : DateTime.now().toUtc().toIso8601String();
+      }
+    }
+  }
+
+  /// Whether an `include` tree contains any to-many relation (which multiplies
+  /// JOIN rows). Recurses into nested includes.
+  bool _includeHasToMany(String modelName, Map<String, dynamic>? include) {
+    if (include == null || include.isEmpty) return false;
+    final effectiveSchema = schema ?? schemaRegistry;
+    for (final entry in include.entries) {
+      if (entry.value == false) continue;
+      final relation = effectiveSchema.getRelation(modelName, entry.key);
+      if (relation == null) continue;
+      if (relation.type == RelationType.oneToMany ||
+          relation.type == RelationType.manyToMany) {
+        return true;
+      }
+      // Recurse into nested include on a to-one relation.
+      final v = entry.value;
+      if (v is Map<String, dynamic> && v['include'] is Map<String, dynamic>) {
+        if (_includeHasToMany(
+            relation.targetModel, v['include'] as Map<String, dynamic>)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   /// Compile a CREATE query.
   SqlQuery _compileCreateQuery(JsonQuery query) {
     final args = query.args.arguments ?? {};
@@ -457,26 +535,7 @@ class SqlCompiler {
     // @updatedAt values. @updatedAt columns are NOT NULL with no database
     // default — Prisma clients supply the timestamp on every create.
     final effectiveSchema = schema ?? schemaRegistry;
-    final model = effectiveSchema.getModel(query.modelName);
-    if (model != null) {
-      for (final field in model.fields.values) {
-        if (data.containsKey(field.name) ||
-            data.containsKey(field.columnName)) {
-          continue;
-        }
-        if (field.defaultValue == 'uuid()' || field.defaultValue == 'cuid()') {
-          if (provider == 'postgresql' || provider == 'supabase') {
-            data[field.name] = const _RawSql('gen_random_uuid()');
-          }
-        } else if (field.defaultValue == 'now()' || field.isUpdatedAt) {
-          if (provider == 'postgresql' || provider == 'supabase') {
-            data[field.name] = const _RawSql('NOW()');
-          } else {
-            data[field.name] = DateTime.now().toUtc().toIso8601String();
-          }
-        }
-      }
-    }
+    _autofillCreateDefaults(data, effectiveSchema.getModel(query.modelName));
 
     final tableName = _resolveTableName(query.modelName);
     final columns = <String>[];
@@ -517,8 +576,13 @@ class SqlCompiler {
   }
 
   /// Compile a CREATE MANY query.
-  SqlQuery _compileCreateManyQuery(JsonQuery query) {
+  ///
+  /// [andReturn] appends `RETURNING *` (Postgres/Supabase) for
+  /// `createManyAndReturn`. `skipDuplicates: true` emits `ON CONFLICT DO
+  /// NOTHING` so pre-existing rows are silently ignored.
+  SqlQuery _compileCreateManyQuery(JsonQuery query, {bool andReturn = false}) {
     final args = query.args.arguments ?? {};
+    final skipDuplicates = args['skipDuplicates'] == true;
 
     // Handle both direct list and wrapped {'data': [...]} format
     // The delegate_generator wraps data in {'data': ...}, but sql_compiler
@@ -534,9 +598,20 @@ class SqlCompiler {
     }
 
     final tableName = _resolveTableName(query.modelName);
-    final firstRow = dataList.first as Map<String, dynamic>;
+
+    // Autofill @default(uuid()/now())/@updatedAt per row (as `create` does),
+    // then emit a uniform column list. Prisma requires uniform-shaped rows.
+    final model = (schema ?? schemaRegistry).getModel(query.modelName);
+    final rows = dataList
+        .map((r) => Map<String, dynamic>.from(r as Map<String, dynamic>))
+        .toList();
+    for (final r in rows) {
+      _autofillCreateDefaults(r, model);
+    }
+
+    final fieldOrder = rows.first.keys.toList();
     // Resolve @map-ed Dart field names to column names
-    final columns = firstRow.keys
+    final columns = fieldOrder
         .map((k) => _quoteIdentifier(_resolveColumnName(query.modelName, k)))
         .toList();
 
@@ -545,25 +620,30 @@ class SqlCompiler {
     final types = <ArgType>[];
 
     var paramIndex = 1;
-    for (final row in dataList) {
-      final rowData = row as Map<String, dynamic>;
+    for (final row in rows) {
       final placeholders = <String>[];
-
-      for (final value in rowData.values) {
-        placeholders.add(_placeholder(paramIndex++));
-        values.add(value);
-        types.add(_inferArgType(value));
+      for (final field in fieldOrder) {
+        final value = row[field];
+        if (value is _RawSql) {
+          placeholders.add(value.sql);
+        } else {
+          placeholders.add(_placeholder(paramIndex++));
+          values.add(value);
+          types.add(_inferArgType(value));
+        }
       }
-
       valueSets.add('(${placeholders.join(', ')})');
     }
 
-    final sql = 'INSERT INTO ${_quoteIdentifier(tableName)} '
+    final isPg = provider == 'postgresql' || provider == 'supabase';
+    final sql = StringBuffer('INSERT INTO ${_quoteIdentifier(tableName)} '
         '(${columns.join(', ')}) '
-        'VALUES ${valueSets.join(', ')}';
+        'VALUES ${valueSets.join(', ')}');
+    if (skipDuplicates) sql.write(' ON CONFLICT DO NOTHING');
+    if (andReturn && isPg) sql.write(' RETURNING *');
 
     return SqlQuery(
-      sql: sql,
+      sql: sql.toString(),
       args: values,
       argTypes: types,
     );
@@ -601,10 +681,32 @@ class SqlCompiler {
     var paramIndex = 1;
 
     for (final entry in data.entries) {
+      final col =
+          _quoteIdentifier(_resolveColumnName(query.modelName, entry.key));
+
+      // Atomic numeric update ops: {increment/decrement/multiply/divide/set: n}.
+      final atomic = _atomicUpdateOp(entry.value);
+      if (atomic != null) {
+        final (op, operand) = atomic;
+        if (op == 'set') {
+          setClauses.add('$col = ${_placeholder(paramIndex++)}');
+        } else {
+          const sqlOp = {
+            'increment': '+',
+            'decrement': '-',
+            'multiply': '*',
+            'divide': '/',
+          };
+          setClauses
+              .add('$col = $col ${sqlOp[op]} ${_placeholder(paramIndex++)}');
+        }
+        values.add(operand);
+        types.add(_inferArgType(operand));
+        continue;
+      }
+
       // Resolve @map-ed Dart field names to column names
-      setClauses.add(
-          '${_quoteIdentifier(_resolveColumnName(query.modelName, entry.key))}'
-          ' = ${_placeholder(paramIndex++)}');
+      setClauses.add('$col = ${_placeholder(paramIndex++)}');
       values.add(entry.value);
       types.add(_inferArgType(entry.value));
     }
@@ -633,6 +735,16 @@ class SqlCompiler {
       args: values,
       argTypes: types,
     );
+  }
+
+  /// Recognize a Prisma atomic numeric update op (`{increment: n}`, etc.).
+  /// Returns (operator, operand) or null when the value is a plain assignment.
+  (String, dynamic)? _atomicUpdateOp(dynamic value) {
+    if (value is! Map<String, dynamic> || value.length != 1) return null;
+    const ops = {'increment', 'decrement', 'multiply', 'divide', 'set'};
+    final key = value.keys.first;
+    if (!ops.contains(key)) return null;
+    return (key, value.values.first);
   }
 
   /// Compile an UPDATE MANY query.
@@ -732,6 +844,9 @@ class SqlCompiler {
     final agg = args['_aggregate'] as Map<String, dynamic>? ?? {};
 
     final tableName = _resolveTableName(query.modelName);
+    // Resolve @map-ed Dart field names to DB columns for function args;
+    // aliases keep the Dart field name so result keys stay stable.
+    String col(Object f) => _resolveColumnName(query.modelName, f.toString());
     final functions = <String>[];
     final filterValues = <dynamic>[];
     final filterTypes = <ArgType>[];
@@ -754,7 +869,7 @@ class SqlCompiler {
       for (final field in countFields.keys) {
         if (countFields[field] == true) {
           functions.add(
-            'COUNT(${_quoteIdentifier(field)}) AS "_count_$field"',
+            'COUNT(${_quoteIdentifier(col(field))}) AS "_count_$field"',
           );
         }
       }
@@ -788,7 +903,8 @@ class SqlCompiler {
       final avgFields = agg['_avg'] as Map<String, dynamic>;
       for (final field in avgFields.keys) {
         if (avgFields[field] == true) {
-          functions.add('AVG(${_quoteIdentifier(field)}) AS "_avg_$field"');
+          functions
+              .add('AVG(${_quoteIdentifier(col(field))}) AS "_avg_$field"');
         }
       }
     }
@@ -810,7 +926,7 @@ class SqlCompiler {
             );
             filterParamIndex += filter.length;
             functions.add(
-              'AVG(${_quoteIdentifier(field)}) FILTER (WHERE $filterClause) AS ${_quoteIdentifier(alias)}',
+              'AVG(${_quoteIdentifier(col(field))}) FILTER (WHERE $filterClause) AS ${_quoteIdentifier(alias)}',
             );
           }
         }
@@ -822,7 +938,8 @@ class SqlCompiler {
       final sumFields = agg['_sum'] as Map<String, dynamic>;
       for (final field in sumFields.keys) {
         if (sumFields[field] == true) {
-          functions.add('SUM(${_quoteIdentifier(field)}) AS "_sum_$field"');
+          functions
+              .add('SUM(${_quoteIdentifier(col(field))}) AS "_sum_$field"');
         }
       }
     }
@@ -832,7 +949,8 @@ class SqlCompiler {
       final minFields = agg['_min'] as Map<String, dynamic>;
       for (final field in minFields.keys) {
         if (minFields[field] == true) {
-          functions.add('MIN(${_quoteIdentifier(field)}) AS "_min_$field"');
+          functions
+              .add('MIN(${_quoteIdentifier(col(field))}) AS "_min_$field"');
         }
       }
     }
@@ -842,7 +960,8 @@ class SqlCompiler {
       final maxFields = agg['_max'] as Map<String, dynamic>;
       for (final field in maxFields.keys) {
         if (maxFields[field] == true) {
-          functions.add('MAX(${_quoteIdentifier(field)}) AS "_max_$field"');
+          functions
+              .add('MAX(${_quoteIdentifier(col(field))}) AS "_max_$field"');
         }
       }
     }
@@ -924,9 +1043,19 @@ class SqlCompiler {
     // Build SELECT clause with group by fields and aggregations
     final selectParts = <String>[];
 
-    // Add group by fields to SELECT
+    // Resolve a Dart field name to its DB column (pass-through for names
+    // that are already columns), for @map-ed fields in by/aggregates.
+    String col(Object field) =>
+        _resolveColumnName(query.modelName, field.toString());
+
+    // Add group by fields to SELECT, aliasing @map-ed columns back to the
+    // Dart field name so the result map stays keyed by the field.
     for (final field in groupByFields) {
-      selectParts.add(_quoteIdentifier(field.toString()));
+      final f = field.toString();
+      final c = col(f);
+      selectParts.add(c == f
+          ? _quoteIdentifier(c)
+          : '${_quoteIdentifier(c)} AS ${_quoteIdentifier(f)}');
     }
 
     // Add aggregation functions
@@ -936,25 +1065,25 @@ class SqlCompiler {
     if (agg['_avg'] is Map) {
       for (final field in (agg['_avg'] as Map).keys) {
         selectParts
-            .add('AVG(${_quoteIdentifier(field.toString())}) AS "_avg_$field"');
+            .add('AVG(${_quoteIdentifier(col(field))}) AS "_avg_$field"');
       }
     }
     if (agg['_sum'] is Map) {
       for (final field in (agg['_sum'] as Map).keys) {
         selectParts
-            .add('SUM(${_quoteIdentifier(field.toString())}) AS "_sum_$field"');
+            .add('SUM(${_quoteIdentifier(col(field))}) AS "_sum_$field"');
       }
     }
     if (agg['_min'] is Map) {
       for (final field in (agg['_min'] as Map).keys) {
         selectParts
-            .add('MIN(${_quoteIdentifier(field.toString())}) AS "_min_$field"');
+            .add('MIN(${_quoteIdentifier(col(field))}) AS "_min_$field"');
       }
     }
     if (agg['_max'] is Map) {
       for (final field in (agg['_max'] as Map).keys) {
         selectParts
-            .add('MAX(${_quoteIdentifier(field.toString())}) AS "_max_$field"');
+            .add('MAX(${_quoteIdentifier(col(field))}) AS "_max_$field"');
       }
     }
 
@@ -972,7 +1101,7 @@ class SqlCompiler {
 
     if (groupByFields.isNotEmpty) {
       sql.write(
-          ' GROUP BY ${groupByFields.map((f) => _quoteIdentifier(f.toString())).join(', ')}');
+          ' GROUP BY ${groupByFields.map((f) => _quoteIdentifier(col(f))).join(', ')}');
     }
 
     if (orderBy != null) {
@@ -1006,8 +1135,10 @@ class SqlCompiler {
     final args = query.args.arguments ?? {};
     final where = args['where'] as Map<String, dynamic>? ?? {};
     final data = args['data'] as Map<String, dynamic>? ?? {};
-    final createData = data['create'] as Map<String, dynamic>? ?? {};
-    final updateData = data['update'] as Map<String, dynamic>? ?? {};
+    final createData = Map<String, dynamic>.from(
+        data['create'] as Map<String, dynamic>? ?? {});
+    final updateData = Map<String, dynamic>.from(
+        data['update'] as Map<String, dynamic>? ?? {});
 
     final tableName = _resolveTableName(query.modelName);
 
@@ -1018,6 +1149,36 @@ class SqlCompiler {
           'Upsert requires at least one unique field in where clause');
     }
 
+    // Autofill @default(uuid()/cuid()/now()) + @updatedAt on the CREATE arm,
+    // and refresh @updatedAt on the UPDATE arm — mirroring create/update.
+    final pgLike = provider == 'postgresql' || provider == 'supabase';
+    final model = (schema ?? schemaRegistry).getModel(query.modelName);
+    if (model != null) {
+      for (final field in model.fields.values) {
+        final present = createData.containsKey(field.name) ||
+            createData.containsKey(field.columnName);
+        if (!present) {
+          if (field.defaultValue == 'uuid()' ||
+              field.defaultValue == 'cuid()') {
+            if (pgLike) {
+              createData[field.name] = const _RawSql('gen_random_uuid()');
+            }
+          } else if (field.defaultValue == 'now()' || field.isUpdatedAt) {
+            createData[field.name] = pgLike
+                ? const _RawSql('NOW()')
+                : DateTime.now().toUtc().toIso8601String();
+          }
+        }
+        if (field.isUpdatedAt &&
+            !updateData.containsKey(field.name) &&
+            !updateData.containsKey(field.columnName)) {
+          updateData[field.name] = pgLike
+              ? const _RawSql('NOW()')
+              : DateTime.now().toUtc().toIso8601String();
+        }
+      }
+    }
+
     // Build INSERT columns and values
     final columns = <String>[];
     final valuePlaceholders = <String>[];
@@ -1026,21 +1187,34 @@ class SqlCompiler {
     var paramIndex = 1;
 
     for (final entry in createData.entries) {
-      columns.add(_quoteIdentifier(entry.key));
-      valuePlaceholders.add(_placeholder(paramIndex++));
-      values.add(entry.value);
-      types.add(_inferArgType(entry.value));
+      columns.add(
+          _quoteIdentifier(_resolveColumnName(query.modelName, entry.key)));
+      if (entry.value is _RawSql) {
+        valuePlaceholders.add((entry.value as _RawSql).sql);
+      } else {
+        valuePlaceholders.add(_placeholder(paramIndex++));
+        values.add(entry.value);
+        types.add(_inferArgType(entry.value));
+      }
     }
 
     // Build UPDATE SET clause
     final updateSetClauses = <String>[];
     for (final entry in updateData.entries) {
-      updateSetClauses.add(
-        '${_quoteIdentifier(entry.key)} = ${_placeholder(paramIndex++)}',
-      );
-      values.add(entry.value);
-      types.add(_inferArgType(entry.value));
+      final col =
+          _quoteIdentifier(_resolveColumnName(query.modelName, entry.key));
+      if (entry.value is _RawSql) {
+        updateSetClauses.add('$col = ${(entry.value as _RawSql).sql}');
+      } else {
+        updateSetClauses.add('$col = ${_placeholder(paramIndex++)}');
+        values.add(entry.value);
+        types.add(_inferArgType(entry.value));
+      }
     }
+
+    // @map-resolved conflict target columns
+    final conflictCols =
+        conflictKeys.map((k) => _resolveColumnName(query.modelName, k));
 
     // Generate SQL based on provider
     String sql;
@@ -1049,7 +1223,7 @@ class SqlCompiler {
       sql = '''
 INSERT INTO ${_quoteIdentifier(tableName)} (${columns.join(', ')})
 VALUES (${valuePlaceholders.join(', ')})
-ON CONFLICT (${conflictKeys.map(_quoteIdentifier).join(', ')})
+ON CONFLICT (${conflictCols.map(_quoteIdentifier).join(", ")})
 DO UPDATE SET ${updateSetClauses.join(', ')}
 RETURNING *
 '''
@@ -1068,7 +1242,7 @@ ON DUPLICATE KEY UPDATE ${updateSetClauses.join(', ')}
       sql = '''
 INSERT INTO ${_quoteIdentifier(tableName)} (${columns.join(', ')})
 VALUES (${valuePlaceholders.join(', ')})
-ON CONFLICT (${conflictKeys.map(_quoteIdentifier).join(', ')})
+ON CONFLICT (${conflictCols.map(_quoteIdentifier).join(", ")})
 DO UPDATE SET ${updateSetClauses.join(', ')}
 RETURNING *
 '''
@@ -1104,163 +1278,198 @@ RETURNING *
   ///     .build();
   /// ```
   CompiledMutation compileWithRelations(JsonQuery query) {
+    final mainQuery = _compileCleanMainMutation(query);
+    // Compile-time parent id (may be null on create-with-@default(uuid)); the
+    // atomic executor rebuilds these from the RETURNING row for correctness.
+    return CompiledMutation(
+      mainQuery: mainQuery,
+      relationMutations:
+          _buildRelationMutations(query, _compileTimeParentId(query)),
+    );
+  }
+
+  /// Build the main INSERT/UPDATE with relation-op keys stripped from `data`
+  /// (a 1:1 `connect` sets the FK on this row so it stays in the main query).
+  SqlQuery _compileCleanMainMutation(JsonQuery query) {
     final args = query.args.arguments ?? {};
     final data = args['data'] as Map<String, dynamic>? ?? {};
-
-    // Extract relation operations from data
-    final relationMutations = <SqlQuery>[];
-    final cleanData = <String, dynamic>{};
     final effectiveSchema = schema ?? schemaRegistry;
+    final cleanData = <String, dynamic>{};
 
     for (final entry in data.entries) {
       final value = entry.value;
-      if (value is Map<String, dynamic> &&
-          (value.containsKey('connect') ||
-              value.containsKey('disconnect') ||
-              value.containsKey('create'))) {
-        // This is a relation operation - look up the relation info
+      if (_isRelationOp(value)) {
         final relation =
             effectiveSchema.getRelation(query.modelName, entry.key);
-        if (relation != null && relation.type == RelationType.manyToMany) {
-          // Get primary key field name from schema (fallback to 'id' for compatibility)
-          final parentModel = effectiveSchema.getModel(query.modelName);
-          final parentPkFieldName = parentModel?.primaryKeys.isNotEmpty == true
-              ? parentModel!.primaryKeys.first.name
-              : 'id';
-
-          // Get the primary key value for the parent record
-          // For create, it's in the data; for update, it's in the where clause
-          String? parentId;
-          if (query.action == 'create') {
-            parentId = data[parentPkFieldName]?.toString();
-          } else if (query.action == 'update') {
-            final where = args['where'] as Map<String, dynamic>?;
-            parentId = where?[parentPkFieldName]?.toString();
-          }
-
-          if (parentId != null) {
-            // Compile connect operations
-            if (value.containsKey('connect')) {
-              final connectItems =
-                  _normalizeConnectDisconnect(value['connect']);
-              relationMutations.addAll(_compileConnectOperations(
-                parentId: parentId,
-                relation: relation,
-                connectItems: connectItems,
-                effectiveSchema: effectiveSchema,
-              ));
-            }
-
-            // Compile disconnect operations
-            if (value.containsKey('disconnect')) {
-              final disconnectItems =
-                  _normalizeConnectDisconnect(value['disconnect']);
-              relationMutations.addAll(_compileDisconnectOperations(
-                parentId: parentId,
-                relation: relation,
-                disconnectItems: disconnectItems,
-                effectiveSchema: effectiveSchema,
-              ));
-            }
-          }
-        } else if (relation != null &&
-            (relation.type == RelationType.oneToMany ||
-                relation.type == RelationType.oneToOne)) {
-          // 1:N or 1:1 nested writes: {create: [...]} or {connect: {id: ...}}
-          if (value.containsKey('create')) {
-            final creates = value['create'];
-            final createList = creates is List
-                ? List<Map<String, dynamic>>.from(creates)
-                : [creates as Map<String, dynamic>];
-
-            // Get parent PK field name
-            final parentModel = effectiveSchema.getModel(query.modelName);
-            final parentPkFieldName =
-                parentModel?.primaryKeys.isNotEmpty == true
-                    ? parentModel!.primaryKeys.first.name
-                    : 'id';
-
-            // Get parent ID from data (for create) or where (for update)
-            // Keep original type (String, int, etc.) for type-safe FK values
-            dynamic parentId;
-            if (query.action == 'create') {
-              parentId = data[parentPkFieldName];
-            } else if (query.action == 'update') {
-              final where = args['where'] as Map<String, dynamic>?;
-              parentId = where?[parentPkFieldName];
-            }
-
-            if (parentId != null) {
-              for (final createData in createList) {
-                // Inject the FK pointing to parent
-                final childData = Map<String, dynamic>.from(createData);
-                childData[relation.foreignKey] = parentId;
-
-                // Auto-generate UUID for child ID if the target model has @default(uuid())
-                final targetModel =
-                    effectiveSchema.getModel(relation.targetModel);
-                if (targetModel != null) {
-                  for (final field in targetModel.fields.values) {
-                    if (field.defaultValue == 'uuid()' &&
-                        !childData.containsKey(field.name)) {
-                      if (provider == 'postgresql' || provider == 'supabase') {
-                        childData[field.name] =
-                            const _RawSql('gen_random_uuid()');
-                      }
-                    } else if (field.defaultValue == 'now()' &&
-                        !childData.containsKey(field.name)) {
-                      if (provider == 'postgresql' || provider == 'supabase') {
-                        childData[field.name] = const _RawSql('NOW()');
-                      }
-                    }
-                  }
-                }
-
-                // Compile child INSERT
-                final targetTableName =
-                    targetModel?.tableName ?? relation.targetModel;
-                final childQuery = JsonQuery(
-                  modelName: targetTableName,
-                  action: 'create',
-                  args: JsonQueryArgs(arguments: {'data': childData}),
-                );
-                relationMutations.add(compile(childQuery));
-              }
-            }
-          }
-
-          if (value.containsKey('connect')) {
-            // 1:1 connect: set FK on parent row
-            final connectData = value['connect'] as Map<String, dynamic>;
-            final targetPkValue = connectData.values.first;
-            // The FK is on the current model → set it in cleanData
-            cleanData[relation.foreignKey] = targetPkValue;
-          }
+        // 1:1/N:1 connect where THIS row owns the FK → set it inline.
+        if (relation != null &&
+            (relation.type == RelationType.oneToOne ||
+                relation.type == RelationType.manyToOne) &&
+            (value as Map<String, dynamic>).containsKey('connect')) {
+          final connectData = value['connect'] as Map<String, dynamic>;
+          // Inject the FK keyed by its Dart field name and drop any
+          // user-supplied FK (field or column) so it isn't emitted twice.
+          final fkKey = effectiveSchema
+                  .getModel(query.modelName)
+                  ?.fields
+                  .values
+                  .where((f) => f.columnName == relation.foreignKey)
+                  .map((f) => f.name)
+                  .firstOrNull ??
+              relation.foreignKey;
+          cleanData
+            ..remove(fkKey)
+            ..remove(relation.foreignKey);
+          cleanData[fkKey] = connectData.values.first;
         }
-        // If relation is null, the field will be passed through and likely fail
-        // downstream with a more specific error about the unknown field
+        // A belongsTo `create` (this row owns the FK) requires creating the
+        // parent first and inlining its generated id — parent-first ordering
+        // the main-first engine can't express. Fail loudly instead of
+        // silently dropping the nested data.
+        else if (relation != null &&
+            relation.type == RelationType.manyToOne &&
+            (value as Map<String, dynamic>).containsKey('create')) {
+          throw UnsupportedError(
+            'Nested `create` on the to-one relation "${entry.key}" of '
+            '${query.modelName} is not supported: create the referenced '
+            '${relation.targetModel} first and use `connect`.',
+          );
+        }
+        // Other relation ops become separate mutations (not in main query).
       } else {
-        // Regular field - keep in clean data
         cleanData[entry.key] = value;
       }
     }
 
-    // Create modified query with clean data (no relation operations)
-    final cleanArgs = Map<String, dynamic>.from(args);
-    cleanArgs['data'] = cleanData;
-    final cleanQuery = JsonQuery(
+    final cleanArgs = Map<String, dynamic>.from(args)..['data'] = cleanData;
+    return compile(JsonQuery(
       modelName: query.modelName,
       action: query.action,
       args: JsonQueryArgs(arguments: cleanArgs),
-    );
+    ));
+  }
 
-    // Compile the main query
-    final mainQuery = compile(cleanQuery);
+  bool _isRelationOp(dynamic value) =>
+      value is Map<String, dynamic> &&
+      (value.containsKey('connect') ||
+          value.containsKey('disconnect') ||
+          value.containsKey('create'));
 
-    return CompiledMutation(
-      mainQuery: mainQuery,
-      relationMutations: relationMutations,
-    );
+  /// Parent PK value known at compile time (from `data` on create or `where`
+  /// on update); null when the id is DB-generated on create.
+  dynamic _compileTimeParentId(JsonQuery query) {
+    final args = query.args.arguments ?? {};
+    final data = args['data'] as Map<String, dynamic>? ?? {};
+    final effectiveSchema = schema ?? schemaRegistry;
+    final parentModel = effectiveSchema.getModel(query.modelName);
+    final pkField = parentModel?.primaryKeys.isNotEmpty == true
+        ? parentModel!.primaryKeys.first.name
+        : 'id';
+    if (query.action == 'update') {
+      return (args['where'] as Map<String, dynamic>?)?[pkField];
+    }
+    return data[pkField];
+  }
+
+  /// Rebuild relation mutations using the parent id from the main mutation's
+  /// RETURNING row — this fixes nested writes on a create whose PK is
+  /// DB-generated (`@default(uuid())`), where the id isn't known at compile.
+  List<SqlQuery> buildRelationMutationsFromResult(
+    JsonQuery query,
+    Map<String, dynamic>? resultRow,
+  ) {
+    final effectiveSchema = schema ?? schemaRegistry;
+    final parentModel = effectiveSchema.getModel(query.modelName);
+    final pkCol = parentModel?.primaryKeys.isNotEmpty == true
+        ? parentModel!.primaryKeys.first.columnName
+        : 'id';
+    final parentId = resultRow?[pkCol] ?? _compileTimeParentId(query);
+    return _buildRelationMutations(query, parentId);
+  }
+
+  /// Compile the m2m connect/disconnect and 1:N/1:1 `create` relation
+  /// mutations for [query] given the resolved [parentId].
+  List<SqlQuery> _buildRelationMutations(JsonQuery query, dynamic parentId) {
+    if (parentId == null) return const [];
+    final args = query.args.arguments ?? {};
+    final data = args['data'] as Map<String, dynamic>? ?? {};
+    final effectiveSchema = schema ?? schemaRegistry;
+    final mutations = <SqlQuery>[];
+
+    for (final entry in data.entries) {
+      final value = entry.value;
+      if (!_isRelationOp(value)) continue;
+      final relation = effectiveSchema.getRelation(query.modelName, entry.key);
+      if (relation == null) continue;
+      final v = value as Map<String, dynamic>;
+
+      if (relation.type == RelationType.manyToMany) {
+        if (v.containsKey('connect')) {
+          mutations.addAll(_compileConnectOperations(
+            parentId: parentId.toString(),
+            relation: relation,
+            connectItems: _normalizeConnectDisconnect(v['connect']),
+            effectiveSchema: effectiveSchema,
+          ));
+        }
+        if (v.containsKey('disconnect')) {
+          mutations.addAll(_compileDisconnectOperations(
+            parentId: parentId.toString(),
+            relation: relation,
+            disconnectItems: _normalizeConnectDisconnect(v['disconnect']),
+            effectiveSchema: effectiveSchema,
+          ));
+        }
+      } else if (relation.type == RelationType.oneToMany ||
+          relation.type == RelationType.oneToOne) {
+        // Nested create: child rows carry the FK back to the parent.
+        if (v.containsKey('create')) {
+          final creates = v['create'];
+          final createList = creates is List
+              ? List<Map<String, dynamic>>.from(creates)
+              : [creates as Map<String, dynamic>];
+          final targetModel = effectiveSchema.getModel(relation.targetModel);
+          // The relation's foreignKey is a COLUMN name; child data uses Dart
+          // FIELD names. Resolve the FK field so we inject exactly one FK entry
+          // (keyed by field) and strip any user-supplied value under either the
+          // field or column name — otherwise both resolve to the same column
+          // and Postgres rejects "column specified more than once".
+          final fkField = targetModel?.fields.values
+              .where((f) => f.columnName == relation.foreignKey)
+              .map((f) => f.name)
+              .firstOrNull;
+          final fkKey = fkField ?? relation.foreignKey;
+          for (final createData in createList) {
+            final childData = Map<String, dynamic>.from(createData)
+              ..remove(relation.foreignKey)
+              ..remove(fkKey);
+            childData[fkKey] = parentId;
+            if (targetModel != null) {
+              for (final field in targetModel.fields.values) {
+                if (childData.containsKey(field.name)) continue;
+                if (field.defaultValue == 'uuid()' ||
+                    field.defaultValue == 'cuid()') {
+                  if (provider == 'postgresql' || provider == 'supabase') {
+                    childData[field.name] = const _RawSql('gen_random_uuid()');
+                  }
+                } else if (field.defaultValue == 'now()' || field.isUpdatedAt) {
+                  childData[field.name] =
+                      (provider == 'postgresql' || provider == 'supabase')
+                          ? const _RawSql('NOW()')
+                          : DateTime.now().toUtc().toIso8601String();
+                }
+              }
+            }
+            mutations.add(compile(JsonQuery(
+              modelName: targetModel?.tableName ?? relation.targetModel,
+              action: 'create',
+              args: JsonQueryArgs(arguments: {'data': childData}),
+            )));
+          }
+        }
+      }
+    }
+    return mutations;
   }
 
   /// Normalize connect/disconnect input to a list of maps.
@@ -1744,6 +1953,9 @@ RETURNING *
     if (value.containsKey('some')) return 'some';
     if (value.containsKey('every')) return 'every';
     if (value.containsKey('none')) return 'none';
+    // to-one relation operators
+    if (value.containsKey('is')) return 'is';
+    if (value.containsKey('isNot')) return 'isNot';
     return null;
   }
 
@@ -1768,6 +1980,11 @@ RETURNING *
     'notInOrNull',
     'inOrNull',
     'equalsOrNull',
+    // scalar-list (array column) operators
+    'has',
+    'hasEvery',
+    'hasSome',
+    'isEmpty',
   };
 
   /// Validate that a Map filter value contains only known operators.
@@ -1908,7 +2125,28 @@ RETURNING *
         final relOperator = _detectRelationOperator(value);
 
         if (relation != null && relOperator != null) {
-          final whereCondition = value[relOperator];
+          final rawCondition = value[relOperator];
+          // to-one relations use is/isNot; to-many use some/every/none.
+          final isToOne = relation.type == RelationType.manyToOne ||
+              relation.type == RelationType.oneToOne;
+          if ((relOperator == 'is' || relOperator == 'isNot') && !isToOne) {
+            throw ArgumentError(
+              'Operator "$relOperator" on relation "$field" of model '
+              '"$modelName" is only valid for to-one relations. Use '
+              'some(), every(), or none() for to-many relations.',
+            );
+          }
+          // Map is/isNot (honouring null-target semantics) onto the
+          // some/none EXISTS builders: is:{cond}->EXISTS, is:null->NOT EXISTS,
+          // isNot:{cond}->NOT EXISTS, isNot:null->EXISTS.
+          final String effectiveOp;
+          if (relOperator == 'is') {
+            effectiveOp = rawCondition == null ? 'none' : 'some';
+          } else if (relOperator == 'isNot') {
+            effectiveOp = rawCondition == null ? 'some' : 'none';
+          } else {
+            effectiveOp = relOperator;
+          }
           // Use baseAlias if available, otherwise fall back to parentAlias
           // This ensures relation filters use the correct table alias (e.g., 't0')
           final effectiveParentAlias = baseAlias ?? parentAlias;
@@ -1917,9 +2155,9 @@ RETURNING *
             parentAlias: effectiveParentAlias,
             relationName: field,
             relation: relation,
-            operator: relOperator,
+            operator: effectiveOp,
             whereCondition:
-                whereCondition is Map<String, dynamic> ? whereCondition : {},
+                rawCondition is Map<String, dynamic> ? rawCondition : {},
             startIndex: paramIndex,
           );
           conditions.add(clause);
@@ -1950,6 +2188,20 @@ RETURNING *
           : _quoteIdentifier(resolvedField);
 
       if (value is Map<String, dynamic>) {
+        // JSON(B) column filters (#69): detected by a `path` key or a
+        // JSON-specific operator. Handled before scalar validation.
+        if (_isJsonFilter(value)) {
+          final (jc, jv, jt) =
+              _buildJsonCondition(columnName, value, paramIndex);
+          if (jc.isNotEmpty) {
+            conditions.add(jc);
+            values.addAll(jv);
+            types.addAll(jt);
+            paramIndex += jv.length;
+          }
+          continue;
+        }
+
         // Validate that all keys are known operators before processing
         // This catches invalid patterns early instead of generating bad SQL
         _validateScalarFilterOperators(field, value, modelName);
@@ -2108,6 +2360,52 @@ RETURNING *
               values.add(op.value);
               types.add(_inferArgType(op.value));
               break;
+
+            // ==================== Scalar-list (array) Operators ==============
+            // PostgreSQL array columns (String[]/enum[]/Int[]). Element type
+            // is inferred from the column, so ARRAY[...] needs no cast.
+
+            case 'has':
+              // value is an element of the array column
+              conditions
+                  .add('${_placeholder(paramIndex++)} = ANY($columnName)');
+              values.add(op.value);
+              types.add(_inferArgType(op.value));
+              break;
+
+            case 'hasSome':
+              final some = (op.value as List?) ?? const [];
+              if (some.isEmpty) {
+                conditions.add('(1=0)'); // overlaps nothing
+              } else {
+                final ph = List.generate(
+                    some.length, (_) => _placeholder(paramIndex++));
+                conditions.add('$columnName && ARRAY[${ph.join(', ')}]');
+                values.addAll(some);
+                types.addAll(some.map(_inferArgType));
+              }
+              break;
+
+            case 'hasEvery':
+              final every = (op.value as List?) ?? const [];
+              if (every.isEmpty) {
+                conditions.add('(1=1)'); // contains all of nothing
+              } else {
+                final ph = List.generate(
+                    every.length, (_) => _placeholder(paramIndex++));
+                conditions.add('$columnName @> ARRAY[${ph.join(', ')}]');
+                values.addAll(every);
+                types.addAll(every.map(_inferArgType));
+              }
+              break;
+
+            case 'isEmpty':
+              final wantEmpty = op.value == true;
+              conditions.add(wantEmpty
+                  ? 'COALESCE(cardinality($columnName), 0) = 0'
+                  : 'COALESCE(cardinality($columnName), 0) > 0');
+              break;
+
             default:
               // This should not be reached if _knownScalarOperators is in sync
               // with this switch statement, but serves as a safeguard.
@@ -2241,7 +2539,13 @@ RETURNING *
           inverseJoinColumn:
               _quoteIdentifier(relation.inverseJoinColumn ?? 'B'),
           parentRef: parentRef,
-          parentPk: relation.references.first,
+          // Resolve PK columns via the registry so @map-ed PKs work.
+          parentPk: parentModelSchema?.primaryKeys.isNotEmpty == true
+              ? parentModelSchema!.primaryKeys.first.columnName
+              : relation.references.first,
+          targetPk: targetModelSchema?.primaryKeys.isNotEmpty == true
+              ? targetModelSchema!.primaryKeys.first.columnName
+              : 'id',
           subWhere: subWhere,
         );
     }
@@ -2331,15 +2635,17 @@ RETURNING *
     required String inverseJoinColumn,
     required String parentRef,
     required String parentPk,
+    required String targetPk,
     required String subWhere,
   }) {
     final pkCol = _quoteIdentifier(parentPk);
+    final targetPkCol = _quoteIdentifier(targetPk);
 
     // Subquery joins through junction table to target table (with alias)
     // The alias allows nested relation filters to reference this table
     final joinClause = '''
 SELECT 1 FROM $joinTable
-INNER JOIN $targetTable AS $targetAlias ON $targetAlias."id" = $joinTable.$inverseJoinColumn
+INNER JOIN $targetTable AS $targetAlias ON $targetAlias.$targetPkCol = $joinTable.$inverseJoinColumn
 WHERE $joinTable.$joinColumn = $parentRef.$pkCol''';
 
     final fullCondition =
@@ -2590,6 +2896,186 @@ WHERE $joinTable.$joinColumn = $parentRef.$pkCol''';
   /// Check if the database provider supports NULLS FIRST/LAST ordering.
   bool _supportsNullsOrdering() {
     return provider == 'postgresql' || provider == 'supabase';
+  }
+
+  static const _jsonOnlyKeys = {
+    'path',
+    'string_contains',
+    'string_starts_with',
+    'string_ends_with',
+    'array_contains',
+  };
+
+  /// A filter map targets a JSON(B) column when it carries a `path` or any
+  /// JSON-specific operator.
+  bool _isJsonFilter(Map<String, dynamic> value) =>
+      value.keys.any(_jsonOnlyKeys.contains);
+
+  /// Build a PostgreSQL JSON(B) condition from a Prisma-style JSON filter.
+  ///
+  /// `path` (a list of keys) navigates into the column via `#>`/`#>>`; the
+  /// remaining operators compare the addressed value. Without a `path` the
+  /// operators apply to the column itself.
+  (String, List<dynamic>, List<ArgType>) _buildJsonCondition(
+    String columnName,
+    Map<String, dynamic> filter,
+    int startIndex,
+  ) {
+    if (provider != 'postgresql' && provider != 'supabase') {
+      throw UnsupportedError(
+        'JSON filters are only supported on PostgreSQL/Supabase.',
+      );
+    }
+
+    var paramIndex = startIndex;
+    final values = <dynamic>[];
+    final types = <ArgType>[];
+    final parts = <String>[];
+
+    // Address the target: `col #> '{a,b}'` (jsonb) or `col #>> '{a,b}'` (text).
+    final path = filter['path'];
+    String pathLiteral = '';
+    if (path is List && path.isNotEmpty) {
+      pathLiteral = "'{${path.join(',')}}'";
+    }
+    String jsonbExpr() =>
+        pathLiteral.isEmpty ? columnName : '$columnName #> $pathLiteral';
+    String textExpr() => pathLiteral.isEmpty
+        ? '$columnName #>> \'{}\''
+        : '$columnName #>> $pathLiteral';
+
+    for (final entry in filter.entries) {
+      switch (entry.key) {
+        case 'path':
+          break; // addressing only
+        case 'equals':
+          parts.add('${jsonbExpr()} = ${_placeholder(paramIndex++)}::jsonb');
+          values.add(jsonEncode(entry.value));
+          types.add(ArgType.string);
+          break;
+        case 'string_contains':
+          parts.add('${textExpr()} LIKE ${_placeholder(paramIndex++)}');
+          values.add('%${entry.value}%');
+          types.add(ArgType.string);
+          break;
+        case 'string_starts_with':
+          parts.add('${textExpr()} LIKE ${_placeholder(paramIndex++)}');
+          values.add('${entry.value}%');
+          types.add(ArgType.string);
+          break;
+        case 'string_ends_with':
+          parts.add('${textExpr()} LIKE ${_placeholder(paramIndex++)}');
+          values.add('%${entry.value}');
+          types.add(ArgType.string);
+          break;
+        case 'array_contains':
+          parts.add('${jsonbExpr()} @> ${_placeholder(paramIndex++)}::jsonb');
+          values.add(jsonEncode(entry.value));
+          types.add(ArgType.string);
+          break;
+        case 'lt':
+        case 'lte':
+        case 'gt':
+        case 'gte':
+          const ops = {'lt': '<', 'lte': '<=', 'gt': '>', 'gte': '>='};
+          parts.add(
+              '(${textExpr()})::numeric ${ops[entry.key]} ${_placeholder(paramIndex++)}');
+          values.add(entry.value);
+          types.add(_inferArgType(entry.value));
+          break;
+        default:
+          throw ArgumentError(
+            'Unknown JSON filter operator "${entry.key}".',
+          );
+      }
+    }
+
+    final clause = parts.length == 1 ? parts.first : '(${parts.join(' AND ')})';
+    return (clause, values, types);
+  }
+
+  /// Normalize `orderBy` (Map or List<Map>) into an ordered list of
+  /// (fieldName, isDescending) pairs, preserving declaration order.
+  List<(String, bool)> _normalizeOrderBy(dynamic orderBy) {
+    final result = <(String, bool)>[];
+    void addMap(Map<String, dynamic> m) {
+      for (final e in m.entries) {
+        final desc = e.value is Map
+            ? (e.value as Map)['sort'] == 'desc'
+            : e.value == 'desc';
+        result.add((e.key, desc));
+      }
+    }
+
+    if (orderBy is List) {
+      for (final item in orderBy) {
+        if (item is Map<String, dynamic>) addMap(item);
+      }
+    } else if (orderBy is Map<String, dynamic>) {
+      addMap(orderBy);
+    }
+    return result;
+  }
+
+  /// Build a keyset predicate for cursor pagination from the `cursor` value and
+  /// the `orderBy` sequence. Inclusive of the cursor row (Prisma pairs this with
+  /// `skip: 1` to exclude it). Fields are ordered by `orderBy`; any cursor field
+  /// absent from `orderBy` is appended ascending so it still bounds the scan.
+  ///
+  /// For orderBy `[a ASC, b DESC]` and cursor `{a, b}` this yields the canonical
+  /// expansion `(a > ?) OR (a = ? AND b <= ?)`.
+  (String, List<dynamic>, List<ArgType>) _buildCursorClause(
+    Map<String, dynamic> cursor,
+    dynamic orderBy, {
+    String? modelName,
+    String? baseAlias,
+    int startIndex = 1,
+  }) {
+    // Order the cursor fields by the orderBy sequence; append leftovers asc.
+    final ordered = <(String, bool)>[];
+    for (final (field, desc) in _normalizeOrderBy(orderBy)) {
+      if (cursor.containsKey(field)) ordered.add((field, desc));
+    }
+    for (final field in cursor.keys) {
+      if (!ordered.any((o) => o.$1 == field)) ordered.add((field, false));
+    }
+    if (ordered.isEmpty) return ('', const [], const []);
+
+    String col(String field) {
+      final resolved = _resolveColumnName(modelName, field);
+      return baseAlias != null
+          ? '"$baseAlias".${_quoteIdentifier(resolved)}'
+          : _quoteIdentifier(resolved);
+    }
+
+    var paramIndex = startIndex;
+    final values = <dynamic>[];
+    final types = <ArgType>[];
+    final disjuncts = <String>[];
+
+    for (var i = 0; i < ordered.length; i++) {
+      final terms = <String>[];
+      // Equalities for all fields before position i.
+      for (var j = 0; j < i; j++) {
+        terms.add('${col(ordered[j].$1)} = ${_placeholder(paramIndex++)}');
+        values.add(cursor[ordered[j].$1]);
+        types.add(_inferArgType(cursor[ordered[j].$1]));
+      }
+      // Comparison at position i: strict except the final field is inclusive.
+      final desc = ordered[i].$2;
+      final isLast = i == ordered.length - 1;
+      final op = desc ? (isLast ? '<=' : '<') : (isLast ? '>=' : '>');
+      terms.add('${col(ordered[i].$1)} $op ${_placeholder(paramIndex++)}');
+      values.add(cursor[ordered[i].$1]);
+      types.add(_inferArgType(cursor[ordered[i].$1]));
+
+      disjuncts
+          .add(terms.length == 1 ? terms.first : '(${terms.join(' AND ')})');
+    }
+
+    final clause =
+        disjuncts.length == 1 ? disjuncts.first : '(${disjuncts.join(' OR ')})';
+    return (clause, values, types);
   }
 
   /// Get placeholder syntax for the database provider.

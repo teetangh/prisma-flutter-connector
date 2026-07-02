@@ -89,6 +89,42 @@ void main() {
     });
   });
 
+  group('UPSERT autofills @default + @updatedAt', () {
+    test('create arm fills uuid id + createdAt + updatedAt', () {
+      final compiler = SqlCompiler(provider: 'postgresql', schema: registry);
+      final query = JsonQueryBuilder()
+          .model('Plan')
+          .action(QueryAction.upsert)
+          .where({'id': 'p1'}).data({
+        'create': {'title': 'Mock'},
+        'update': {'title': 'Renamed'},
+      }).build();
+
+      final result = compiler.compile(query);
+
+      expect(result.sql, contains('INSERT INTO "Plan"'));
+      expect(result.sql, contains('gen_random_uuid()'));
+      // updatedAt appears in both the INSERT values and the DO UPDATE SET
+      expect('NOW()'.allMatches(result.sql).length, greaterThanOrEqualTo(2));
+      expect(result.sql, contains('ON CONFLICT ("id")'));
+      expect(result.sql, contains('DO UPDATE SET'));
+    });
+
+    test('update arm refreshes @updatedAt even when caller omits it', () {
+      final compiler = SqlCompiler(provider: 'postgresql', schema: registry);
+      final query = JsonQueryBuilder()
+          .model('Plan')
+          .action(QueryAction.upsert)
+          .where({'id': 'p1'}).data({
+        'create': {'title': 'Mock'},
+        'update': {'title': 'Renamed'},
+      }).build();
+
+      final result = compiler.compile(query);
+      expect(result.sql, contains('"updatedAt" = NOW()'));
+    });
+  });
+
   group('UPDATE refreshes @updatedAt', () {
     test('absent updatedAt is auto-set in SET clause', () {
       final compiler = SqlCompiler(provider: 'postgresql', schema: registry);
