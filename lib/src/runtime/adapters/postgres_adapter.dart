@@ -29,28 +29,60 @@ import 'package:prisma_flutter_connector/src/runtime/adapters/types.dart';
 /// final prisma = PrismaClient(adapter: adapter);
 /// ```
 class PostgresAdapter implements SqlDriverAdapter {
-  pg.Connection _connection;
+  /// Single dedicated connection (single-connection mode). Null when pooled.
+  pg.Connection? _connection;
+
+  /// Connection pool (pooled mode). Null in single-connection mode.
+  final pg.Pool? _pool;
+
   final ConnectionInfo? _connectionInfo;
   final Future<pg.Connection> Function()? _connectionFactory;
 
   PostgresAdapter(
-    this._connection, {
+    pg.Connection connection, {
     ConnectionInfo? connectionInfo,
     Future<pg.Connection> Function()? connectionFactory,
-  })  : _connectionInfo = connectionInfo,
+  })  : _connection = connection,
+        _pool = null,
+        _connectionInfo = connectionInfo,
         _connectionFactory = connectionFactory;
 
+  /// Pooled adapter (#70). Non-transactional queries run on connections
+  /// borrowed from [pool]; each transaction pins a dedicated pool connection
+  /// for its lifetime. Construct the pool with `pg.Pool.withEndpoints(...)`
+  /// or `pg.Pool.withUrl(...)`.
+  PostgresAdapter.pooled(
+    pg.Pool pool, {
+    ConnectionInfo? connectionInfo,
+  })  : _connection = null,
+        _pool = pool,
+        _connectionInfo = connectionInfo,
+        _connectionFactory = null;
+
+  /// Whether this adapter is pool-backed.
+  bool get isPooled => _pool != null;
+
+  /// The Session used for non-transactional statements: the pinned connection
+  /// in single-connection mode, or the pool (which dispatches per-statement) in
+  /// pooled mode.
+  pg.Session get _session {
+    final pg.Session? conn = _connection;
+    return conn ?? _pool!;
+  }
+
   /// Check if connection is alive, reconnect if factory provided.
+  /// No-op in pooled mode (the pool manages connection health).
   Future<void> _ensureConnected() async {
-    if (_connectionFactory == null) return;
+    final conn = _connection;
+    if (conn == null || _connectionFactory == null) return;
     try {
-      await _connection.execute('SELECT 1').timeout(
+      await conn.execute('SELECT 1').timeout(
             const Duration(seconds: 5),
           );
     } catch (_) {
       // Connection dead — attempt reconnect
       try {
-        await _connection.close();
+        await conn.close();
       } catch (_) {
         // Already closed, ignore
       }
@@ -72,7 +104,7 @@ class PostgresAdapter implements SqlDriverAdapter {
       final convertedArgs = _convertArgs(query.args, query.argTypes);
 
       // Execute query - don't use pg.Sql.indexed since we already have placeholders
-      final result = await _connection.execute(
+      final result = await _session.execute(
         query.sql,
         parameters: convertedArgs.isEmpty ? null : convertedArgs,
       );
@@ -94,7 +126,7 @@ class PostgresAdapter implements SqlDriverAdapter {
       await _ensureConnected();
       final convertedArgs = _convertArgs(query.args, query.argTypes);
 
-      final result = await _connection.execute(
+      final result = await _session.execute(
         query.sql,
         parameters: convertedArgs.isEmpty ? null : convertedArgs,
       );
@@ -116,7 +148,7 @@ class PostgresAdapter implements SqlDriverAdapter {
       final statements = script.split(';').where((s) => s.trim().isNotEmpty);
 
       for (final statement in statements) {
-        await _connection.execute(statement.trim());
+        await _session.execute(statement.trim());
       }
     } catch (e) {
       throw AdapterError(
@@ -129,7 +161,12 @@ class PostgresAdapter implements SqlDriverAdapter {
 
   @override
   Future<Transaction> startTransaction([IsolationLevel? isolationLevel]) async {
-    return PostgresTransaction._start(_connection, isolationLevel);
+    final pool = _pool;
+    if (pool != null) {
+      // Pin a dedicated pool connection for the transaction's lifetime.
+      return PostgresTransaction._startPooled(pool, isolationLevel);
+    }
+    return PostgresTransaction._start(_connection!, isolationLevel);
   }
 
   @override
@@ -143,7 +180,12 @@ class PostgresAdapter implements SqlDriverAdapter {
 
   @override
   Future<void> dispose() async {
-    await _connection.close();
+    final pool = _pool;
+    if (pool != null) {
+      await pool.close();
+    } else {
+      await _connection?.close();
+    }
   }
 
   /// Convert Dart values to PostgreSQL-compatible format.
@@ -380,11 +422,16 @@ class PostgresAdapter implements SqlDriverAdapter {
 /// PostgreSQL transaction implementation.
 class PostgresTransaction implements Transaction {
   final pg.Connection _connection;
+
+  /// When pool-backed, completing this returns the pinned connection to the
+  /// pool. Null for single-connection transactions.
+  final Completer<void>? _release;
+
   bool _isActive = true;
   bool _isCommitted = false;
   bool _isRolledBack = false;
 
-  PostgresTransaction._(this._connection);
+  PostgresTransaction._(this._connection, [this._release]);
 
   static Future<PostgresTransaction> _start(
     pg.Connection connection,
@@ -401,6 +448,41 @@ class PostgresTransaction implements Transaction {
     }
 
     return PostgresTransaction._(connection);
+  }
+
+  /// Borrow a dedicated connection from [pool] and pin it for the transaction's
+  /// lifetime. `withConnection` keeps the connection out of the pool until the
+  /// [_release] completer fires (on commit/rollback), so every statement in the
+  /// transaction runs on the same physical connection.
+  static Future<PostgresTransaction> _startPooled(
+    pg.Pool pool,
+    IsolationLevel? isolationLevel,
+  ) async {
+    final ready = Completer<pg.Connection>();
+    final release = Completer<void>();
+
+    unawaited(pool.withConnection((conn) async {
+      ready.complete(conn);
+      await release.future;
+    }).catchError((Object e, StackTrace st) {
+      if (!ready.isCompleted) ready.completeError(e, st);
+    }));
+
+    final connection = await ready.future;
+    try {
+      await connection.execute('BEGIN');
+      if (isolationLevel != null) {
+        await connection.execute(
+          'SET TRANSACTION ISOLATION LEVEL ${isolationLevel.sql}',
+        );
+      }
+    } catch (e) {
+      // Hand the connection back to the pool if setup failed.
+      if (!release.isCompleted) release.complete();
+      rethrow;
+    }
+
+    return PostgresTransaction._(connection, release);
   }
 
   @override
@@ -444,6 +526,9 @@ class PostgresTransaction implements Transaction {
         'Failed to commit transaction: ${e.toString()}',
         originalError: e,
       );
+    } finally {
+      final release = _release;
+      if (release != null && !release.isCompleted) release.complete();
     }
   }
 
@@ -460,6 +545,9 @@ class PostgresTransaction implements Transaction {
         'Failed to rollback transaction: ${e.toString()}',
         originalError: e,
       );
+    } finally {
+      final release = _release;
+      if (release != null && !release.isCompleted) release.complete();
     }
   }
 
