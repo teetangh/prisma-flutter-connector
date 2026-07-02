@@ -977,6 +977,7 @@ class CbModelGenerator {
       'Float' || 'Decimal' => 'FloatFilter',
       'Boolean' => 'BooleanFilter',
       'DateTime' => 'DateTimeFilter',
+      'Json' => 'JsonFilter',
       _ => _isEnumType(f.type) ? '${f.type}Filter' : null,
     };
   }

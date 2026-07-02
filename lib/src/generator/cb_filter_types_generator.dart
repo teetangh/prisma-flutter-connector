@@ -90,6 +90,18 @@ class CbFilterTypesGenerator {
         _p('List<int>?', 'hasSome'),
         _p('bool?', 'isEmpty'),
       ]),
+      _filter('JsonFilter', 'Json (PostgreSQL jsonb)', [
+        _p('List<String>?', 'path'),
+        _p('Object?', 'equals'),
+        _pJsonKey('String?', 'stringContains', 'string_contains'),
+        _pJsonKey('String?', 'stringStartsWith', 'string_starts_with'),
+        _pJsonKey('String?', 'stringEndsWith', 'string_ends_with'),
+        _pJsonKey('Object?', 'arrayContains', 'array_contains'),
+        _p('Object?', 'lt'),
+        _p('Object?', 'lte'),
+        _p('Object?', 'gt'),
+        _p('Object?', 'gte'),
+      ]),
       Enum((b) => b
         ..name = 'SortOrder'
         ..docs.add('/// Sort order for ordering results')

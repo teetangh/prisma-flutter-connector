@@ -106,6 +106,33 @@ model User { id String @id }
       expect(code, contains('include.toJson()'));
     });
 
+    test('findMany takes a typed cursor param wired to the query builder', () {
+      const schema = '''
+model Post {
+  id       String @id
+  authorId String
+}
+''';
+      final parsed = parser.parse(schema);
+      final code = CbDelegateGenerator(parsed, serverMode: true)
+          .generateDelegate(parsed.models.first);
+      expect(code, contains('PostWhereUniqueInput? cursor'));
+      expect(code, contains('queryBuilder.cursor(_whereUniqueToJson(cursor))'));
+    });
+
+    test('unique-less model omits the cursor param', () {
+      const schema = '''
+model AuditLine {
+  message String
+  at      DateTime @default(now())
+}
+''';
+      final parsed = parser.parse(schema);
+      final code = CbDelegateGenerator(parsed, serverMode: true)
+          .generateDelegate(parsed.models.first);
+      expect(code, isNot(contains('cursor')));
+    });
+
     test('aggregate + findFirstOrThrow are generated', () {
       const schema = '''
 model User {

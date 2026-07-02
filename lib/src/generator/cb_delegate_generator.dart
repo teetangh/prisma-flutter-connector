@@ -70,7 +70,7 @@ class CbDelegateGenerator {
         if (hasUniqueFields) _findUniqueOrThrow(modelName),
         _findFirst(modelName, tableName),
         _findFirstOrThrow(modelName),
-        _findMany(modelName, tableName),
+        _findMany(modelName, tableName, hasUniqueFields),
         _findManyRaw(modelName, tableName),
         _findFirstRaw(modelName, tableName),
         _create(modelName, tableName, relLiteral),
@@ -196,7 +196,7 @@ class CbDelegateGenerator {
       return result;
     '''));
 
-  Method _findMany(String m, String t) => Method((b) => b
+  Method _findMany(String m, String t, bool hasUniqueFields) => Method((b) => b
     ..name = 'findMany'
     ..docs.add('/// Find multiple ${m}s with optional filters')
     ..modifier = MethodModifier.async
@@ -238,6 +238,11 @@ class CbDelegateGenerator {
         ..name = 'distinctFields'
         ..named = true
         ..type = refer('List<String>?')),
+      if (hasUniqueFields)
+        Parameter((p) => p
+          ..name = 'cursor'
+          ..named = true
+          ..type = refer('${m}WhereUniqueInput?')),
     ])
     ..body = Code('''
       final queryBuilder = JsonQueryBuilder()
@@ -250,6 +255,7 @@ class CbDelegateGenerator {
       if (orderBy is ${m}OrderByInput) queryBuilder.orderBy(_orderByToJson(orderBy));
       if (take != null) queryBuilder.take(take);
       if (skip != null) queryBuilder.skip(skip);
+      ${hasUniqueFields ? 'if (cursor != null) queryBuilder.cursor(_whereUniqueToJson(cursor));' : ''}
       if (include != null) queryBuilder.include(include.toJson());
       if (includeRequired != null) queryBuilder.includeRequired(includeRequired);
       if (selectFields != null) queryBuilder.selectFields(selectFields);

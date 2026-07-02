@@ -3925,5 +3925,127 @@ void main() {
             throwsA(isA<UnsupportedError>()));
       });
     });
+
+    group('Cursor pagination (#69)', () {
+      late SqlCompiler compiler;
+      setUp(() => compiler = SqlCompiler(provider: 'postgresql'));
+
+      test('single-field cursor asc -> inclusive >= predicate', () {
+        final q = JsonQueryBuilder()
+            .model('Post')
+            .action(QueryAction.findMany)
+            .orderBy({'id': 'asc'})
+            .cursor({'id': 'abc'})
+            .skip(1)
+            .build();
+        final r = compiler.compile(q);
+        expect(r.sql, contains('"id" >= \$1'));
+        expect(r.sql, contains('OFFSET 1'));
+        expect(r.args, equals(['abc']));
+      });
+
+      test('single-field cursor desc -> inclusive <= predicate', () {
+        final q = JsonQueryBuilder()
+            .model('Post')
+            .action(QueryAction.findMany)
+            .orderBy({'createdAt': 'desc'})
+            .cursor({'createdAt': 't'}).build();
+        final r = compiler.compile(q);
+        expect(r.sql, contains('"createdAt" <= \$1'));
+      });
+
+      test('multi-field cursor -> canonical keyset OR-expansion', () {
+        final q = JsonQueryBuilder()
+            .model('Post')
+            .action(QueryAction.findMany)
+            .orderBy([
+              {'score': 'desc'},
+              {'id': 'asc'}
+            ])
+            .cursor({'score': 10, 'id': 'x'})
+            .build();
+        final r = compiler.compile(q);
+        // (score < ?) OR (score = ? AND id >= ?)
+        expect(r.sql, contains('"score" < \$1'));
+        expect(r.sql, contains('"score" = \$2 AND "id" >= \$3'));
+        expect(r.args, equals([10, 10, 'x']));
+      });
+
+      test('cursor ANDs onto an existing WHERE', () {
+        final q = JsonQueryBuilder()
+            .model('Post')
+            .action(QueryAction.findMany)
+            .where({'published': true})
+            .orderBy({'id': 'asc'})
+            .cursor({'id': 'abc'}).build();
+        final r = compiler.compile(q);
+        expect(r.sql, contains('WHERE ('));
+        expect(r.sql, contains(') AND ('));
+        expect(r.args, equals([true, 'abc']));
+      });
+    });
+
+    group('JSON filters (#69)', () {
+      late SqlCompiler compiler;
+      setUp(() => compiler = SqlCompiler(provider: 'postgresql'));
+
+      test('path + equals -> #> ... = ?::jsonb', () {
+        final q = JsonQueryBuilder()
+            .model('Event')
+            .action(QueryAction.findMany)
+            .where({
+          'meta': {
+            'path': ['a', 'b'],
+            'equals': 'v'
+          }
+        }).build();
+        final r = compiler.compile(q);
+        expect(r.sql, contains('"meta" #> \'{a,b}\' = \$1::jsonb'));
+        expect(r.args, equals(['"v"']));
+      });
+
+      test('string_contains -> #>> ... LIKE', () {
+        final q = JsonQueryBuilder()
+            .model('Event')
+            .action(QueryAction.findMany)
+            .where({
+          'meta': {
+            'path': ['name'],
+            'string_contains': 'foo'
+          }
+        }).build();
+        final r = compiler.compile(q);
+        expect(r.sql, contains('"meta" #>> \'{name}\' LIKE \$1'));
+        expect(r.args, equals(['%foo%']));
+      });
+
+      test('array_contains -> @> ?::jsonb', () {
+        final q = JsonQueryBuilder()
+            .model('Event')
+            .action(QueryAction.findMany)
+            .where({
+          'tags': {
+            'array_contains': ['x']
+          }
+        }).build();
+        final r = compiler.compile(q);
+        expect(r.sql, contains('"tags" @> \$1::jsonb'));
+        expect(r.args, equals(['["x"]']));
+      });
+
+      test('non-postgres provider rejects JSON filters', () {
+        final sqlite = SqlCompiler(provider: 'sqlite');
+        final q = JsonQueryBuilder()
+            .model('Event')
+            .action(QueryAction.findMany)
+            .where({
+          'meta': {
+            'path': ['a'],
+            'equals': 1
+          }
+        }).build();
+        expect(() => sqlite.compile(q), throwsA(isA<UnsupportedError>()));
+      });
+    });
   });
 }

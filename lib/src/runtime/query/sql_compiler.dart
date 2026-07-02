@@ -7,6 +7,8 @@
 /// via FFI, but this pure Dart version is easier to debug and works everywhere.
 library;
 
+import 'dart:convert';
+
 import 'package:prisma_flutter_connector/src/runtime/adapters/types.dart';
 import 'package:prisma_flutter_connector/src/runtime/query/json_protocol.dart';
 import 'package:prisma_flutter_connector/src/runtime/query/relation_compiler.dart';
@@ -340,6 +342,29 @@ class SqlCompiler {
       startIndex: computedArgs.length + 1,
     );
 
+    // Cursor pagination (#69): derive a keyset predicate from `cursor` + the
+    // orderBy sequence and AND it onto the WHERE clause. Inclusive of the
+    // cursor row (use `skip: 1` to exclude it, matching Prisma semantics).
+    var effectiveWhere = whereClause;
+    var cursorArgs = <dynamic>[];
+    var cursorTypes = <ArgType>[];
+    final cursor = args['cursor'];
+    if (cursor is Map<String, dynamic> && cursor.isNotEmpty) {
+      final (cc, cv, ct) = _buildCursorClause(
+        cursor,
+        args['orderBy'],
+        modelName: query.modelName,
+        baseAlias: needsAlias ? baseAlias : null,
+        startIndex: computedArgs.length + 1 + whereArgs.length,
+      );
+      if (cc.isNotEmpty) {
+        effectiveWhere =
+            effectiveWhere.isEmpty ? cc : '($effectiveWhere) AND ($cc)';
+        cursorArgs = cv;
+        cursorTypes = ct;
+      }
+    }
+
     // Build ORDER BY clause
     // Pass baseAlias when JOINs are present to disambiguate column names
     final orderBy = args['orderBy'];
@@ -385,8 +410,8 @@ class SqlCompiler {
           'SELECT $distinctClause$selectClause FROM ${_quoteIdentifier(tableName)}');
     }
 
-    if (whereClause.isNotEmpty) {
-      sql.write(' WHERE $whereClause');
+    if (effectiveWhere.isNotEmpty) {
+      sql.write(' WHERE $effectiveWhere');
     }
 
     if (orderByClause.isNotEmpty) {
@@ -403,9 +428,9 @@ class SqlCompiler {
       sql.write(' OFFSET $skip');
     }
 
-    // Combine computed field args (first) with WHERE args (second)
-    final allArgs = [...computedArgs, ...whereArgs];
-    final allTypes = [...computedTypes, ...whereTypes];
+    // Combine computed field args (first), WHERE args, then cursor args.
+    final allArgs = [...computedArgs, ...whereArgs, ...cursorArgs];
+    final allTypes = [...computedTypes, ...whereTypes, ...cursorTypes];
 
     // Collect computed field names for preservation during relation deserialization
     final computedFieldNamesList =
@@ -2051,6 +2076,19 @@ RETURNING *
           : _quoteIdentifier(resolvedField);
 
       if (value is Map<String, dynamic>) {
+        // JSON(B) column filters (#69): detected by a `path` key or a
+        // JSON-specific operator. Handled before scalar validation.
+        if (_isJsonFilter(value)) {
+          final (jc, jv, jt) = _buildJsonCondition(columnName, value, paramIndex);
+          if (jc.isNotEmpty) {
+            conditions.add(jc);
+            values.addAll(jv);
+            types.addAll(jt);
+            paramIndex += jv.length;
+          }
+          continue;
+        }
+
         // Validate that all keys are known operators before processing
         // This catches invalid patterns early instead of generating bad SQL
         _validateScalarFilterOperators(field, value, modelName);
@@ -2745,6 +2783,185 @@ WHERE $joinTable.$joinColumn = $parentRef.$pkCol''';
   /// Check if the database provider supports NULLS FIRST/LAST ordering.
   bool _supportsNullsOrdering() {
     return provider == 'postgresql' || provider == 'supabase';
+  }
+
+  static const _jsonOnlyKeys = {
+    'path',
+    'string_contains',
+    'string_starts_with',
+    'string_ends_with',
+    'array_contains',
+  };
+
+  /// A filter map targets a JSON(B) column when it carries a `path` or any
+  /// JSON-specific operator.
+  bool _isJsonFilter(Map<String, dynamic> value) =>
+      value.keys.any(_jsonOnlyKeys.contains);
+
+  /// Build a PostgreSQL JSON(B) condition from a Prisma-style JSON filter.
+  ///
+  /// `path` (a list of keys) navigates into the column via `#>`/`#>>`; the
+  /// remaining operators compare the addressed value. Without a `path` the
+  /// operators apply to the column itself.
+  (String, List<dynamic>, List<ArgType>) _buildJsonCondition(
+    String columnName,
+    Map<String, dynamic> filter,
+    int startIndex,
+  ) {
+    if (provider != 'postgresql' && provider != 'supabase') {
+      throw UnsupportedError(
+        'JSON filters are only supported on PostgreSQL/Supabase.',
+      );
+    }
+
+    var paramIndex = startIndex;
+    final values = <dynamic>[];
+    final types = <ArgType>[];
+    final parts = <String>[];
+
+    // Address the target: `col #> '{a,b}'` (jsonb) or `col #>> '{a,b}'` (text).
+    final path = filter['path'];
+    String pathLiteral = '';
+    if (path is List && path.isNotEmpty) {
+      pathLiteral = "'{${path.join(',')}}'";
+    }
+    String jsonbExpr() =>
+        pathLiteral.isEmpty ? columnName : '$columnName #> $pathLiteral';
+    String textExpr() => pathLiteral.isEmpty
+        ? '$columnName #>> \'{}\''
+        : '$columnName #>> $pathLiteral';
+
+    for (final entry in filter.entries) {
+      switch (entry.key) {
+        case 'path':
+          break; // addressing only
+        case 'equals':
+          parts.add('${jsonbExpr()} = ${_placeholder(paramIndex++)}::jsonb');
+          values.add(jsonEncode(entry.value));
+          types.add(ArgType.string);
+          break;
+        case 'string_contains':
+          parts.add('${textExpr()} LIKE ${_placeholder(paramIndex++)}');
+          values.add('%${entry.value}%');
+          types.add(ArgType.string);
+          break;
+        case 'string_starts_with':
+          parts.add('${textExpr()} LIKE ${_placeholder(paramIndex++)}');
+          values.add('${entry.value}%');
+          types.add(ArgType.string);
+          break;
+        case 'string_ends_with':
+          parts.add('${textExpr()} LIKE ${_placeholder(paramIndex++)}');
+          values.add('%${entry.value}');
+          types.add(ArgType.string);
+          break;
+        case 'array_contains':
+          parts.add('${jsonbExpr()} @> ${_placeholder(paramIndex++)}::jsonb');
+          values.add(jsonEncode(entry.value));
+          types.add(ArgType.string);
+          break;
+        case 'lt':
+        case 'lte':
+        case 'gt':
+        case 'gte':
+          const ops = {'lt': '<', 'lte': '<=', 'gt': '>', 'gte': '>='};
+          parts.add(
+              '(${textExpr()})::numeric ${ops[entry.key]} ${_placeholder(paramIndex++)}');
+          values.add(entry.value);
+          types.add(_inferArgType(entry.value));
+          break;
+        default:
+          throw ArgumentError(
+            'Unknown JSON filter operator "${entry.key}".',
+          );
+      }
+    }
+
+    final clause = parts.length == 1 ? parts.first : '(${parts.join(' AND ')})';
+    return (clause, values, types);
+  }
+
+  /// Normalize `orderBy` (Map or List<Map>) into an ordered list of
+  /// (fieldName, isDescending) pairs, preserving declaration order.
+  List<(String, bool)> _normalizeOrderBy(dynamic orderBy) {
+    final result = <(String, bool)>[];
+    void addMap(Map<String, dynamic> m) {
+      for (final e in m.entries) {
+        final desc = e.value is Map
+            ? (e.value as Map)['sort'] == 'desc'
+            : e.value == 'desc';
+        result.add((e.key, desc));
+      }
+    }
+
+    if (orderBy is List) {
+      for (final item in orderBy) {
+        if (item is Map<String, dynamic>) addMap(item);
+      }
+    } else if (orderBy is Map<String, dynamic>) {
+      addMap(orderBy);
+    }
+    return result;
+  }
+
+  /// Build a keyset predicate for cursor pagination from the `cursor` value and
+  /// the `orderBy` sequence. Inclusive of the cursor row (Prisma pairs this with
+  /// `skip: 1` to exclude it). Fields are ordered by `orderBy`; any cursor field
+  /// absent from `orderBy` is appended ascending so it still bounds the scan.
+  ///
+  /// For orderBy `[a ASC, b DESC]` and cursor `{a, b}` this yields the canonical
+  /// expansion `(a > ?) OR (a = ? AND b <= ?)`.
+  (String, List<dynamic>, List<ArgType>) _buildCursorClause(
+    Map<String, dynamic> cursor,
+    dynamic orderBy, {
+    String? modelName,
+    String? baseAlias,
+    int startIndex = 1,
+  }) {
+    // Order the cursor fields by the orderBy sequence; append leftovers asc.
+    final ordered = <(String, bool)>[];
+    for (final (field, desc) in _normalizeOrderBy(orderBy)) {
+      if (cursor.containsKey(field)) ordered.add((field, desc));
+    }
+    for (final field in cursor.keys) {
+      if (!ordered.any((o) => o.$1 == field)) ordered.add((field, false));
+    }
+    if (ordered.isEmpty) return ('', const [], const []);
+
+    String col(String field) {
+      final resolved = _resolveColumnName(modelName, field);
+      return baseAlias != null
+          ? '"$baseAlias".${_quoteIdentifier(resolved)}'
+          : _quoteIdentifier(resolved);
+    }
+
+    var paramIndex = startIndex;
+    final values = <dynamic>[];
+    final types = <ArgType>[];
+    final disjuncts = <String>[];
+
+    for (var i = 0; i < ordered.length; i++) {
+      final terms = <String>[];
+      // Equalities for all fields before position i.
+      for (var j = 0; j < i; j++) {
+        terms.add('${col(ordered[j].$1)} = ${_placeholder(paramIndex++)}');
+        values.add(cursor[ordered[j].$1]);
+        types.add(_inferArgType(cursor[ordered[j].$1]));
+      }
+      // Comparison at position i: strict except the final field is inclusive.
+      final desc = ordered[i].$2;
+      final isLast = i == ordered.length - 1;
+      final op = desc ? (isLast ? '<=' : '<') : (isLast ? '>=' : '>');
+      terms.add('${col(ordered[i].$1)} $op ${_placeholder(paramIndex++)}');
+      values.add(cursor[ordered[i].$1]);
+      types.add(_inferArgType(cursor[ordered[i].$1]));
+
+      disjuncts.add(terms.length == 1 ? terms.first : '(${terms.join(' AND ')})');
+    }
+
+    final clause =
+        disjuncts.length == 1 ? disjuncts.first : '(${disjuncts.join(' OR ')})';
+    return (clause, values, types);
   }
 
   /// Get placeholder syntax for the database provider.
