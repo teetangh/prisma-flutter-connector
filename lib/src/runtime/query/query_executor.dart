@@ -128,6 +128,22 @@ abstract class BaseExecutor {
 
   /// Execute a count query.
   Future<int> executeCount(JsonQuery query);
+
+  /// Run [callback] inside a transaction.
+  ///
+  /// On a root executor this opens a new transaction. On an executor that is
+  /// already inside a transaction, it reuses the ambient transaction so a
+  /// nested `$transaction` flattens instead of failing (PostgreSQL has no true
+  /// nested transactions). [isolationLevel] is honoured only when a new
+  /// transaction is opened.
+  Future<T> runTransaction<T>(
+    Future<T> Function(BaseExecutor) callback, {
+    IsolationLevel? isolationLevel,
+  });
+
+  /// Close the underlying connection. No-op when inside a transaction (a
+  /// transaction does not own the adapter's connection lifecycle).
+  Future<void> dispose();
 }
 
 /// Executes Prisma queries against a database adapter.
@@ -620,7 +636,15 @@ class QueryExecutor with ResultSetConverter implements BaseExecutor {
     }
   }
 
+  @override
+  Future<T> runTransaction<T>(
+    Future<T> Function(BaseExecutor) callback, {
+    IsolationLevel? isolationLevel,
+  }) =>
+      executeInTransaction<T>(callback, isolationLevel: isolationLevel);
+
   /// Close the adapter connection.
+  @override
   Future<void> dispose() async {
     await adapter.dispose();
   }
@@ -756,5 +780,21 @@ class TransactionExecutor with ResultSetConverter implements BaseExecutor {
     if (count is String) return int.parse(count);
 
     return 0;
+  }
+
+  @override
+  Future<T> runTransaction<T>(
+    Future<T> Function(BaseExecutor) callback, {
+    IsolationLevel? isolationLevel,
+  }) async {
+    // Already inside a transaction: reuse the ambient one (nested
+    // $transaction flattens). PostgreSQL has no true nested transactions and
+    // the isolation level cannot change mid-transaction, so it is ignored.
+    return callback(this);
+  }
+
+  @override
+  Future<void> dispose() async {
+    // No-op: the transaction does not own the adapter's connection lifecycle.
   }
 }

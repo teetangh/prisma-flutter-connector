@@ -135,8 +135,7 @@ class CbClientGenerator {
             ..named = true
             ..type = refer('IsolationLevel?')))
           ..body = Code('''
-            final queryExecutor = _executor as QueryExecutor;
-            return await queryExecutor.executeInTransaction((txExecutor) async {
+            return await _executor.runTransaction((txExecutor) async {
               final txClient = PrismaClient._transaction(txExecutor);
               return await callback(txClient);
             }, isolationLevel: isolationLevel);
@@ -148,8 +147,7 @@ class CbClientGenerator {
           ..modifier = MethodModifier.async
           ..returns = refer('Future<void>')
           ..body = Code('''
-            final queryExecutor = _executor as QueryExecutor;
-            await queryExecutor.dispose();
+            await _executor.dispose();
           ''')),
       ]));
   }

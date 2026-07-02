@@ -11,6 +11,7 @@ class MockAdapter implements SqlDriverAdapter {
   int nextExecuteResult = 0;
   Exception? shouldThrow;
   MockTransaction? mockTransaction;
+  int startTransactionCount = 0;
 
   @override
   String get provider => 'postgresql';
@@ -66,6 +67,7 @@ class MockAdapter implements SqlDriverAdapter {
 
   @override
   Future<Transaction> startTransaction([IsolationLevel? isolationLevel]) async {
+    startTransactionCount++;
     // Return pre-configured mock if set, otherwise create new one
     mockTransaction ??= MockTransaction();
     return mockTransaction!;
@@ -647,6 +649,50 @@ void main() {
         });
 
         expect(mockAdapter.mockTransaction!.executedQueries.length, 2);
+        expect(mockAdapter.mockTransaction!.committed, true);
+      });
+    });
+
+    group('runTransaction (#68)', () {
+      test('QueryExecutor.runTransaction opens a transaction and commits',
+          () async {
+        final result = await executor.runTransaction((tx) async {
+          expect(tx, isA<TransactionExecutor>());
+          return 'ok';
+        });
+
+        expect(result, 'ok');
+        expect(mockAdapter.startTransactionCount, 1);
+        expect(mockAdapter.mockTransaction!.committed, true);
+      });
+
+      test('nested runTransaction flattens onto the ambient transaction',
+          () async {
+        late BaseExecutor outerTx;
+        late BaseExecutor innerTx;
+
+        await executor.runTransaction((tx) async {
+          outerTx = tx;
+          return tx.runTransaction((inner) async {
+            innerTx = inner;
+            return null;
+          });
+        });
+
+        // Only one BEGIN, and the nested call reused the same executor.
+        expect(mockAdapter.startTransactionCount, 1);
+        expect(identical(innerTx, outerTx), true);
+        expect(mockAdapter.mockTransaction!.committed, true);
+      });
+
+      test('TransactionExecutor.dispose is a no-op (does not break the tx)',
+          () async {
+        final result = await executor.runTransaction((tx) async {
+          await tx.dispose(); // must not close the shared connection
+          return 'still-usable';
+        });
+
+        expect(result, 'still-usable');
         expect(mockAdapter.mockTransaction!.committed, true);
       });
     });
