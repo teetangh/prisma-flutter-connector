@@ -1833,6 +1833,11 @@ RETURNING *
     'notInOrNull',
     'inOrNull',
     'equalsOrNull',
+    // scalar-list (array column) operators
+    'has',
+    'hasEvery',
+    'hasSome',
+    'isEmpty',
   };
 
   /// Validate that a Map filter value contains only known operators.
@@ -2194,6 +2199,52 @@ RETURNING *
               values.add(op.value);
               types.add(_inferArgType(op.value));
               break;
+
+            // ==================== Scalar-list (array) Operators ==============
+            // PostgreSQL array columns (String[]/enum[]/Int[]). Element type
+            // is inferred from the column, so ARRAY[...] needs no cast.
+
+            case 'has':
+              // value is an element of the array column
+              conditions
+                  .add('${_placeholder(paramIndex++)} = ANY($columnName)');
+              values.add(op.value);
+              types.add(_inferArgType(op.value));
+              break;
+
+            case 'hasSome':
+              final some = (op.value as List?) ?? const [];
+              if (some.isEmpty) {
+                conditions.add('(1=0)'); // overlaps nothing
+              } else {
+                final ph = List.generate(
+                    some.length, (_) => _placeholder(paramIndex++));
+                conditions.add('$columnName && ARRAY[${ph.join(', ')}]');
+                values.addAll(some);
+                types.addAll(some.map(_inferArgType));
+              }
+              break;
+
+            case 'hasEvery':
+              final every = (op.value as List?) ?? const [];
+              if (every.isEmpty) {
+                conditions.add('(1=1)'); // contains all of nothing
+              } else {
+                final ph = List.generate(
+                    every.length, (_) => _placeholder(paramIndex++));
+                conditions.add('$columnName @> ARRAY[${ph.join(', ')}]');
+                values.addAll(every);
+                types.addAll(every.map(_inferArgType));
+              }
+              break;
+
+            case 'isEmpty':
+              final wantEmpty = op.value == true;
+              conditions.add(wantEmpty
+                  ? 'COALESCE(cardinality($columnName), 0) = 0'
+                  : 'COALESCE(cardinality($columnName), 0) > 0');
+              break;
+
             default:
               // This should not be reached if _knownScalarOperators is in sync
               // with this switch statement, but serves as a safeguard.

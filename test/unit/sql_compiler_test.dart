@@ -3622,6 +3622,85 @@ void main() {
       });
     });
 
+    group('scalar-list (array) filters', () {
+      final c = SqlCompiler(provider: 'postgresql');
+
+      test('has -> = ANY(col)', () {
+        final q = JsonQueryBuilder()
+            .model('Post')
+            .action(QueryAction.findMany)
+            .where({
+          'tags': {'has': 'dart'}
+        }).build();
+        final r = c.compile(q);
+        expect(r.sql, contains('= ANY("tags")'));
+        expect(r.args, ['dart']);
+      });
+
+      test('hasSome -> && ARRAY[...]', () {
+        final q = JsonQueryBuilder()
+            .model('Post')
+            .action(QueryAction.findMany)
+            .where({
+          'tags': {
+            'hasSome': ['a', 'b']
+          }
+        }).build();
+        final r = c.compile(q);
+        expect(r.sql, contains('"tags" && ARRAY['));
+        expect(r.args, ['a', 'b']);
+      });
+
+      test('hasEvery -> @> ARRAY[...]', () {
+        final q = JsonQueryBuilder()
+            .model('Post')
+            .action(QueryAction.findMany)
+            .where({
+          'tags': {
+            'hasEvery': ['a', 'b']
+          }
+        }).build();
+        final r = c.compile(q);
+        expect(r.sql, contains('"tags" @> ARRAY['));
+        expect(r.args, ['a', 'b']);
+      });
+
+      test('isEmpty true/false -> cardinality', () {
+        final empty = c.compile(JsonQueryBuilder()
+            .model('Post')
+            .action(QueryAction.findMany)
+            .where({
+          'tags': {'isEmpty': true}
+        }).build());
+        expect(empty.sql, contains('cardinality("tags"), 0) = 0'));
+
+        final nonEmpty = c.compile(JsonQueryBuilder()
+            .model('Post')
+            .action(QueryAction.findMany)
+            .where({
+          'tags': {'isEmpty': false}
+        }).build());
+        expect(nonEmpty.sql, contains('cardinality("tags"), 0) > 0'));
+      });
+
+      test('hasSome [] overlaps nothing; hasEvery [] matches all', () {
+        final some = c.compile(JsonQueryBuilder()
+            .model('Post')
+            .action(QueryAction.findMany)
+            .where({
+          'tags': {'hasSome': <String>[]}
+        }).build());
+        expect(some.sql, contains('(1=0)'));
+        final every = c.compile(JsonQueryBuilder()
+            .model('Post')
+            .action(QueryAction.findMany)
+            .where({
+          'tags': {'hasEvery': <String>[]}
+        }).build());
+        expect(every.sql, contains('(1=1)'));
+      });
+    });
+
     group('to-one relation filters (is/isNot)', () {
       late SqlCompiler c;
 
