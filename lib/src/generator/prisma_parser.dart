@@ -107,11 +107,17 @@ class PrismaModel {
   final List<PrismaField> fields;
   final List<PrismaRelation> relations;
 
+  /// Composite unique keys from block attributes: `@@id([a, b])` (also treated
+  /// as a unique) and each `@@unique([a, b])`. Single-field lists are omitted
+  /// (those are covered by field-level `@id`/`@unique`).
+  final List<List<String>> compositeUniques;
+
   const PrismaModel({
     required this.name,
     this.dbName,
     required this.fields,
     required this.relations,
+    this.compositeUniques = const [],
   });
 
   /// Get the database table name (original name if renamed, otherwise model name)
@@ -470,15 +476,31 @@ class PrismaParser {
       // renames for the database table name. Match line-by-line with
       // comments stripped so a commented-out `// @@map("x")` is ignored.
       String? explicitTableName;
+      // Composite unique keys from @@id([...]) and @@unique([...]).
+      final compositeUniques = <List<String>>[];
       for (final line in modelBody.split('\n')) {
         var active = line;
         final commentIndex = active.indexOf('//');
         if (commentIndex >= 0) active = active.substring(0, commentIndex);
-        final match =
-            RegExp(r'^@@map\(\s*"([^"]+)"\s*\)').firstMatch(active.trim());
-        if (match != null) {
-          explicitTableName = match.group(1);
-          break;
+        active = active.trim();
+        final mapMatch =
+            RegExp(r'^@@map\(\s*"([^"]+)"\s*\)').firstMatch(active);
+        if (mapMatch != null) {
+          explicitTableName = mapMatch.group(1);
+          continue;
+        }
+        final keyMatch =
+            RegExp(r'^@@(id|unique)\(\s*\[([^\]]*)\]').firstMatch(active);
+        if (keyMatch != null) {
+          final parts = keyMatch
+              .group(2)!
+              .split(',')
+              .map((f) => f.trim())
+              .where((f) => f.isNotEmpty)
+              .toList();
+          // Only composite (>1) keys need a compound input; single-field
+          // @@unique is already addressable via the field-level unique.
+          if (parts.length > 1) compositeUniques.add(parts);
         }
       }
       final modelDbName = explicitTableName ?? modelResult.dbName;
@@ -656,6 +678,7 @@ class PrismaParser {
         dbName: modelDbName,
         fields: fields,
         relations: relations,
+        compositeUniques: compositeUniques,
       ));
     }
 

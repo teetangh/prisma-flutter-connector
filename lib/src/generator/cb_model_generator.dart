@@ -269,6 +269,11 @@ class CbModelGenerator {
   }
 
   /// Generate toJson body for WhereUniqueInput.
+  ///
+  /// Compound keys are FLATTENED into their individual field equalities, so
+  /// the SQL compiler needs no compound-key awareness: findUnique/update/
+  /// delete get `col_a = ? AND col_b = ?` and upsert gets the right
+  /// `ON CONFLICT (col_a, col_b)`.
   String _generateWhereUniqueToJsonBody(PrismaModel model) {
     final uniqueFields =
         model.fields.where((f) => (f.isId || f.isUnique) && !f.isRelation);
@@ -276,8 +281,17 @@ class CbModelGenerator {
     for (final f in uniqueFields) {
       entries.add("if (${f.name} != null) '${f.name}': ${f.name}");
     }
+    for (final key in model.compositeUniques) {
+      final fieldName = key.join('_');
+      entries.add('if ($fieldName != null) ...$fieldName!.toJson()');
+    }
     return 'return <String, dynamic>{${entries.join(', ')},};';
   }
+
+  /// The generated compound-unique input type name, e.g.
+  /// `OrgInvoiceCounterOrganizationIdFiscalYearCompoundUnique`.
+  String _compoundTypeName(PrismaModel model, List<String> key) =>
+      '${model.name}${key.map((k) => k[0].toUpperCase() + k.substring(1)).join()}CompoundUnique';
 
   /// Generate toJson body for WhereInput.
   String _generateWhereInputToJsonBody(PrismaModel model) {
@@ -457,19 +471,51 @@ class CbModelGenerator {
   // === WhereUniqueInput ===
 
   List<Spec> _buildWhereUniqueInput(PrismaModel model) {
-    final uniqueFields =
-        model.fields.where((f) => (f.isId || f.isUnique) && !f.isRelation);
-    if (uniqueFields.isEmpty) return [];
+    final uniqueFields = model.fields
+        .where((f) => (f.isId || f.isUnique) && !f.isRelation)
+        .toList();
+    final composites = model.compositeUniques;
+    if (uniqueFields.isEmpty && composites.isEmpty) return [];
 
-    final params = uniqueFields.map((f) => Parameter((p) => p
-      ..name = f.name
-      ..named = true
-      ..type = refer(f.isList ? 'List<${f.type}>?' : '${f.type}?')));
+    final specs = <Spec>[];
+    final params = <Parameter>[];
 
-    return [
-      _freezedClass('${model.name}WhereUniqueInput', params.toList(),
-          toJsonBody: _generateWhereUniqueToJsonBody(model))
-    ];
+    for (final f in uniqueFields) {
+      params.add(Parameter((p) => p
+        ..name = f.name
+        ..named = true
+        ..type = refer(f.isList ? 'List<${f.type}>?' : '${f.type}?')));
+    }
+
+    // One compound-unique input class per @@id/@@unique composite key.
+    for (final key in composites) {
+      final typeName = _compoundTypeName(model, key);
+      params.add(Parameter((p) => p
+        ..name = key.join('_')
+        ..named = true
+        ..type = refer('$typeName?')));
+
+      final compoundParams = <Parameter>[];
+      final entries = <String>[];
+      for (final fieldName in key) {
+        final f = model.fields.firstWhere((mf) => mf.name == fieldName,
+            orElse: () => throw StateError(
+                'Composite key field "$fieldName" not found on ${model.name}'));
+        compoundParams.add(Parameter((p) => p
+          ..name = fieldName
+          ..named = true
+          ..required = true
+          ..type = refer(_toDartType(f.type))));
+        entries.add("'$fieldName': $fieldName");
+      }
+      specs.add(_freezedClass(typeName, compoundParams,
+          doc: '/// Compound unique key ($key) for ${model.name}',
+          toJsonBody: 'return <String, dynamic>{${entries.join(', ')},};'));
+    }
+
+    specs.add(_freezedClass('${model.name}WhereUniqueInput', params,
+        toJsonBody: _generateWhereUniqueToJsonBody(model)));
+    return specs;
   }
 
   // === WhereInput ===

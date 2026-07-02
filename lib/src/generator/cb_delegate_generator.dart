@@ -33,7 +33,8 @@ class CbDelegateGenerator {
       ])
       ..body.add(_buildDelegateClass(modelName, tableName,
           hasUniqueFields: model.fields
-              .any((f) => (f.isId || f.isUnique) && !f.isRelation))));
+                  .any((f) => (f.isId || f.isUnique) && !f.isRelation) ||
+              model.compositeUniques.isNotEmpty)));
 
     final emitter = DartEmitter(useNullSafetySyntax: true);
     return _formatter.format('${library.accept(emitter)}');
