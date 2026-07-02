@@ -3827,5 +3827,103 @@ void main() {
         expect(() => cc.compile(q), throwsArgumentError);
       });
     });
+
+    group('Nested writes (#64)', () {
+      late SchemaRegistry nestedSchema;
+      late SqlCompiler compiler;
+
+      setUp(() {
+        nestedSchema = SchemaRegistry();
+        nestedSchema.registerModel(ModelSchema(
+          name: 'Product',
+          tableName: 'Product',
+          fields: {
+            'id': const FieldInfo(
+                name: 'id', columnName: 'id', type: 'String', isId: true),
+            'authorId': const FieldInfo(
+                name: 'authorId', columnName: 'authorId', type: 'String'),
+          },
+          relations: {
+            'reviews': RelationInfo.oneToMany(
+                name: 'reviews', targetModel: 'Review', foreignKey: 'productId'),
+            'author': RelationInfo.manyToOne(
+                name: 'author', targetModel: 'User', foreignKey: 'authorId'),
+          },
+        ));
+        nestedSchema.registerModel(const ModelSchema(
+          name: 'Review',
+          tableName: 'Review',
+          fields: {
+            'id': FieldInfo(
+                name: 'id', columnName: 'id', type: 'String', isId: true),
+            'productId': FieldInfo(
+                name: 'productId', columnName: 'productId', type: 'String'),
+          },
+        ));
+        nestedSchema.registerModel(const ModelSchema(
+          name: 'User',
+          tableName: 'users',
+          fields: {
+            'id': FieldInfo(
+                name: 'id', columnName: 'id', type: 'String', isId: true),
+          },
+        ));
+        compiler = SqlCompiler(provider: 'postgresql', schema: nestedSchema);
+      });
+
+      test('to-one connect sets the FK inline on the main INSERT', () {
+        final query = JsonQueryBuilder()
+            .model('Product')
+            .action(QueryAction.create)
+            .data({
+          'id': 'p1',
+          'author': {
+            'connect': {'id': 'u1'}
+          },
+        }).build();
+
+        final compiled = compiler.compileWithRelations(query);
+        expect(compiled.mainQuery.sql, contains('authorId'));
+        expect(compiled.mainQuery.args, contains('u1'));
+        // connect-only to-one has no separate mutation
+        expect(compiled.relationMutations, isEmpty);
+      });
+
+      test('to-many create emits a child INSERT carrying the parent FK', () {
+        final query = JsonQueryBuilder()
+            .model('Product')
+            .action(QueryAction.create)
+            .data({
+          'id': 'p1',
+          'reviews': {
+            'create': [
+              {'id': 'r1'}
+            ]
+          },
+        }).build();
+
+        final compiled = compiler.compileWithRelations(query);
+        expect(compiled.relationMutations, hasLength(1));
+        final child = compiled.relationMutations.first;
+        expect(child.sql, contains('Review'));
+        expect(child.sql, contains('productId'));
+        expect(child.args, contains('p1'));
+      });
+
+      test('belongsTo create throws instead of silently dropping data', () {
+        final query = JsonQueryBuilder()
+            .model('Product')
+            .action(QueryAction.create)
+            .data({
+          'id': 'p1',
+          'author': {
+            'create': {'id': 'u1'}
+          },
+        }).build();
+
+        expect(() => compiler.compileWithRelations(query),
+            throwsA(isA<UnsupportedError>()));
+      });
+    });
   });
 }

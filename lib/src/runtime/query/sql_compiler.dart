@@ -1166,163 +1166,173 @@ RETURNING *
   ///     .build();
   /// ```
   CompiledMutation compileWithRelations(JsonQuery query) {
+    final mainQuery = _compileCleanMainMutation(query);
+    // Compile-time parent id (may be null on create-with-@default(uuid)); the
+    // atomic executor rebuilds these from the RETURNING row for correctness.
+    return CompiledMutation(
+      mainQuery: mainQuery,
+      relationMutations:
+          _buildRelationMutations(query, _compileTimeParentId(query)),
+    );
+  }
+
+  /// Build the main INSERT/UPDATE with relation-op keys stripped from `data`
+  /// (a 1:1 `connect` sets the FK on this row so it stays in the main query).
+  SqlQuery _compileCleanMainMutation(JsonQuery query) {
     final args = query.args.arguments ?? {};
     final data = args['data'] as Map<String, dynamic>? ?? {};
-
-    // Extract relation operations from data
-    final relationMutations = <SqlQuery>[];
-    final cleanData = <String, dynamic>{};
     final effectiveSchema = schema ?? schemaRegistry;
+    final cleanData = <String, dynamic>{};
 
     for (final entry in data.entries) {
       final value = entry.value;
-      if (value is Map<String, dynamic> &&
-          (value.containsKey('connect') ||
-              value.containsKey('disconnect') ||
-              value.containsKey('create'))) {
-        // This is a relation operation - look up the relation info
+      if (_isRelationOp(value)) {
         final relation =
             effectiveSchema.getRelation(query.modelName, entry.key);
-        if (relation != null && relation.type == RelationType.manyToMany) {
-          // Get primary key field name from schema (fallback to 'id' for compatibility)
-          final parentModel = effectiveSchema.getModel(query.modelName);
-          final parentPkFieldName = parentModel?.primaryKeys.isNotEmpty == true
-              ? parentModel!.primaryKeys.first.name
-              : 'id';
-
-          // Get the primary key value for the parent record
-          // For create, it's in the data; for update, it's in the where clause
-          String? parentId;
-          if (query.action == 'create') {
-            parentId = data[parentPkFieldName]?.toString();
-          } else if (query.action == 'update') {
-            final where = args['where'] as Map<String, dynamic>?;
-            parentId = where?[parentPkFieldName]?.toString();
-          }
-
-          if (parentId != null) {
-            // Compile connect operations
-            if (value.containsKey('connect')) {
-              final connectItems =
-                  _normalizeConnectDisconnect(value['connect']);
-              relationMutations.addAll(_compileConnectOperations(
-                parentId: parentId,
-                relation: relation,
-                connectItems: connectItems,
-                effectiveSchema: effectiveSchema,
-              ));
-            }
-
-            // Compile disconnect operations
-            if (value.containsKey('disconnect')) {
-              final disconnectItems =
-                  _normalizeConnectDisconnect(value['disconnect']);
-              relationMutations.addAll(_compileDisconnectOperations(
-                parentId: parentId,
-                relation: relation,
-                disconnectItems: disconnectItems,
-                effectiveSchema: effectiveSchema,
-              ));
-            }
-          }
-        } else if (relation != null &&
-            (relation.type == RelationType.oneToMany ||
-                relation.type == RelationType.oneToOne)) {
-          // 1:N or 1:1 nested writes: {create: [...]} or {connect: {id: ...}}
-          if (value.containsKey('create')) {
-            final creates = value['create'];
-            final createList = creates is List
-                ? List<Map<String, dynamic>>.from(creates)
-                : [creates as Map<String, dynamic>];
-
-            // Get parent PK field name
-            final parentModel = effectiveSchema.getModel(query.modelName);
-            final parentPkFieldName =
-                parentModel?.primaryKeys.isNotEmpty == true
-                    ? parentModel!.primaryKeys.first.name
-                    : 'id';
-
-            // Get parent ID from data (for create) or where (for update)
-            // Keep original type (String, int, etc.) for type-safe FK values
-            dynamic parentId;
-            if (query.action == 'create') {
-              parentId = data[parentPkFieldName];
-            } else if (query.action == 'update') {
-              final where = args['where'] as Map<String, dynamic>?;
-              parentId = where?[parentPkFieldName];
-            }
-
-            if (parentId != null) {
-              for (final createData in createList) {
-                // Inject the FK pointing to parent
-                final childData = Map<String, dynamic>.from(createData);
-                childData[relation.foreignKey] = parentId;
-
-                // Auto-generate UUID for child ID if the target model has @default(uuid())
-                final targetModel =
-                    effectiveSchema.getModel(relation.targetModel);
-                if (targetModel != null) {
-                  for (final field in targetModel.fields.values) {
-                    if (field.defaultValue == 'uuid()' &&
-                        !childData.containsKey(field.name)) {
-                      if (provider == 'postgresql' || provider == 'supabase') {
-                        childData[field.name] =
-                            const _RawSql('gen_random_uuid()');
-                      }
-                    } else if (field.defaultValue == 'now()' &&
-                        !childData.containsKey(field.name)) {
-                      if (provider == 'postgresql' || provider == 'supabase') {
-                        childData[field.name] = const _RawSql('NOW()');
-                      }
-                    }
-                  }
-                }
-
-                // Compile child INSERT
-                final targetTableName =
-                    targetModel?.tableName ?? relation.targetModel;
-                final childQuery = JsonQuery(
-                  modelName: targetTableName,
-                  action: 'create',
-                  args: JsonQueryArgs(arguments: {'data': childData}),
-                );
-                relationMutations.add(compile(childQuery));
-              }
-            }
-          }
-
-          if (value.containsKey('connect')) {
-            // 1:1 connect: set FK on parent row
-            final connectData = value['connect'] as Map<String, dynamic>;
-            final targetPkValue = connectData.values.first;
-            // The FK is on the current model → set it in cleanData
-            cleanData[relation.foreignKey] = targetPkValue;
-          }
+        // 1:1/N:1 connect where THIS row owns the FK → set it inline.
+        if (relation != null &&
+            (relation.type == RelationType.oneToOne ||
+                relation.type == RelationType.manyToOne) &&
+            (value as Map<String, dynamic>).containsKey('connect')) {
+          final connectData = value['connect'] as Map<String, dynamic>;
+          cleanData[relation.foreignKey] = connectData.values.first;
         }
-        // If relation is null, the field will be passed through and likely fail
-        // downstream with a more specific error about the unknown field
+        // A belongsTo `create` (this row owns the FK) requires creating the
+        // parent first and inlining its generated id — parent-first ordering
+        // the main-first engine can't express. Fail loudly instead of
+        // silently dropping the nested data.
+        else if (relation != null &&
+            relation.type == RelationType.manyToOne &&
+            (value as Map<String, dynamic>).containsKey('create')) {
+          throw UnsupportedError(
+            'Nested `create` on the to-one relation "${entry.key}" of '
+            '${query.modelName} is not supported: create the referenced '
+            '${relation.targetModel} first and use `connect`.',
+          );
+        }
+        // Other relation ops become separate mutations (not in main query).
       } else {
-        // Regular field - keep in clean data
         cleanData[entry.key] = value;
       }
     }
 
-    // Create modified query with clean data (no relation operations)
-    final cleanArgs = Map<String, dynamic>.from(args);
-    cleanArgs['data'] = cleanData;
-    final cleanQuery = JsonQuery(
+    final cleanArgs = Map<String, dynamic>.from(args)..['data'] = cleanData;
+    return compile(JsonQuery(
       modelName: query.modelName,
       action: query.action,
       args: JsonQueryArgs(arguments: cleanArgs),
-    );
+    ));
+  }
 
-    // Compile the main query
-    final mainQuery = compile(cleanQuery);
+  bool _isRelationOp(dynamic value) =>
+      value is Map<String, dynamic> &&
+      (value.containsKey('connect') ||
+          value.containsKey('disconnect') ||
+          value.containsKey('create'));
 
-    return CompiledMutation(
-      mainQuery: mainQuery,
-      relationMutations: relationMutations,
-    );
+  /// Parent PK value known at compile time (from `data` on create or `where`
+  /// on update); null when the id is DB-generated on create.
+  dynamic _compileTimeParentId(JsonQuery query) {
+    final args = query.args.arguments ?? {};
+    final data = args['data'] as Map<String, dynamic>? ?? {};
+    final effectiveSchema = schema ?? schemaRegistry;
+    final parentModel = effectiveSchema.getModel(query.modelName);
+    final pkField = parentModel?.primaryKeys.isNotEmpty == true
+        ? parentModel!.primaryKeys.first.name
+        : 'id';
+    if (query.action == 'update') {
+      return (args['where'] as Map<String, dynamic>?)?[pkField];
+    }
+    return data[pkField];
+  }
+
+  /// Rebuild relation mutations using the parent id from the main mutation's
+  /// RETURNING row — this fixes nested writes on a create whose PK is
+  /// DB-generated (`@default(uuid())`), where the id isn't known at compile.
+  List<SqlQuery> buildRelationMutationsFromResult(
+    JsonQuery query,
+    Map<String, dynamic>? resultRow,
+  ) {
+    final effectiveSchema = schema ?? schemaRegistry;
+    final parentModel = effectiveSchema.getModel(query.modelName);
+    final pkCol = parentModel?.primaryKeys.isNotEmpty == true
+        ? parentModel!.primaryKeys.first.columnName
+        : 'id';
+    final parentId = resultRow?[pkCol] ?? _compileTimeParentId(query);
+    return _buildRelationMutations(query, parentId);
+  }
+
+  /// Compile the m2m connect/disconnect and 1:N/1:1 `create` relation
+  /// mutations for [query] given the resolved [parentId].
+  List<SqlQuery> _buildRelationMutations(JsonQuery query, dynamic parentId) {
+    if (parentId == null) return const [];
+    final args = query.args.arguments ?? {};
+    final data = args['data'] as Map<String, dynamic>? ?? {};
+    final effectiveSchema = schema ?? schemaRegistry;
+    final mutations = <SqlQuery>[];
+
+    for (final entry in data.entries) {
+      final value = entry.value;
+      if (!_isRelationOp(value)) continue;
+      final relation = effectiveSchema.getRelation(query.modelName, entry.key);
+      if (relation == null) continue;
+      final v = value as Map<String, dynamic>;
+
+      if (relation.type == RelationType.manyToMany) {
+        if (v.containsKey('connect')) {
+          mutations.addAll(_compileConnectOperations(
+            parentId: parentId.toString(),
+            relation: relation,
+            connectItems: _normalizeConnectDisconnect(v['connect']),
+            effectiveSchema: effectiveSchema,
+          ));
+        }
+        if (v.containsKey('disconnect')) {
+          mutations.addAll(_compileDisconnectOperations(
+            parentId: parentId.toString(),
+            relation: relation,
+            disconnectItems: _normalizeConnectDisconnect(v['disconnect']),
+            effectiveSchema: effectiveSchema,
+          ));
+        }
+      } else if (relation.type == RelationType.oneToMany ||
+          relation.type == RelationType.oneToOne) {
+        // Nested create: child rows carry the FK back to the parent.
+        if (v.containsKey('create')) {
+          final creates = v['create'];
+          final createList = creates is List
+              ? List<Map<String, dynamic>>.from(creates)
+              : [creates as Map<String, dynamic>];
+          final targetModel = effectiveSchema.getModel(relation.targetModel);
+          for (final createData in createList) {
+            final childData = Map<String, dynamic>.from(createData);
+            childData[relation.foreignKey] = parentId;
+            if (targetModel != null) {
+              for (final field in targetModel.fields.values) {
+                if (childData.containsKey(field.name)) continue;
+                if (field.defaultValue == 'uuid()' ||
+                    field.defaultValue == 'cuid()') {
+                  if (provider == 'postgresql' || provider == 'supabase') {
+                    childData[field.name] = const _RawSql('gen_random_uuid()');
+                  }
+                } else if (field.defaultValue == 'now()' || field.isUpdatedAt) {
+                  childData[field.name] =
+                      (provider == 'postgresql' || provider == 'supabase')
+                          ? const _RawSql('NOW()')
+                          : DateTime.now().toUtc().toIso8601String();
+                }
+              }
+            }
+            mutations.add(compile(JsonQuery(
+              modelName: targetModel?.tableName ?? relation.targetModel,
+              action: 'create',
+              args: JsonQueryArgs(arguments: {'data': childData}),
+            )));
+          }
+        }
+      }
+    }
+    return mutations;
   }
 
   /// Normalize connect/disconnect input to a list of maps.

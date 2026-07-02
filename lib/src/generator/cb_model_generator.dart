@@ -48,6 +48,7 @@ class CbModelGenerator {
         _buildRelationFilter(model),
         _buildOrderByInput(model),
         _buildInclude(model),
+        ..._buildRelationWriteInputs(model),
         ..._buildEnumConverters(model),
       ]));
 
@@ -279,6 +280,10 @@ class CbModelGenerator {
         entries.add("'$name': $expr");
       }
     }
+    // Nested relation writes (create/connect/disconnect) are always optional.
+    for (final f in model.fields.where((f) => f.isRelation)) {
+      entries.add("if (${f.name} != null) '${f.name}': ${f.name}!.toJson()");
+    }
     return 'return <String, dynamic>{${entries.join(', ')},};';
   }
 
@@ -427,6 +432,7 @@ class CbModelGenerator {
       }
       params.add(_createInputParam(f));
     }
+    _addRelationWriteParams(model, params);
 
     return _freezedClass('Create${model.name}Input', params,
         doc: '/// Input for creating a new ${model.name}',
@@ -484,6 +490,7 @@ class CbModelGenerator {
         ..named = true
         ..type = refer(f.isList ? 'List<$dartType>?' : '$dartType?')));
     }
+    _addRelationWriteParams(model, params);
 
     return _freezedClass('Update${model.name}Input', params,
         doc: '/// Input for updating an existing ${model.name}',
@@ -658,6 +665,85 @@ class CbModelGenerator {
             "if (is_ != null) 'is': is_!.toJson(), "
             "if (isNot != null) 'isNot': isNot!.toJson(),"
             "};");
+  }
+
+  // === Nested relation write inputs (create/connect/disconnect) ===
+
+  String _relationWriteTypeName(PrismaModel model, PrismaField f) =>
+      '${model.name}${f.name[0].toUpperCase()}${f.name.substring(1)}WriteInput';
+
+  /// Append one optional nested-write param per relation to a Create/Update
+  /// input's param list, typed to the relation's `${...}WriteInput` class.
+  void _addRelationWriteParams(PrismaModel model, List<Parameter> params) {
+    for (final f in model.fields.where((f) => f.isRelation)) {
+      params.add(Parameter((p) => p
+        ..name = f.name
+        ..named = true
+        ..type = refer('${_relationWriteTypeName(model, f)}?')));
+    }
+  }
+
+  /// Whether the related model exposes a WhereUniqueInput (field-level unique
+  /// or a composite key) — required for connect/disconnect.
+  bool _relatedHasWhereUnique(String relatedModel) {
+    final m = schema.models.where((m) => m.name == relatedModel).firstOrNull;
+    if (m == null) return false;
+    return m.fields.any((f) => (f.isId || f.isUnique) && !f.isRelation) ||
+        m.compositeUniques.isNotEmpty;
+  }
+
+  /// One nested-write input per relation: `connect`/`disconnect` (when the
+  /// related model has a unique key) and `create`. toJson yields the shape the
+  /// relation-mutation compiler consumes.
+  List<Spec> _buildRelationWriteInputs(PrismaModel model) {
+    final specs = <Spec>[];
+    for (final f in model.fields.where((f) => f.isRelation)) {
+      final related = f.type;
+      final canConnect = _relatedHasWhereUnique(related);
+      final params = <Parameter>[];
+      final entries = <String>[];
+
+      if (f.isList) {
+        if (canConnect) {
+          params.add(Parameter((p) => p
+            ..name = 'connect'
+            ..named = true
+            ..type = refer('List<${related}WhereUniqueInput>?')));
+          params.add(Parameter((p) => p
+            ..name = 'disconnect'
+            ..named = true
+            ..type = refer('List<${related}WhereUniqueInput>?')));
+          entries.add(
+              "if (connect != null) 'connect': connect!.map((e) => e.toJson()).toList()");
+          entries.add(
+              "if (disconnect != null) 'disconnect': disconnect!.map((e) => e.toJson()).toList()");
+        }
+        params.add(Parameter((p) => p
+          ..name = 'create'
+          ..named = true
+          ..type = refer('List<Create${related}Input>?')));
+        entries.add(
+            "if (create != null) 'create': create!.map((e) => e.toJson()).toList()");
+      } else {
+        if (canConnect) {
+          params.add(Parameter((p) => p
+            ..name = 'connect'
+            ..named = true
+            ..type = refer('${related}WhereUniqueInput?')));
+          entries.add("if (connect != null) 'connect': connect!.toJson()");
+        }
+        params.add(Parameter((p) => p
+          ..name = 'create'
+          ..named = true
+          ..type = refer('Create${related}Input?')));
+        entries.add("if (create != null) 'create': create!.toJson()");
+      }
+
+      specs.add(_freezedClass(_relationWriteTypeName(model, f), params,
+          doc: '/// Nested write for ${model.name}.${f.name}',
+          toJsonBody: 'return <String, dynamic>{${entries.join(', ')},};'));
+    }
+    return specs;
   }
 
   // === Include (typed relation selection) ===

@@ -34,14 +34,21 @@ class CbDelegateGenerator {
       ..body.add(_buildDelegateClass(modelName, tableName,
           hasUniqueFields: model.fields
                   .any((f) => (f.isId || f.isUnique) && !f.isRelation) ||
-              model.compositeUniques.isNotEmpty)));
+              model.compositeUniques.isNotEmpty,
+          relationFields: model.fields
+              .where((f) => f.isRelation)
+              .map((f) => f.name)
+              .toList())));
 
     final emitter = DartEmitter(useNullSafetySyntax: true);
     return _formatter.format('${library.accept(emitter)}');
   }
 
   Class _buildDelegateClass(String modelName, String tableName,
-      {required bool hasUniqueFields}) {
+      {required bool hasUniqueFields, required List<String> relationFields}) {
+    final relLiteral = relationFields.isEmpty
+        ? 'const <String>{}'
+        : '{${relationFields.map((n) => "'$n'").join(', ')}}';
     return Class((b) => b
       ..name = '${modelName}Delegate'
       ..docs.addAll([
@@ -66,9 +73,9 @@ class CbDelegateGenerator {
         _findMany(modelName, tableName),
         _findManyRaw(modelName, tableName),
         _findFirstRaw(modelName, tableName),
-        _create(modelName, tableName),
+        _create(modelName, tableName, relLiteral),
         _createMany(modelName, tableName),
-        if (hasUniqueFields) _update(modelName, tableName),
+        if (hasUniqueFields) _update(modelName, tableName, relLiteral),
         if (hasUniqueFields) _upsert(modelName, tableName),
         _updateMany(modelName, tableName),
         if (hasUniqueFields) _delete(modelName, tableName),
@@ -351,7 +358,7 @@ class CbDelegateGenerator {
       return await _executor.executeQueryAsSingleMap(queryBuilder.build());
     '''));
 
-  Method _create(String m, String t) => Method((b) => b
+  Method _create(String m, String t, String relLiteral) => Method((b) => b
     ..name = 'create'
     ..docs.add('/// Create a new $m')
     ..modifier = MethodModifier.async
@@ -362,11 +369,21 @@ class CbDelegateGenerator {
       ..required = true
       ..type = refer('Create${m}Input')))
     ..body = Code('''
+      final data0 = data.toJson();
       final query = JsonQueryBuilder()
           .model('$t')
           .action(QueryAction.create)
-          .data(data.toJson())
+          .data(data0)
           .build();
+
+      const relationFields = $relLiteral;
+      if (data0.keys.any(relationFields.contains)) {
+        final row = await _executor.executeMutationWithRelationsReturning(query);
+        if (row == null) {
+          throw Exception('Failed to create $m');
+        }
+        return $m.fromJson(_normalizeForJson(row));
+      }
 
       final result = await _executor.executeQueryAsSingleMap(query);
       if (result == null) {
@@ -395,7 +412,7 @@ class CbDelegateGenerator {
       return await _executor.executeMutation(query);
     '''));
 
-  Method _update(String m, String t) => Method((b) => b
+  Method _update(String m, String t, String relLiteral) => Method((b) => b
     ..name = 'update'
     ..docs.add('/// Update a $m')
     ..modifier = MethodModifier.async
@@ -413,14 +430,20 @@ class CbDelegateGenerator {
         ..type = refer('Update${m}Input')),
     ])
     ..body = Code('''
+      final data0 = data.toJson();
       final query = JsonQueryBuilder()
           .model('$t')
           .action(QueryAction.update)
           .where(_whereUniqueToJson(where))
-          .data(data.toJson())
+          .data(data0)
           .build();
 
-      await _executor.executeMutation(query);
+      const relationFields = $relLiteral;
+      if (data0.keys.any(relationFields.contains)) {
+        await _executor.executeMutationWithRelationsReturning(query);
+      } else {
+        await _executor.executeMutation(query);
+      }
 
       // Fetch the updated record
       return await findUniqueOrThrow(where: where);
