@@ -425,7 +425,8 @@ class SqlCompiler {
     // include multiplies rows via JOIN, so LIMIT 1 would truncate the child
     // collection. Suppress it then and let the deserializer group + the caller
     // take the first parent. To-one-only includes stay capped.
-    final singleWithToMany = single && _includeHasToMany(query.modelName, include);
+    final singleWithToMany =
+        single && _includeHasToMany(query.modelName, include);
     if (single && !singleWithToMany) {
       sql.write(' LIMIT 1');
     } else if (take != null) {
@@ -696,7 +697,8 @@ class SqlCompiler {
             'multiply': '*',
             'divide': '/',
           };
-          setClauses.add('$col = $col ${sqlOp[op]} ${_placeholder(paramIndex++)}');
+          setClauses
+              .add('$col = $col ${sqlOp[op]} ${_placeholder(paramIndex++)}');
         }
         values.add(operand);
         types.add(_inferArgType(operand));
@@ -2189,7 +2191,8 @@ RETURNING *
         // JSON(B) column filters (#69): detected by a `path` key or a
         // JSON-specific operator. Handled before scalar validation.
         if (_isJsonFilter(value)) {
-          final (jc, jv, jt) = _buildJsonCondition(columnName, value, paramIndex);
+          final (jc, jv, jt) =
+              _buildJsonCondition(columnName, value, paramIndex);
           if (jc.isNotEmpty) {
             conditions.add(jc);
             values.addAll(jv);
@@ -3066,7 +3069,8 @@ WHERE $joinTable.$joinColumn = $parentRef.$pkCol''';
       values.add(cursor[ordered[i].$1]);
       types.add(_inferArgType(cursor[ordered[i].$1]));
 
-      disjuncts.add(terms.length == 1 ? terms.first : '(${terms.join(' AND ')})');
+      disjuncts
+          .add(terms.length == 1 ? terms.first : '(${terms.join(' AND ')})');
     }
 
     final clause =

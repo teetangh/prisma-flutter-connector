@@ -110,8 +110,11 @@ void main() {
       final rc = RelationCompiler(schema: schema);
 
       // Build an include nested deeper than the limit.
-      Map<String, dynamic> nest(int n) =>
-          n == 0 ? {'child': true} : {'child': {'include': nest(n - 1)}};
+      Map<String, dynamic> nest(int n) => n == 0
+          ? {'child': true}
+          : {
+              'child': {'include': nest(n - 1)}
+            };
 
       expect(
         () => rc.compile(

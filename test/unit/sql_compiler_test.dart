@@ -3845,7 +3845,9 @@ void main() {
           },
           relations: {
             'reviews': RelationInfo.oneToMany(
-                name: 'reviews', targetModel: 'Review', foreignKey: 'productId'),
+                name: 'reviews',
+                targetModel: 'Review',
+                foreignKey: 'productId'),
             'author': RelationInfo.manyToOne(
                 name: 'author', targetModel: 'User', foreignKey: 'authorId'),
           },
@@ -3948,8 +3950,7 @@ void main() {
         final q = JsonQueryBuilder()
             .model('Post')
             .action(QueryAction.findMany)
-            .orderBy({'createdAt': 'desc'})
-            .cursor({'createdAt': 't'}).build();
+            .orderBy({'createdAt': 'desc'}).cursor({'createdAt': 't'}).build();
         final r = compiler.compile(q);
         expect(r.sql, contains('"createdAt" <= \$1'));
       });
@@ -3959,11 +3960,9 @@ void main() {
             .model('Post')
             .action(QueryAction.findMany)
             .orderBy([
-              {'score': 'desc'},
-              {'id': 'asc'}
-            ])
-            .cursor({'score': 10, 'id': 'x'})
-            .build();
+          {'score': 'desc'},
+          {'id': 'asc'}
+        ]).cursor({'score': 10, 'id': 'x'}).build();
         final r = compiler.compile(q);
         // (score < ?) OR (score = ? AND id >= ?)
         expect(r.sql, contains('"score" < \$1'));
@@ -3975,9 +3974,8 @@ void main() {
         final q = JsonQueryBuilder()
             .model('Post')
             .action(QueryAction.findMany)
-            .where({'published': true})
-            .orderBy({'id': 'asc'})
-            .cursor({'id': 'abc'}).build();
+            .where({'published': true}).orderBy({'id': 'asc'}).cursor(
+                {'id': 'abc'}).build();
         final r = compiler.compile(q);
         expect(r.sql, contains('WHERE ('));
         expect(r.sql, contains(') AND ('));

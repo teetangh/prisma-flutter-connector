@@ -39,8 +39,7 @@ void main() {
     test('create routes to relations engine when relation ops present', () {
       final flat = _flat(delegateCode('Post'));
       expect(flat, contains("const relationFields = {'author', 'comments'}"));
-      expect(
-          flat, contains('data0.keys.any(relationFields.contains)'));
+      expect(flat, contains('data0.keys.any(relationFields.contains)'));
       expect(flat,
           contains('_executor.executeMutationWithRelationsReturning(query)'));
     });
