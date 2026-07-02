@@ -1016,8 +1016,10 @@ class SqlCompiler {
     final args = query.args.arguments ?? {};
     final where = args['where'] as Map<String, dynamic>? ?? {};
     final data = args['data'] as Map<String, dynamic>? ?? {};
-    final createData = data['create'] as Map<String, dynamic>? ?? {};
-    final updateData = data['update'] as Map<String, dynamic>? ?? {};
+    final createData = Map<String, dynamic>.from(
+        data['create'] as Map<String, dynamic>? ?? {});
+    final updateData = Map<String, dynamic>.from(
+        data['update'] as Map<String, dynamic>? ?? {});
 
     final tableName = _resolveTableName(query.modelName);
 
@@ -1026,6 +1028,36 @@ class SqlCompiler {
     if (conflictKeys.isEmpty) {
       throw ArgumentError(
           'Upsert requires at least one unique field in where clause');
+    }
+
+    // Autofill @default(uuid()/cuid()/now()) + @updatedAt on the CREATE arm,
+    // and refresh @updatedAt on the UPDATE arm — mirroring create/update.
+    final pgLike = provider == 'postgresql' || provider == 'supabase';
+    final model = (schema ?? schemaRegistry).getModel(query.modelName);
+    if (model != null) {
+      for (final field in model.fields.values) {
+        final present = createData.containsKey(field.name) ||
+            createData.containsKey(field.columnName);
+        if (!present) {
+          if (field.defaultValue == 'uuid()' ||
+              field.defaultValue == 'cuid()') {
+            if (pgLike) {
+              createData[field.name] = const _RawSql('gen_random_uuid()');
+            }
+          } else if (field.defaultValue == 'now()' || field.isUpdatedAt) {
+            createData[field.name] = pgLike
+                ? const _RawSql('NOW()')
+                : DateTime.now().toUtc().toIso8601String();
+          }
+        }
+        if (field.isUpdatedAt &&
+            !updateData.containsKey(field.name) &&
+            !updateData.containsKey(field.columnName)) {
+          updateData[field.name] = pgLike
+              ? const _RawSql('NOW()')
+              : DateTime.now().toUtc().toIso8601String();
+        }
+      }
     }
 
     // Build INSERT columns and values
@@ -1038,20 +1070,27 @@ class SqlCompiler {
     for (final entry in createData.entries) {
       columns.add(
           _quoteIdentifier(_resolveColumnName(query.modelName, entry.key)));
-      valuePlaceholders.add(_placeholder(paramIndex++));
-      values.add(entry.value);
-      types.add(_inferArgType(entry.value));
+      if (entry.value is _RawSql) {
+        valuePlaceholders.add((entry.value as _RawSql).sql);
+      } else {
+        valuePlaceholders.add(_placeholder(paramIndex++));
+        values.add(entry.value);
+        types.add(_inferArgType(entry.value));
+      }
     }
 
     // Build UPDATE SET clause
     final updateSetClauses = <String>[];
     for (final entry in updateData.entries) {
-      updateSetClauses.add(
-        '${_quoteIdentifier(_resolveColumnName(query.modelName, entry.key))}'
-        ' = ${_placeholder(paramIndex++)}',
-      );
-      values.add(entry.value);
-      types.add(_inferArgType(entry.value));
+      final col =
+          _quoteIdentifier(_resolveColumnName(query.modelName, entry.key));
+      if (entry.value is _RawSql) {
+        updateSetClauses.add('$col = ${(entry.value as _RawSql).sql}');
+      } else {
+        updateSetClauses.add('$col = ${_placeholder(paramIndex++)}');
+        values.add(entry.value);
+        types.add(_inferArgType(entry.value));
+      }
     }
 
     // @map-resolved conflict target columns

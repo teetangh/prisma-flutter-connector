@@ -55,5 +55,39 @@ model User {
       expect(code, contains('findUnique'));
       expect(code, contains('UserWhereUniqueInput'));
     });
+
+    test('upsert is generated for models with a unique field', () {
+      const schema = '''
+model User {
+  id    String @id @default(cuid())
+  email String @unique
+}
+''';
+      final parsed = parser.parse(schema);
+      final code = CbDelegateGenerator(parsed, serverMode: true)
+          .generateDelegate(parsed.models.first);
+
+      expect(code, contains('Future<User> upsert('));
+      expect(code, contains('CreateUserInput create'));
+      expect(code, contains('UpdateUserInput update'));
+      expect(code, contains('QueryAction.upsert'));
+    });
+
+    test('upsert is omitted for composite-@@id-only models', () {
+      const schema = '''
+model OrgInvoiceCounter {
+  organizationId String
+  fiscalYear     String
+  lastNumber     Int    @default(0)
+
+  @@id([organizationId, fiscalYear])
+}
+''';
+      final parsed = parser.parse(schema);
+      final code = CbDelegateGenerator(parsed, serverMode: true)
+          .generateDelegate(parsed.models.first);
+
+      expect(code, isNot(contains('upsert(')));
+    });
   });
 }

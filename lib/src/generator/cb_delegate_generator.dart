@@ -67,6 +67,7 @@ class CbDelegateGenerator {
         _create(modelName, tableName),
         _createMany(modelName, tableName),
         if (hasUniqueFields) _update(modelName, tableName),
+        if (hasUniqueFields) _upsert(modelName, tableName),
         _updateMany(modelName, tableName),
         if (hasUniqueFields) _delete(modelName, tableName),
         _deleteMany(modelName, tableName),
@@ -392,6 +393,43 @@ class CbDelegateGenerator {
 
       // Fetch the updated record
       return await findUniqueOrThrow(where: where);
+    '''));
+
+  Method _upsert(String m, String t) => Method((b) => b
+    ..name = 'upsert'
+    ..docs.add('/// Create a $m, or update it if the unique key already exists')
+    ..modifier = MethodModifier.async
+    ..returns = refer('Future<$m>')
+    ..optionalParameters.addAll([
+      Parameter((p) => p
+        ..name = 'where'
+        ..named = true
+        ..required = true
+        ..type = refer('${m}WhereUniqueInput')),
+      Parameter((p) => p
+        ..name = 'create'
+        ..named = true
+        ..required = true
+        ..type = refer('Create${m}Input')),
+      Parameter((p) => p
+        ..name = 'update'
+        ..named = true
+        ..required = true
+        ..type = refer('Update${m}Input')),
+    ])
+    ..body = Code('''
+      final query = JsonQueryBuilder()
+          .model('$t')
+          .action(QueryAction.upsert)
+          .where(_whereUniqueToJson(where))
+          .data({'create': create.toJson(), 'update': update.toJson()})
+          .build();
+
+      final result = await _executor.executeQueryAsSingleMap(query);
+      if (result == null) {
+        throw Exception('Failed to upsert $m');
+      }
+      return $m.fromJson(_normalizeForJson(result));
     '''));
 
   Method _updateMany(String m, String t) => Method((b) => b
