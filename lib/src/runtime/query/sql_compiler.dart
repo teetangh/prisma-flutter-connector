@@ -924,9 +924,19 @@ class SqlCompiler {
     // Build SELECT clause with group by fields and aggregations
     final selectParts = <String>[];
 
-    // Add group by fields to SELECT
+    // Resolve a Dart field name to its DB column (pass-through for names
+    // that are already columns), for @map-ed fields in by/aggregates.
+    String col(Object field) =>
+        _resolveColumnName(query.modelName, field.toString());
+
+    // Add group by fields to SELECT, aliasing @map-ed columns back to the
+    // Dart field name so the result map stays keyed by the field.
     for (final field in groupByFields) {
-      selectParts.add(_quoteIdentifier(field.toString()));
+      final f = field.toString();
+      final c = col(f);
+      selectParts.add(c == f
+          ? _quoteIdentifier(c)
+          : '${_quoteIdentifier(c)} AS ${_quoteIdentifier(f)}');
     }
 
     // Add aggregation functions
@@ -936,25 +946,25 @@ class SqlCompiler {
     if (agg['_avg'] is Map) {
       for (final field in (agg['_avg'] as Map).keys) {
         selectParts
-            .add('AVG(${_quoteIdentifier(field.toString())}) AS "_avg_$field"');
+            .add('AVG(${_quoteIdentifier(col(field))}) AS "_avg_$field"');
       }
     }
     if (agg['_sum'] is Map) {
       for (final field in (agg['_sum'] as Map).keys) {
         selectParts
-            .add('SUM(${_quoteIdentifier(field.toString())}) AS "_sum_$field"');
+            .add('SUM(${_quoteIdentifier(col(field))}) AS "_sum_$field"');
       }
     }
     if (agg['_min'] is Map) {
       for (final field in (agg['_min'] as Map).keys) {
         selectParts
-            .add('MIN(${_quoteIdentifier(field.toString())}) AS "_min_$field"');
+            .add('MIN(${_quoteIdentifier(col(field))}) AS "_min_$field"');
       }
     }
     if (agg['_max'] is Map) {
       for (final field in (agg['_max'] as Map).keys) {
         selectParts
-            .add('MAX(${_quoteIdentifier(field.toString())}) AS "_max_$field"');
+            .add('MAX(${_quoteIdentifier(col(field))}) AS "_max_$field"');
       }
     }
 
@@ -972,7 +982,7 @@ class SqlCompiler {
 
     if (groupByFields.isNotEmpty) {
       sql.write(
-          ' GROUP BY ${groupByFields.map((f) => _quoteIdentifier(f.toString())).join(', ')}');
+          ' GROUP BY ${groupByFields.map((f) => _quoteIdentifier(col(f))).join(', ')}');
     }
 
     if (orderBy != null) {
@@ -1026,7 +1036,8 @@ class SqlCompiler {
     var paramIndex = 1;
 
     for (final entry in createData.entries) {
-      columns.add(_quoteIdentifier(entry.key));
+      columns.add(
+          _quoteIdentifier(_resolveColumnName(query.modelName, entry.key)));
       valuePlaceholders.add(_placeholder(paramIndex++));
       values.add(entry.value);
       types.add(_inferArgType(entry.value));
@@ -1036,11 +1047,16 @@ class SqlCompiler {
     final updateSetClauses = <String>[];
     for (final entry in updateData.entries) {
       updateSetClauses.add(
-        '${_quoteIdentifier(entry.key)} = ${_placeholder(paramIndex++)}',
+        '${_quoteIdentifier(_resolveColumnName(query.modelName, entry.key))}'
+        ' = ${_placeholder(paramIndex++)}',
       );
       values.add(entry.value);
       types.add(_inferArgType(entry.value));
     }
+
+    // @map-resolved conflict target columns
+    final conflictCols =
+        conflictKeys.map((k) => _resolveColumnName(query.modelName, k));
 
     // Generate SQL based on provider
     String sql;
@@ -1049,7 +1065,7 @@ class SqlCompiler {
       sql = '''
 INSERT INTO ${_quoteIdentifier(tableName)} (${columns.join(', ')})
 VALUES (${valuePlaceholders.join(', ')})
-ON CONFLICT (${conflictKeys.map(_quoteIdentifier).join(', ')})
+ON CONFLICT (${conflictCols.map(_quoteIdentifier).join(", ")})
 DO UPDATE SET ${updateSetClauses.join(', ')}
 RETURNING *
 '''
@@ -1068,7 +1084,7 @@ ON DUPLICATE KEY UPDATE ${updateSetClauses.join(', ')}
       sql = '''
 INSERT INTO ${_quoteIdentifier(tableName)} (${columns.join(', ')})
 VALUES (${valuePlaceholders.join(', ')})
-ON CONFLICT (${conflictKeys.map(_quoteIdentifier).join(', ')})
+ON CONFLICT (${conflictCols.map(_quoteIdentifier).join(", ")})
 DO UPDATE SET ${updateSetClauses.join(', ')}
 RETURNING *
 '''
@@ -2265,7 +2281,13 @@ RETURNING *
           inverseJoinColumn:
               _quoteIdentifier(relation.inverseJoinColumn ?? 'B'),
           parentRef: parentRef,
-          parentPk: relation.references.first,
+          // Resolve PK columns via the registry so @map-ed PKs work.
+          parentPk: parentModelSchema?.primaryKeys.isNotEmpty == true
+              ? parentModelSchema!.primaryKeys.first.columnName
+              : relation.references.first,
+          targetPk: targetModelSchema?.primaryKeys.isNotEmpty == true
+              ? targetModelSchema!.primaryKeys.first.columnName
+              : 'id',
           subWhere: subWhere,
         );
     }
@@ -2355,15 +2377,17 @@ RETURNING *
     required String inverseJoinColumn,
     required String parentRef,
     required String parentPk,
+    required String targetPk,
     required String subWhere,
   }) {
     final pkCol = _quoteIdentifier(parentPk);
+    final targetPkCol = _quoteIdentifier(targetPk);
 
     // Subquery joins through junction table to target table (with alias)
     // The alias allows nested relation filters to reference this table
     final joinClause = '''
 SELECT 1 FROM $joinTable
-INNER JOIN $targetTable AS $targetAlias ON $targetAlias."id" = $joinTable.$inverseJoinColumn
+INNER JOIN $targetTable AS $targetAlias ON $targetAlias.$targetPkCol = $joinTable.$inverseJoinColumn
 WHERE $joinTable.$joinColumn = $parentRef.$pkCol''';
 
     final fullCondition =
