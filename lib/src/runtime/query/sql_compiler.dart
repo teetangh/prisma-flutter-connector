@@ -732,6 +732,9 @@ class SqlCompiler {
     final agg = args['_aggregate'] as Map<String, dynamic>? ?? {};
 
     final tableName = _resolveTableName(query.modelName);
+    // Resolve @map-ed Dart field names to DB columns for function args;
+    // aliases keep the Dart field name so result keys stay stable.
+    String col(Object f) => _resolveColumnName(query.modelName, f.toString());
     final functions = <String>[];
     final filterValues = <dynamic>[];
     final filterTypes = <ArgType>[];
@@ -754,7 +757,7 @@ class SqlCompiler {
       for (final field in countFields.keys) {
         if (countFields[field] == true) {
           functions.add(
-            'COUNT(${_quoteIdentifier(field)}) AS "_count_$field"',
+            'COUNT(${_quoteIdentifier(col(field))}) AS "_count_$field"',
           );
         }
       }
@@ -788,7 +791,8 @@ class SqlCompiler {
       final avgFields = agg['_avg'] as Map<String, dynamic>;
       for (final field in avgFields.keys) {
         if (avgFields[field] == true) {
-          functions.add('AVG(${_quoteIdentifier(field)}) AS "_avg_$field"');
+          functions
+              .add('AVG(${_quoteIdentifier(col(field))}) AS "_avg_$field"');
         }
       }
     }
@@ -810,7 +814,7 @@ class SqlCompiler {
             );
             filterParamIndex += filter.length;
             functions.add(
-              'AVG(${_quoteIdentifier(field)}) FILTER (WHERE $filterClause) AS ${_quoteIdentifier(alias)}',
+              'AVG(${_quoteIdentifier(col(field))}) FILTER (WHERE $filterClause) AS ${_quoteIdentifier(alias)}',
             );
           }
         }
@@ -822,7 +826,8 @@ class SqlCompiler {
       final sumFields = agg['_sum'] as Map<String, dynamic>;
       for (final field in sumFields.keys) {
         if (sumFields[field] == true) {
-          functions.add('SUM(${_quoteIdentifier(field)}) AS "_sum_$field"');
+          functions
+              .add('SUM(${_quoteIdentifier(col(field))}) AS "_sum_$field"');
         }
       }
     }
@@ -832,7 +837,8 @@ class SqlCompiler {
       final minFields = agg['_min'] as Map<String, dynamic>;
       for (final field in minFields.keys) {
         if (minFields[field] == true) {
-          functions.add('MIN(${_quoteIdentifier(field)}) AS "_min_$field"');
+          functions
+              .add('MIN(${_quoteIdentifier(col(field))}) AS "_min_$field"');
         }
       }
     }
@@ -842,7 +848,8 @@ class SqlCompiler {
       final maxFields = agg['_max'] as Map<String, dynamic>;
       for (final field in maxFields.keys) {
         if (maxFields[field] == true) {
-          functions.add('MAX(${_quoteIdentifier(field)}) AS "_max_$field"');
+          functions
+              .add('MAX(${_quoteIdentifier(col(field))}) AS "_max_$field"');
         }
       }
     }

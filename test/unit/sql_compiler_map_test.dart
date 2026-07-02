@@ -181,6 +181,20 @@ void main() {
       expect(r.sql, contains('COUNT(*)'));
     });
 
+    test('aggregate resolves @map field in function arg, aliases by field', () {
+      final q = JsonQueryBuilder()
+          .model('User')
+          .action(QueryAction.aggregate)
+          .aggregation({
+        '_count': true,
+        '_min': {'status': true},
+      }).build();
+      final r = compiler.compile(q);
+      // MIN over the DB column, alias keeps the Dart field name
+      expect(r.sql, contains('MIN("requestStatus") AS "_min_status"'));
+      expect(r.sql, contains('COUNT(*)'));
+    });
+
     test('upsert resolves @map conflict + column names', () {
       final q = JsonQueryBuilder()
           .model('User')

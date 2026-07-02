@@ -73,6 +73,22 @@ model User {
       expect(code, contains('QueryAction.upsert'));
     });
 
+    test('aggregate + findFirstOrThrow are generated', () {
+      const schema = '''
+model User {
+  id     String @id @default(cuid())
+  rating Int
+}
+''';
+      final parsed = parser.parse(schema);
+      final code = CbDelegateGenerator(parsed, serverMode: true)
+          .generateDelegate(parsed.models.first);
+
+      expect(code, contains('Future<Map<String, dynamic>> aggregate('));
+      expect(code, contains('QueryAction.aggregate'));
+      expect(code, contains('Future<User> findFirstOrThrow('));
+    });
+
     test('upsert is omitted for composite-@@id-only models', () {
       const schema = '''
 model OrgInvoiceCounter {

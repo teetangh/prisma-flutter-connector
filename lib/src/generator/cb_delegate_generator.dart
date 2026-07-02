@@ -61,6 +61,7 @@ class CbDelegateGenerator {
         if (hasUniqueFields) _findUnique(modelName, tableName),
         if (hasUniqueFields) _findUniqueOrThrow(modelName),
         _findFirst(modelName, tableName),
+        _findFirstOrThrow(modelName),
         _findMany(modelName, tableName),
         _findManyRaw(modelName, tableName),
         _findFirstRaw(modelName, tableName),
@@ -73,6 +74,7 @@ class CbDelegateGenerator {
         _deleteMany(modelName, tableName),
         _count(modelName, tableName),
         _groupBy(modelName, tableName),
+        _aggregate(modelName, tableName),
         _normalizeForJson(),
         if (hasUniqueFields) _whereUniqueToJson(modelName),
         _whereToJson(modelName),
@@ -156,6 +158,34 @@ class CbDelegateGenerator {
 
       final result = await _executor.executeQueryAsSingleMap(queryBuilder.build());
       return result != null ? $m.fromJson(_normalizeForJson(result)) : null;
+    '''));
+
+  Method _findFirstOrThrow(String m) => Method((b) => b
+    ..name = 'findFirstOrThrow'
+    ..docs.add('/// Find the first $m matching criteria, or throw if none')
+    ..modifier = MethodModifier.async
+    ..returns = refer('Future<$m>')
+    ..optionalParameters.addAll([
+      Parameter((p) => p
+        ..name = 'where'
+        ..named = true
+        ..type = refer('${m}WhereInput?')),
+      Parameter((p) => p
+        ..name = 'orderBy'
+        ..named = true
+        ..type = refer('${m}OrderByInput?')),
+      Parameter((p) => p
+        ..name = 'include'
+        ..named = true
+        ..type = refer('Map<String, dynamic>?')),
+    ])
+    ..body = Code('''
+      final result =
+          await findFirst(where: where, orderBy: orderBy, include: include);
+      if (result == null) {
+        throw Exception('$m not found');
+      }
+      return result;
     '''));
 
   Method _findMany(String m, String t) => Method((b) => b
@@ -582,6 +612,62 @@ class CbDelegateGenerator {
       if (orderBy != null) queryBuilder.orderBy(orderBy);
 
       return await _executor.executeQueryAsMaps(queryBuilder.build());
+    '''));
+
+  Method _aggregate(String m, String t) => Method((b) => b
+    ..name = 'aggregate'
+    ..docs.add('/// Aggregate over ${m}s (count/sum/avg/min/max)')
+    ..modifier = MethodModifier.async
+    ..returns = refer('Future<Map<String, dynamic>>')
+    ..optionalParameters.addAll([
+      Parameter((p) => p
+        ..name = 'where'
+        ..named = true
+        ..type = refer('${m}WhereInput?')),
+      Parameter((p) => p
+        ..name = 'count'
+        ..named = true
+        ..type = refer('bool?')),
+      Parameter((p) => p
+        ..name = 'sum'
+        ..named = true
+        ..type = refer('Map<String, bool>?')),
+      Parameter((p) => p
+        ..name = 'avg'
+        ..named = true
+        ..type = refer('Map<String, bool>?')),
+      Parameter((p) => p
+        ..name = 'min'
+        ..named = true
+        ..type = refer('Map<String, bool>?')),
+      Parameter((p) => p
+        ..name = 'max'
+        ..named = true
+        ..type = refer('Map<String, bool>?')),
+      Parameter((p) => p
+        ..name = 'countFiltered'
+        ..named = true
+        ..type = refer('List<Map<String, dynamic>>?')),
+    ])
+    ..body = Code('''
+      final queryBuilder = JsonQueryBuilder()
+          .model('$t')
+          .action(QueryAction.aggregate);
+
+      if (where != null) queryBuilder.where(_whereToJson(where));
+
+      final agg = <String, dynamic>{};
+      if (count == true) agg['_count'] = true;
+      if (sum != null) agg['_sum'] = sum;
+      if (avg != null) agg['_avg'] = avg;
+      if (min != null) agg['_min'] = min;
+      if (max != null) agg['_max'] = max;
+      if (countFiltered != null) agg['_countFiltered'] = countFiltered;
+      queryBuilder.aggregation(agg);
+
+      final result =
+          await _executor.executeQueryAsSingleMap(queryBuilder.build());
+      return result ?? <String, dynamic>{};
     '''));
 
   Method _normalizeForJson() => Method((b) => b
