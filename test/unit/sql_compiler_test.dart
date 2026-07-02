@@ -3621,5 +3621,132 @@ void main() {
         );
       });
     });
+
+    group('to-one relation filters (is/isNot)', () {
+      late SqlCompiler c;
+
+      setUp(() {
+        final schema = SchemaRegistry();
+        schema.registerModel(const ModelSchema(
+          name: 'Product',
+          tableName: 'Product',
+          fields: {
+            'id': FieldInfo(
+                name: 'id', columnName: 'id', type: 'String', isId: true),
+            'name': FieldInfo(name: 'name', columnName: 'name', type: 'String'),
+          },
+        ));
+        schema.registerModel(ModelSchema(
+          name: 'Review',
+          tableName: 'Review',
+          fields: const {
+            'id': FieldInfo(
+                name: 'id', columnName: 'id', type: 'String', isId: true),
+            'productId': FieldInfo(
+                name: 'productId', columnName: 'productId', type: 'String'),
+          },
+          relations: {
+            'product': RelationInfo.manyToOne(
+              name: 'product',
+              targetModel: 'Product',
+              foreignKey: 'productId',
+            ),
+          },
+        ));
+        c = SqlCompiler(provider: 'postgresql', schema: schema);
+      });
+
+      test('is: {cond} -> EXISTS on the to-one target', () {
+        final q = JsonQueryBuilder()
+            .model('Review')
+            .action(QueryAction.findMany)
+            .where({
+          'product': {
+            'is': {'name': 'Widget'}
+          }
+        }).build();
+        final r = c.compile(q);
+        expect(r.sql, contains('EXISTS'));
+        expect(r.sql, isNot(contains('NOT EXISTS')));
+        expect(r.sql, contains('FROM "Product"'));
+        expect(r.args, ['Widget']);
+      });
+
+      test('isNot: {cond} -> NOT EXISTS on the to-one target', () {
+        final q = JsonQueryBuilder()
+            .model('Review')
+            .action(QueryAction.findMany)
+            .where({
+          'product': {
+            'isNot': {'name': 'Widget'}
+          }
+        }).build();
+        final r = c.compile(q);
+        expect(r.sql, contains('NOT EXISTS'));
+        expect(r.args, ['Widget']);
+      });
+
+      test('is: null -> NOT EXISTS (relation absent)', () {
+        final q = JsonQueryBuilder()
+            .model('Review')
+            .action(QueryAction.findMany)
+            .where({
+          'product': {'is': null}
+        }).build();
+        final r = c.compile(q);
+        expect(r.sql, contains('NOT EXISTS'));
+      });
+
+      test('isNot: null -> EXISTS (relation present)', () {
+        final q = JsonQueryBuilder()
+            .model('Review')
+            .action(QueryAction.findMany)
+            .where({
+          'product': {'isNot': null}
+        }).build();
+        final r = c.compile(q);
+        expect(r.sql, contains('EXISTS'));
+        expect(r.sql, isNot(contains('NOT EXISTS')));
+      });
+
+      test('is/isNot on a to-many relation throws', () {
+        final schema = SchemaRegistry();
+        schema.registerModel(ModelSchema(
+          name: 'Product',
+          tableName: 'Product',
+          fields: const {
+            'id': FieldInfo(
+                name: 'id', columnName: 'id', type: 'String', isId: true),
+          },
+          relations: {
+            'reviews': RelationInfo.oneToMany(
+              name: 'reviews',
+              targetModel: 'Review',
+              foreignKey: 'productId',
+            ),
+          },
+        ));
+        schema.registerModel(const ModelSchema(
+          name: 'Review',
+          tableName: 'Review',
+          fields: {
+            'id': FieldInfo(
+                name: 'id', columnName: 'id', type: 'String', isId: true),
+            'productId': FieldInfo(
+                name: 'productId', columnName: 'productId', type: 'String'),
+          },
+        ));
+        final cc = SqlCompiler(provider: 'postgresql', schema: schema);
+        final q = JsonQueryBuilder()
+            .model('Product')
+            .action(QueryAction.findMany)
+            .where({
+          'reviews': {
+            'is': {'id': 'x'}
+          }
+        }).build();
+        expect(() => cc.compile(q), throwsArgumentError);
+      });
+    });
   });
 }

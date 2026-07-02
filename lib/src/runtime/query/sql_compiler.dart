@@ -1744,6 +1744,9 @@ RETURNING *
     if (value.containsKey('some')) return 'some';
     if (value.containsKey('every')) return 'every';
     if (value.containsKey('none')) return 'none';
+    // to-one relation operators
+    if (value.containsKey('is')) return 'is';
+    if (value.containsKey('isNot')) return 'isNot';
     return null;
   }
 
@@ -1908,7 +1911,28 @@ RETURNING *
         final relOperator = _detectRelationOperator(value);
 
         if (relation != null && relOperator != null) {
-          final whereCondition = value[relOperator];
+          final rawCondition = value[relOperator];
+          // to-one relations use is/isNot; to-many use some/every/none.
+          final isToOne = relation.type == RelationType.manyToOne ||
+              relation.type == RelationType.oneToOne;
+          if ((relOperator == 'is' || relOperator == 'isNot') && !isToOne) {
+            throw ArgumentError(
+              'Operator "$relOperator" on relation "$field" of model '
+              '"$modelName" is only valid for to-one relations. Use '
+              'some(), every(), or none() for to-many relations.',
+            );
+          }
+          // Map is/isNot (honouring null-target semantics) onto the
+          // some/none EXISTS builders: is:{cond}->EXISTS, is:null->NOT EXISTS,
+          // isNot:{cond}->NOT EXISTS, isNot:null->EXISTS.
+          final String effectiveOp;
+          if (relOperator == 'is') {
+            effectiveOp = rawCondition == null ? 'none' : 'some';
+          } else if (relOperator == 'isNot') {
+            effectiveOp = rawCondition == null ? 'some' : 'none';
+          } else {
+            effectiveOp = relOperator;
+          }
           // Use baseAlias if available, otherwise fall back to parentAlias
           // This ensures relation filters use the correct table alias (e.g., 't0')
           final effectiveParentAlias = baseAlias ?? parentAlias;
@@ -1917,9 +1941,9 @@ RETURNING *
             parentAlias: effectiveParentAlias,
             relationName: field,
             relation: relation,
-            operator: relOperator,
+            operator: effectiveOp,
             whereCondition:
-                whereCondition is Map<String, dynamic> ? whereCondition : {},
+                rawCondition is Map<String, dynamic> ? rawCondition : {},
             startIndex: paramIndex,
           );
           conditions.add(clause);
