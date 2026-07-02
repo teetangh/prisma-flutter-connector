@@ -1,9 +1,9 @@
 /// Sentry integration for the query pipeline.
 ///
-/// Bundles Sentry error reporting into the connector without hijacking the
-/// host application's Sentry setup: it only *captures* exceptions, and only
-/// when Sentry has already been initialized (`Sentry.isEnabled`). Plug it in
-/// via the executor's `logger`, e.g.:
+/// Bundles Sentry error reporting into the connector without owning Sentry
+/// configuration: it only *captures* exceptions, and only when Sentry has
+/// already been initialized by the host application (`Sentry.isEnabled`). Plug
+/// it into the executor's `logger`, e.g.:
 ///
 /// ```dart
 /// QueryExecutor(
@@ -15,8 +15,10 @@
 /// );
 /// ```
 ///
-/// If you want the connector to own Sentry initialization (standalone use,
-/// e.g. tooling/examples), call [PrismaSentry.init] once at startup.
+/// The connector does NOT ship a DSN or call `Sentry.init` — that is always the
+/// host application's responsibility (init Sentry with your own DSN, e.g. via
+/// `--dart-define=SENTRY_DSN=...`, then add this logger). This keeps each
+/// consumer's errors flowing to their own Sentry project.
 library;
 
 import 'package:sentry/sentry.dart';
@@ -57,37 +59,5 @@ class SentryQueryLogger implements QueryLogger {
         });
       },
     );
-  }
-}
-
-/// Convenience Sentry initialization for standalone connector usage.
-///
-/// Most apps (including the familiarise mobile backend) already call
-/// `Sentry.init`/`SentryFlutter.init` themselves — in that case you do NOT
-/// need this; just add [SentryQueryLogger] to the executor. Use this only when
-/// the connector is the top-level owner of Sentry.
-class PrismaSentry {
-  PrismaSentry._();
-
-  /// Default DSN for the prisma_flutter_connector Sentry project. Override via
-  /// the `SENTRY_DSN` dart-define or the [dsn] argument.
-  static const defaultDsn = String.fromEnvironment(
-    'SENTRY_DSN',
-    defaultValue:
-        'https://f7e4fda3e20074d189fd615518b38918@o4509348815372289.ingest.us.sentry.io/4511666594185216',
-  );
-
-  /// Initialize Sentry if it isn't already. Safe to call once at startup.
-  static Future<void> init({
-    String? dsn,
-    bool sendDefaultPii = true,
-    void Function(SentryOptions)? configure,
-  }) async {
-    if (Sentry.isEnabled) return;
-    await Sentry.init((options) {
-      options.dsn = dsn ?? defaultDsn;
-      options.sendDefaultPii = sendDefaultPii;
-      configure?.call(options);
-    });
   }
 }

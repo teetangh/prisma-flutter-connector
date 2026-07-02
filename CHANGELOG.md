@@ -4,6 +4,21 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-07-03
+
+### Fixed
+- **Removed the hardcoded Sentry DSN** that 0.7.0 shipped as a default in
+  `PrismaSentry.defaultDsn`. A published library must not embed the
+  maintainer's DSN — it would route other consumers' errors into that project
+  and is a minor abuse vector. (A DSN is write-only ingestion, not a secret, so
+  this is a hygiene fix, not a credential leak.)
+- **Removed `PrismaSentry` entirely.** The connector no longer owns Sentry
+  configuration or calls `Sentry.init`. Bundled Sentry support is now solely
+  `SentryQueryLogger`, which captures failed queries to whatever Sentry the
+  **host application** has already initialized (`Sentry.isEnabled`) — no DSN in
+  the library. Host apps init Sentry themselves (e.g. via
+  `--dart-define=SENTRY_DSN=...`) and add the logger to the executor.
+
 ## [0.7.0] - 2026-07-02
 
 The **complete-ORM** release: the typed `PrismaClient` surface now covers
