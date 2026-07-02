@@ -1,10 +1,8 @@
 name: MongoDB Integration Tests
 
+# Disabled on push/PR until the MongoDB adapter is implemented
+# (see note in ci.yml). Run manually via workflow_dispatch when needed.
 on:
-  push:
-    branches: [main, develop]
-  pull_request:
-    branches: [main, develop]
   workflow_dispatch:
   workflow_call:
 

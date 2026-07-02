@@ -69,6 +69,7 @@ class CbSchemaRegistryGenerator {
       if (field.isId) parts.add('isId: true');
       if (field.isUnique) parts.add('isUnique: true');
       if (!field.isRequired) parts.add('isNullable: true');
+      if (field.isUpdatedAt) parts.add('isUpdatedAt: true');
       if (field.defaultValue != null) {
         parts.add("defaultValue: '${field.defaultValue}'");
       }
@@ -118,7 +119,11 @@ class CbSchemaRegistryGenerator {
                 "inverseJoinColumn: '$ic')",
           ));
         } else {
-          final fk = _findForeignKey(targetModel, model.name);
+          final fk = _resolveFkColumn(
+            targetModel,
+            _findForeignKey(targetModel, model.name,
+                relationName: field.relationName),
+          );
           entries.add(_RelEntry(
             fieldName: field.name,
             code: "RelationInfo.oneToMany("
@@ -128,10 +133,50 @@ class CbSchemaRegistryGenerator {
           ));
         }
       } else {
-        // Use this field's own @relation(fields: [...]) first, then fall back to convention
-        final fk = _findForeignKeyFromField(field) ??
-            _findForeignKeyOnModel(model, target);
-        if (fk == null) continue;
+        // FK on THIS model: the field's own @relation(fields: [...]) or a
+        // sibling scalar declared by another relation field to the same
+        // target.
+        final ownFkField = (field.relationFromFields?.isNotEmpty ?? false)
+            ? field.relationFromFields!.first
+            : _findForeignKeyOnModel(model, target,
+                relationName: field.relationName);
+        final ownFk =
+            ownFkField == null ? null : _resolveFkColumn(model, ownFkField);
+
+        if (ownFk == null) {
+          // FK on the TARGET model (e.g. Program.licensedSeatConfig where
+          // LicensedSeatConfig.programId owns the relation): non-owner
+          // one-to-one joined via the target's FK back to our PK.
+          final backCandidates = targetModel.fields.where((f) =>
+              f.isRelation &&
+              f.type == model.name &&
+              !f.isList &&
+              (f.relationFromFields?.isNotEmpty ?? false));
+          // With multiple relations between the same pair of models, bind
+          // by the shared @relation("name") instead of taking the first.
+          final targetBack = field.relationName != null
+              ? (backCandidates
+                      .where((f) => f.relationName == field.relationName)
+                      .firstOrNull ??
+                  backCandidates.firstOrNull)
+              : backCandidates.firstOrNull;
+          if (targetBack != null) {
+            final backFk = _resolveFkColumn(
+                targetModel, targetBack.relationFromFields!.first);
+            entries.add(_RelEntry(
+              fieldName: field.name,
+              code: "RelationInfo.oneToOne("
+                  "name: '${field.name}', "
+                  "targetModel: '$target', "
+                  "foreignKey: '$backFk', "
+                  "isOwner: false)",
+            ));
+            continue;
+          }
+        }
+
+        // Last resort keeps the historical convention-based guess.
+        final fk = ownFk ?? '${toLowerCamelCase(field.type)}Id';
 
         final backRef = targetModel.fields
             .where((f) => f.isRelation && f.type == model.name && !f.isList);
@@ -173,33 +218,54 @@ class CbSchemaRegistryGenerator {
     return '_${sorted[0]}To${sorted[1]}';
   }
 
-  String _findForeignKey(PrismaModel target, String sourceModel) {
-    for (final f in target.fields) {
-      if (f.isRelation &&
-          f.type == sourceModel &&
-          f.relationFromFields?.isNotEmpty == true) {
-        return f.relationFromFields!.first;
+  /// Resolve a Prisma field identifier to its database column name on
+  /// [owner] (FK scalars can carry @map; JOINs need the real column).
+  String _resolveFkColumn(PrismaModel owner, String fkFieldName) {
+    for (final f in owner.fields) {
+      if (f.name == fkFieldName || f.dbName == fkFieldName) {
+        return f.dbName ?? f.name;
       }
     }
+    return fkFieldName;
+  }
+
+  String _findForeignKey(
+    PrismaModel target,
+    String sourceModel, {
+    String? relationName,
+  }) {
+    final candidates = target.fields.where((f) =>
+        f.isRelation &&
+        f.type == sourceModel &&
+        f.relationFromFields?.isNotEmpty == true);
+    // With multiple relations between the same pair of models, bind by the
+    // shared @relation("name") instead of taking the first.
+    final match = relationName != null
+        ? (candidates
+                .where((f) => f.relationName == relationName)
+                .firstOrNull ??
+            candidates.firstOrNull)
+        : candidates.firstOrNull;
+    if (match != null) return match.relationFromFields!.first;
     return '${toLowerCamelCase(sourceModel)}Id';
   }
 
-  String? _findForeignKeyOnModel(PrismaModel model, String target) {
-    for (final f in model.fields) {
-      if (f.isRelation &&
-          f.type == target &&
-          f.relationFromFields?.isNotEmpty == true) {
-        return f.relationFromFields!.first;
-      }
-    }
-    return null;
-  }
-
-  String? _findForeignKeyFromField(PrismaField field) {
-    if (field.relationFromFields?.isNotEmpty == true) {
-      return field.relationFromFields!.first;
-    }
-    return '${toLowerCamelCase(field.type)}Id';
+  String? _findForeignKeyOnModel(
+    PrismaModel model,
+    String target, {
+    String? relationName,
+  }) {
+    final candidates = model.fields.where((f) =>
+        f.isRelation &&
+        f.type == target &&
+        f.relationFromFields?.isNotEmpty == true);
+    final match = relationName != null
+        ? (candidates
+                .where((f) => f.relationName == relationName)
+                .firstOrNull ??
+            candidates.firstOrNull)
+        : candidates.firstOrNull;
+    return match?.relationFromFields!.first;
   }
 
   String _prismaTypeToDartType(String t) => switch (t) {

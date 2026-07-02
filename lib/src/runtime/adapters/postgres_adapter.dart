@@ -6,6 +6,9 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:postgres/postgres.dart' as pg;
 import 'package:prisma_flutter_connector/src/runtime/adapters/types.dart';
 
@@ -245,17 +248,109 @@ class PostgresAdapter implements SqlDriverAdapter {
   }
 
   /// Convert PostgreSQL values to Dart types.
-  /// Handles special types like UndecodedBytes (enums, custom types).
+  /// Handles special types like UndecodedBytes (enums, enum arrays, and
+  /// other custom types the driver has no codec for).
   dynamic _convertValue(dynamic value) {
     if (value == null) return null;
 
     // Handle UndecodedBytes (PostgreSQL enums and custom types)
     if (value is pg.UndecodedBytes) {
-      // UndecodedBytes contains raw bytes - decode as UTF-8 string
-      return String.fromCharCodes(value.bytes);
+      final bytes = value.bytes;
+      if (value.isBinary) {
+        // Custom ARRAY types (e.g. enum[]) arrive in the binary array wire
+        // format; scalar enums arrive as plain label bytes.
+        final parsed = parsePgBinaryArray(bytes);
+        if (parsed != null) return parsed;
+        return utf8.decode(bytes, allowMalformed: true);
+      }
+      final text = utf8.decode(bytes, allowMalformed: true);
+      // Text-format array literal for an unknown element type: {A,B}
+      if (text.length >= 2 && text.startsWith('{') && text.endsWith('}')) {
+        return parsePgTextArray(text);
+      }
+      return text;
     }
 
     return value;
+  }
+
+  /// Parse the PostgreSQL binary ARRAY wire format (one-dimensional) into a
+  /// List of UTF-8 element strings (enum labels, text, …).
+  ///
+  /// Layout: int32 ndim, int32 hasNull, int32 elemOid, then per dimension
+  /// {int32 size, int32 lowerBound}, then per element {int32 byteLength
+  /// (-1 = NULL), payload bytes}. Returns null when the bytes do not parse
+  /// cleanly as such an array (callers fall back to plain UTF-8 decode).
+  static List<String?>? parsePgBinaryArray(List<int> bytes) {
+    if (bytes.length < 12) return null;
+    // The driver already hands us a Uint8List; only copy when it doesn't,
+    // and decode elements as views over the same buffer (no per-element
+    // sublist copies).
+    final u8 = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
+    final data = ByteData.sublistView(u8);
+    final ndim = data.getInt32(0);
+    final hasNull = data.getInt32(4);
+    if (hasNull != 0 && hasNull != 1) return null;
+    if (ndim == 0) return u8.length == 12 ? <String?>[] : null;
+    if (ndim != 1 || u8.length < 20) return null;
+
+    final size = data.getInt32(12);
+    if (size < 0 || size > 100000) return null;
+
+    final elements = <String?>[];
+    var offset = 20;
+    for (var i = 0; i < size; i++) {
+      if (offset + 4 > u8.length) return null;
+      final len = data.getInt32(offset);
+      offset += 4;
+      if (len == -1) {
+        elements.add(null);
+        continue;
+      }
+      if (len < 0 || offset + len > u8.length) return null;
+      elements.add(utf8.decode(Uint8List.sublistView(u8, offset, offset + len),
+          allowMalformed: true));
+      offset += len;
+    }
+    return offset == u8.length ? elements : null;
+  }
+
+  /// Parse a PostgreSQL text-format array literal ({A,B,"c d",NULL}) into a
+  /// List of element strings.
+  static List<String?> parsePgTextArray(String text) {
+    final inner = text.substring(1, text.length - 1);
+    if (inner.isEmpty) return <String?>[];
+
+    final elements = <String?>[];
+    final current = StringBuffer();
+    var inQuotes = false;
+    var wasQuoted = false;
+    for (var i = 0; i < inner.length; i++) {
+      final ch = inner[i];
+      if (inQuotes) {
+        if (ch == r'\') {
+          i++;
+          if (i < inner.length) current.write(inner[i]);
+        } else if (ch == '"') {
+          inQuotes = false;
+        } else {
+          current.write(ch);
+        }
+      } else if (ch == '"') {
+        inQuotes = true;
+        wasQuoted = true;
+      } else if (ch == ',') {
+        final raw = current.toString();
+        elements.add(!wasQuoted && raw == 'NULL' ? null : raw);
+        current.clear();
+        wasQuoted = false;
+      } else {
+        current.write(ch);
+      }
+    }
+    final raw = current.toString();
+    elements.add(!wasQuoted && raw == 'NULL' ? null : raw);
+    return elements;
   }
 
   /// Infer column type from value.

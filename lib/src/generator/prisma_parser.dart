@@ -437,7 +437,11 @@ class PrismaParser {
             }
             return line.trim();
           })
-          .where((line) => line.isNotEmpty)
+          // Skip block attributes like @@map("DbEnumName") — they are not values
+          .where((line) => line.isNotEmpty && !line.startsWith('@@'))
+          // Keep only the value identifier, dropping value-level attributes
+          // such as `ACTIVE @map("active")`
+          .map((line) => line.split(RegExp(r'\s+')).first)
           .toList();
 
       enums.add(PrismaEnum(name: name, values: values));
@@ -461,7 +465,23 @@ class PrismaParser {
       // Handle reserved keywords - auto-rename if needed
       final modelResult = _handleReservedKeyword(originalModelName, 'model');
       final modelName = modelResult.dartName;
-      final modelDbName = modelResult.dbName;
+
+      // Explicit @@map("table_name") takes precedence over reserved-keyword
+      // renames for the database table name. Match line-by-line with
+      // comments stripped so a commented-out `// @@map("x")` is ignored.
+      String? explicitTableName;
+      for (final line in modelBody.split('\n')) {
+        var active = line;
+        final commentIndex = active.indexOf('//');
+        if (commentIndex >= 0) active = active.substring(0, commentIndex);
+        final match =
+            RegExp(r'^@@map\(\s*"([^"]+)"\s*\)').firstMatch(active.trim());
+        if (match != null) {
+          explicitTableName = match.group(1);
+          break;
+        }
+      }
+      final modelDbName = explicitTableName ?? modelResult.dbName;
 
       if (modelResult.warning != null) {
         warnings.add(modelResult.warning!);
@@ -592,9 +612,17 @@ class PrismaParser {
           // Normalize field name (PascalCase → camelCase)
           final normalizedName = _normalizeFieldName(dartFieldName);
 
-          // Determine dbName: prioritize reserved keyword rename, then PascalCase normalization
+          // Explicit @map("column_name") on the field (block-level @@ lines
+          // are skipped above, so this cannot match @@map)
+          final fieldMapMatch =
+              RegExp(r'@map\(\s*"([^"]+)"\s*\)').firstMatch(attributes);
+
+          // Determine dbName: explicit @map wins, then reserved keyword
+          // rename, then PascalCase normalization
           String? dbName;
-          if (fieldDbName != null) {
+          if (fieldMapMatch != null) {
+            dbName = fieldMapMatch.group(1);
+          } else if (fieldDbName != null) {
             // Field was renamed due to reserved keyword
             dbName = fieldDbName;
           } else if (normalizedName != dartFieldName) {
