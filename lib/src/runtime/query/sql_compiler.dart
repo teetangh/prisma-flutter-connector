@@ -421,7 +421,12 @@ class SqlCompiler {
       sql.write(' ORDER BY $orderByClause');
     }
 
-    if (single) {
+    // `single` (findUnique/findFirst) normally caps at one row — but a to-many
+    // include multiplies rows via JOIN, so LIMIT 1 would truncate the child
+    // collection. Suppress it then and let the deserializer group + the caller
+    // take the first parent. To-one-only includes stay capped.
+    final singleWithToMany = single && _includeHasToMany(query.modelName, include);
+    if (single && !singleWithToMany) {
       sql.write(' LIMIT 1');
     } else if (take != null) {
       sql.write(' LIMIT $take');
@@ -472,6 +477,50 @@ class SqlCompiler {
     return include.isEmpty ? null : include;
   }
 
+  /// Fill in `@default(uuid()/cuid()/now())` and `@updatedAt` values not
+  /// supplied by the caller. Shared by `create` and `createMany`.
+  void _autofillCreateDefaults(Map<String, dynamic> data, ModelSchema? model) {
+    if (model == null) return;
+    final isPg = provider == 'postgresql' || provider == 'supabase';
+    for (final field in model.fields.values) {
+      if (data.containsKey(field.name) || data.containsKey(field.columnName)) {
+        continue;
+      }
+      if (field.defaultValue == 'uuid()' || field.defaultValue == 'cuid()') {
+        if (isPg) data[field.name] = const _RawSql('gen_random_uuid()');
+      } else if (field.defaultValue == 'now()' || field.isUpdatedAt) {
+        data[field.name] = isPg
+            ? const _RawSql('NOW()')
+            : DateTime.now().toUtc().toIso8601String();
+      }
+    }
+  }
+
+  /// Whether an `include` tree contains any to-many relation (which multiplies
+  /// JOIN rows). Recurses into nested includes.
+  bool _includeHasToMany(String modelName, Map<String, dynamic>? include) {
+    if (include == null || include.isEmpty) return false;
+    final effectiveSchema = schema ?? schemaRegistry;
+    for (final entry in include.entries) {
+      if (entry.value == false) continue;
+      final relation = effectiveSchema.getRelation(modelName, entry.key);
+      if (relation == null) continue;
+      if (relation.type == RelationType.oneToMany ||
+          relation.type == RelationType.manyToMany) {
+        return true;
+      }
+      // Recurse into nested include on a to-one relation.
+      final v = entry.value;
+      if (v is Map<String, dynamic> && v['include'] is Map<String, dynamic>) {
+        if (_includeHasToMany(
+            relation.targetModel, v['include'] as Map<String, dynamic>)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   /// Compile a CREATE query.
   SqlQuery _compileCreateQuery(JsonQuery query) {
     final args = query.args.arguments ?? {};
@@ -485,26 +534,7 @@ class SqlCompiler {
     // @updatedAt values. @updatedAt columns are NOT NULL with no database
     // default — Prisma clients supply the timestamp on every create.
     final effectiveSchema = schema ?? schemaRegistry;
-    final model = effectiveSchema.getModel(query.modelName);
-    if (model != null) {
-      for (final field in model.fields.values) {
-        if (data.containsKey(field.name) ||
-            data.containsKey(field.columnName)) {
-          continue;
-        }
-        if (field.defaultValue == 'uuid()' || field.defaultValue == 'cuid()') {
-          if (provider == 'postgresql' || provider == 'supabase') {
-            data[field.name] = const _RawSql('gen_random_uuid()');
-          }
-        } else if (field.defaultValue == 'now()' || field.isUpdatedAt) {
-          if (provider == 'postgresql' || provider == 'supabase') {
-            data[field.name] = const _RawSql('NOW()');
-          } else {
-            data[field.name] = DateTime.now().toUtc().toIso8601String();
-          }
-        }
-      }
-    }
+    _autofillCreateDefaults(data, effectiveSchema.getModel(query.modelName));
 
     final tableName = _resolveTableName(query.modelName);
     final columns = <String>[];
@@ -567,9 +597,20 @@ class SqlCompiler {
     }
 
     final tableName = _resolveTableName(query.modelName);
-    final firstRow = dataList.first as Map<String, dynamic>;
+
+    // Autofill @default(uuid()/now())/@updatedAt per row (as `create` does),
+    // then emit a uniform column list. Prisma requires uniform-shaped rows.
+    final model = (schema ?? schemaRegistry).getModel(query.modelName);
+    final rows = dataList
+        .map((r) => Map<String, dynamic>.from(r as Map<String, dynamic>))
+        .toList();
+    for (final r in rows) {
+      _autofillCreateDefaults(r, model);
+    }
+
+    final fieldOrder = rows.first.keys.toList();
     // Resolve @map-ed Dart field names to column names
-    final columns = firstRow.keys
+    final columns = fieldOrder
         .map((k) => _quoteIdentifier(_resolveColumnName(query.modelName, k)))
         .toList();
 
@@ -578,16 +619,18 @@ class SqlCompiler {
     final types = <ArgType>[];
 
     var paramIndex = 1;
-    for (final row in dataList) {
-      final rowData = row as Map<String, dynamic>;
+    for (final row in rows) {
       final placeholders = <String>[];
-
-      for (final value in rowData.values) {
-        placeholders.add(_placeholder(paramIndex++));
-        values.add(value);
-        types.add(_inferArgType(value));
+      for (final field in fieldOrder) {
+        final value = row[field];
+        if (value is _RawSql) {
+          placeholders.add(value.sql);
+        } else {
+          placeholders.add(_placeholder(paramIndex++));
+          values.add(value);
+          types.add(_inferArgType(value));
+        }
       }
-
       valueSets.add('(${placeholders.join(', ')})');
     }
 
@@ -1262,7 +1305,20 @@ RETURNING *
                 relation.type == RelationType.manyToOne) &&
             (value as Map<String, dynamic>).containsKey('connect')) {
           final connectData = value['connect'] as Map<String, dynamic>;
-          cleanData[relation.foreignKey] = connectData.values.first;
+          // Inject the FK keyed by its Dart field name and drop any
+          // user-supplied FK (field or column) so it isn't emitted twice.
+          final fkKey = effectiveSchema
+                  .getModel(query.modelName)
+                  ?.fields
+                  .values
+                  .where((f) => f.columnName == relation.foreignKey)
+                  .map((f) => f.name)
+                  .firstOrNull ??
+              relation.foreignKey;
+          cleanData
+            ..remove(fkKey)
+            ..remove(relation.foreignKey);
+          cleanData[fkKey] = connectData.values.first;
         }
         // A belongsTo `create` (this row owns the FK) requires creating the
         // parent first and inlining its generated id — parent-first ordering
@@ -1371,9 +1427,21 @@ RETURNING *
               ? List<Map<String, dynamic>>.from(creates)
               : [creates as Map<String, dynamic>];
           final targetModel = effectiveSchema.getModel(relation.targetModel);
+          // The relation's foreignKey is a COLUMN name; child data uses Dart
+          // FIELD names. Resolve the FK field so we inject exactly one FK entry
+          // (keyed by field) and strip any user-supplied value under either the
+          // field or column name — otherwise both resolve to the same column
+          // and Postgres rejects "column specified more than once".
+          final fkField = targetModel?.fields.values
+              .where((f) => f.columnName == relation.foreignKey)
+              .map((f) => f.name)
+              .firstOrNull;
+          final fkKey = fkField ?? relation.foreignKey;
           for (final createData in createList) {
-            final childData = Map<String, dynamic>.from(createData);
-            childData[relation.foreignKey] = parentId;
+            final childData = Map<String, dynamic>.from(createData)
+              ..remove(relation.foreignKey)
+              ..remove(fkKey);
+            childData[fkKey] = parentId;
             if (targetModel != null) {
               for (final field in targetModel.fields.values) {
                 if (childData.containsKey(field.name)) continue;

@@ -36,50 +36,60 @@ final schemaRegistry = SchemaRegistry();
 class SchemaRegistry {
   final Map<String, ModelSchema> _models = {};
 
-  /// Register a model schema.
+  /// Secondary index by database table name (`@@map`). Generated delegates
+  /// address queries by table name, so lookups must resolve either the Prisma
+  /// model name (`Author`) or the mapped table name (`authors`).
+  final Map<String, ModelSchema> _modelsByTable = {};
+
+  /// Register a model schema (indexed by both model name and table name).
   void registerModel(ModelSchema schema) {
     _models[schema.name] = schema;
+    _modelsByTable[schema.tableName] = schema;
   }
 
-  /// Get a model schema by name.
-  ModelSchema? getModel(String name) => _models[name];
+  /// Get a model schema by Prisma model name or mapped table name.
+  ModelSchema? getModel(String name) => _models[name] ?? _modelsByTable[name];
 
   /// Get relation info for a model's field.
   RelationInfo? getRelation(String modelName, String fieldName) {
-    return _models[modelName]?.relations[fieldName];
+    return getModel(modelName)?.relations[fieldName];
   }
 
   /// Get all relations for a model.
   Map<String, RelationInfo> getRelations(String modelName) {
-    return _models[modelName]?.relations ?? {};
+    return getModel(modelName)?.relations ?? {};
   }
 
   /// Get field info for a model's field.
   FieldInfo? getField(String modelName, String fieldName) {
-    return _models[modelName]?.fields[fieldName];
+    return getModel(modelName)?.fields[fieldName];
   }
 
   /// Get the primary key field(s) for a model.
   List<FieldInfo> getPrimaryKeys(String modelName) {
-    final model = _models[modelName];
+    final model = getModel(modelName);
     if (model == null) return [];
 
     return model.fields.values.where((f) => f.isId).toList();
   }
 
-  /// Get table name for a model.
+  /// Get table name for a model (accepts model name or table name).
   String? getTableName(String modelName) {
-    return _models[modelName]?.tableName;
+    return getModel(modelName)?.tableName;
   }
 
-  /// Check if a model exists.
-  bool hasModel(String name) => _models.containsKey(name);
+  /// Check if a model exists (by model name or mapped table name).
+  bool hasModel(String name) =>
+      _models.containsKey(name) || _modelsByTable.containsKey(name);
 
   /// Get all registered model names.
   List<String> get modelNames => _models.keys.toList();
 
   /// Clear all registered models (useful for testing).
-  void clear() => _models.clear();
+  void clear() {
+    _models.clear();
+    _modelsByTable.clear();
+  }
 }
 
 /// Schema definition for a Prisma model.

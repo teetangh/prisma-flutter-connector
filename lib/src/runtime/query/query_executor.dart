@@ -42,8 +42,13 @@ mixin ResultSetConverter {
         final columnName = result.columnNames[i];
         final value = i < row.length ? row[i] : null;
 
-        // Convert snake_case column names to camelCase (unless preserving aliases)
-        final key = preserveAliases ? columnName : snakeToCamelCase(columnName);
+        // Keep raw DB column names as keys. Generated models deserialize by
+        // column name (`@JsonKey(name: '<@map column>')` / manual fromJson
+        // reading the DB column), so camelCasing here would desync `@map`-ed
+        // columns (e.g. `author_id` -> `authorId`) from what fromJson reads.
+        // (`preserveAliases` is retained for API compatibility; both branches
+        // now keep the raw column/alias.)
+        final key = columnName;
 
         map[key] = deserializeValue(value, result.columnTypes[i]);
       }

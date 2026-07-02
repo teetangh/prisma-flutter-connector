@@ -323,7 +323,10 @@ void main() {
         expect(result, isEmpty);
       });
 
-      test('converts snake_case columns to camelCase', () async {
+      test('preserves raw DB column names as keys', () async {
+        // Generated models deserialize by DB column name (@map), so the
+        // executor must NOT camelCase columns — that would desync @map-ed
+        // columns like `author_id` from what fromJson reads.
         final query = JsonQueryBuilder()
             .model('User')
             .action(QueryAction.findMany)
@@ -343,10 +346,10 @@ void main() {
 
         final result = await executor.executeQueryAsMaps(query);
 
-        expect(result[0].containsKey('userId'), true);
-        expect(result[0].containsKey('firstName'), true);
-        expect(result[0].containsKey('createdAt'), true);
-        expect(result[0].containsKey('user_id'), false);
+        expect(result[0].containsKey('user_id'), true);
+        expect(result[0].containsKey('first_name'), true);
+        expect(result[0].containsKey('created_at'), true);
+        expect(result[0].containsKey('userId'), false);
       });
 
       test('deserializes DateTime values', () async {
@@ -365,8 +368,8 @@ void main() {
 
         final result = await executor.executeQueryAsMaps(query);
 
-        expect(result[0]['createdAt'], isA<DateTime>());
-        final date = result[0]['createdAt'] as DateTime;
+        expect(result[0]['created_at'], isA<DateTime>());
+        final date = result[0]['created_at'] as DateTime;
         expect(date.year, 2024);
         expect(date.month, 1);
         expect(date.day, 15);
@@ -389,7 +392,7 @@ void main() {
 
         final result = await executor.executeQueryAsMaps(query);
 
-        expect(result[0]['createdAt'], testDate);
+        expect(result[0]['created_at'], testDate);
       });
 
       test('deserializes date values', () async {
@@ -408,7 +411,7 @@ void main() {
 
         final result = await executor.executeQueryAsMaps(query);
 
-        expect(result[0]['birthDate'], isA<DateTime>());
+        expect(result[0]['birth_date'], isA<DateTime>());
       });
 
       test('converts SQLite boolean (int to bool)', () async {
@@ -428,8 +431,8 @@ void main() {
 
         final result = await executor.executeQueryAsMaps(query);
 
-        expect(result[0]['isActive'], true);
-        expect(result[1]['isActive'], false);
+        expect(result[0]['is_active'], true);
+        expect(result[1]['is_active'], false);
       });
 
       test('handles null values', () async {
@@ -776,7 +779,7 @@ void main() {
         expect(result, isNull);
       });
 
-      test('converts snake_case to camelCase in transaction', () async {
+      test('preserves raw column names in transaction', () async {
         final txMock = MockTransaction();
         txMock.nextQueryResult = const SqlResultSet(
           columnNames: ['user_id', 'created_at'],
@@ -798,8 +801,8 @@ void main() {
           return null;
         });
 
-        expect(result![0].containsKey('userId'), true);
-        expect(result![0].containsKey('createdAt'), true);
+        expect(result![0].containsKey('user_id'), true);
+        expect(result![0].containsKey('created_at'), true);
       });
     });
 
@@ -886,7 +889,7 @@ void main() {
 
       final result = await executor.executeQueryAsMaps(query);
 
-      expect(result[0].containsKey('userProfilePictureUrl'), true);
+      expect(result[0].containsKey('user_profile_picture_url'), true);
     });
 
     test('handles already camelCase columns', () async {
