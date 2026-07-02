@@ -90,6 +90,20 @@ class CbFilterTypesGenerator {
         _p('List<int>?', 'hasSome'),
         _p('bool?', 'isEmpty'),
       ]),
+      _filter('BigIntFilter', 'BigInt', [
+        _p('BigInt?', 'equals'),
+        _p('BigInt?', 'not'),
+        _pJsonKey('List<BigInt>?', 'in_', 'in'),
+        _p('List<BigInt>?', 'notIn'),
+        _p('BigInt?', 'lt'),
+        _p('BigInt?', 'lte'),
+        _p('BigInt?', 'gt'),
+        _p('BigInt?', 'gte'),
+      ]),
+      _filter('BytesFilter', 'Bytes', [
+        _p('List<int>?', 'equals'),
+        _p('List<int>?', 'not'),
+      ]),
       _filter('JsonFilter', 'Json (PostgreSQL jsonb)', [
         _p('List<String>?', 'path'),
         _p('Object?', 'equals'),
@@ -174,6 +188,10 @@ class CbFilterTypesGenerator {
     if (cleanType == 'DateTime') return '$name!.toIso8601String()';
     if (cleanType.startsWith('List<DateTime>')) {
       return '$name!.map((e) => e.toIso8601String()).toList()';
+    }
+    if (cleanType == 'BigInt') return '$name!.toString()';
+    if (cleanType.startsWith('List<BigInt>')) {
+      return '$name!.map((e) => e.toString()).toList()';
     }
 
     // Check for enum types

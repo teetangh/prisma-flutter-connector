@@ -978,6 +978,8 @@ class CbModelGenerator {
       'Boolean' => 'BooleanFilter',
       'DateTime' => 'DateTimeFilter',
       'Json' => 'JsonFilter',
+      'BigInt' => 'BigIntFilter',
+      'Bytes' => 'BytesFilter',
       _ => _isEnumType(f.type) ? '${f.type}Filter' : null,
     };
   }

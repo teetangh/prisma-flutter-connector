@@ -193,6 +193,9 @@ class SqlCompiler {
       case 'createMany':
         return _compileCreateManyQuery(query);
 
+      case 'createManyAndReturn':
+        return _compileCreateManyQuery(query, andReturn: true);
+
       case 'update':
         return _compileUpdateQuery(query);
 
@@ -542,8 +545,13 @@ class SqlCompiler {
   }
 
   /// Compile a CREATE MANY query.
-  SqlQuery _compileCreateManyQuery(JsonQuery query) {
+  ///
+  /// [andReturn] appends `RETURNING *` (Postgres/Supabase) for
+  /// `createManyAndReturn`. `skipDuplicates: true` emits `ON CONFLICT DO
+  /// NOTHING` so pre-existing rows are silently ignored.
+  SqlQuery _compileCreateManyQuery(JsonQuery query, {bool andReturn = false}) {
     final args = query.args.arguments ?? {};
+    final skipDuplicates = args['skipDuplicates'] == true;
 
     // Handle both direct list and wrapped {'data': [...]} format
     // The delegate_generator wraps data in {'data': ...}, but sql_compiler
@@ -583,12 +591,15 @@ class SqlCompiler {
       valueSets.add('(${placeholders.join(', ')})');
     }
 
-    final sql = 'INSERT INTO ${_quoteIdentifier(tableName)} '
+    final isPg = provider == 'postgresql' || provider == 'supabase';
+    final sql = StringBuffer('INSERT INTO ${_quoteIdentifier(tableName)} '
         '(${columns.join(', ')}) '
-        'VALUES ${valueSets.join(', ')}';
+        'VALUES ${valueSets.join(', ')}');
+    if (skipDuplicates) sql.write(' ON CONFLICT DO NOTHING');
+    if (andReturn && isPg) sql.write(' RETURNING *');
 
     return SqlQuery(
-      sql: sql,
+      sql: sql.toString(),
       args: values,
       argTypes: types,
     );
@@ -626,10 +637,31 @@ class SqlCompiler {
     var paramIndex = 1;
 
     for (final entry in data.entries) {
+      final col =
+          _quoteIdentifier(_resolveColumnName(query.modelName, entry.key));
+
+      // Atomic numeric update ops: {increment/decrement/multiply/divide/set: n}.
+      final atomic = _atomicUpdateOp(entry.value);
+      if (atomic != null) {
+        final (op, operand) = atomic;
+        if (op == 'set') {
+          setClauses.add('$col = ${_placeholder(paramIndex++)}');
+        } else {
+          const sqlOp = {
+            'increment': '+',
+            'decrement': '-',
+            'multiply': '*',
+            'divide': '/',
+          };
+          setClauses.add('$col = $col ${sqlOp[op]} ${_placeholder(paramIndex++)}');
+        }
+        values.add(operand);
+        types.add(_inferArgType(operand));
+        continue;
+      }
+
       // Resolve @map-ed Dart field names to column names
-      setClauses.add(
-          '${_quoteIdentifier(_resolveColumnName(query.modelName, entry.key))}'
-          ' = ${_placeholder(paramIndex++)}');
+      setClauses.add('$col = ${_placeholder(paramIndex++)}');
       values.add(entry.value);
       types.add(_inferArgType(entry.value));
     }
@@ -658,6 +690,16 @@ class SqlCompiler {
       args: values,
       argTypes: types,
     );
+  }
+
+  /// Recognize a Prisma atomic numeric update op (`{increment: n}`, etc.).
+  /// Returns (operator, operand) or null when the value is a plain assignment.
+  (String, dynamic)? _atomicUpdateOp(dynamic value) {
+    if (value is! Map<String, dynamic> || value.length != 1) return null;
+    const ops = {'increment', 'decrement', 'multiply', 'divide', 'set'};
+    final key = value.keys.first;
+    if (!ops.contains(key)) return null;
+    return (key, value.values.first);
   }
 
   /// Compile an UPDATE MANY query.

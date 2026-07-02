@@ -75,6 +75,7 @@ class CbDelegateGenerator {
         _findFirstRaw(modelName, tableName),
         _create(modelName, tableName, relLiteral),
         _createMany(modelName, tableName),
+        _createManyAndReturn(modelName, tableName),
         if (hasUniqueFields) _update(modelName, tableName, relLiteral),
         if (hasUniqueFields) _upsert(modelName, tableName),
         _updateMany(modelName, tableName),
@@ -403,19 +404,52 @@ class CbDelegateGenerator {
     ..docs.add('/// Create multiple ${m}s')
     ..modifier = MethodModifier.async
     ..returns = refer('Future<int>')
-    ..optionalParameters.add(Parameter((p) => p
-      ..name = 'data'
-      ..named = true
-      ..required = true
-      ..type = refer('List<Create${m}Input>')))
+    ..optionalParameters.addAll([
+      Parameter((p) => p
+        ..name = 'data'
+        ..named = true
+        ..required = true
+        ..type = refer('List<Create${m}Input>')),
+      Parameter((p) => p
+        ..name = 'skipDuplicates'
+        ..named = true
+        ..type = refer('bool?')),
+    ])
     ..body = Code('''
-      final query = JsonQueryBuilder()
+      final queryBuilder = JsonQueryBuilder()
           .model('$t')
           .action(QueryAction.createMany)
-          .data({'data': data.map((d) => d.toJson()).toList()})
-          .build();
+          .data({'data': data.map((d) => d.toJson()).toList()});
+      if (skipDuplicates == true) queryBuilder.skipDuplicates();
 
-      return await _executor.executeMutation(query);
+      return await _executor.executeMutation(queryBuilder.build());
+    '''));
+
+  Method _createManyAndReturn(String m, String t) => Method((b) => b
+    ..name = 'createManyAndReturn'
+    ..docs.add('/// Create multiple ${m}s and return the created rows')
+    ..modifier = MethodModifier.async
+    ..returns = refer('Future<List<$m>>')
+    ..optionalParameters.addAll([
+      Parameter((p) => p
+        ..name = 'data'
+        ..named = true
+        ..required = true
+        ..type = refer('List<Create${m}Input>')),
+      Parameter((p) => p
+        ..name = 'skipDuplicates'
+        ..named = true
+        ..type = refer('bool?')),
+    ])
+    ..body = Code('''
+      final queryBuilder = JsonQueryBuilder()
+          .model('$t')
+          .action(QueryAction.createManyAndReturn)
+          .data({'data': data.map((d) => d.toJson()).toList()});
+      if (skipDuplicates == true) queryBuilder.skipDuplicates();
+
+      final results = await _executor.executeQueryAsMaps(queryBuilder.build());
+      return results.map((json) => $m.fromJson(_normalizeForJson(json))).toList();
     '''));
 
   Method _update(String m, String t, String relLiteral) => Method((b) => b

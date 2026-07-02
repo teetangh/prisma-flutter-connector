@@ -97,6 +97,10 @@ class IncludedRelation {
 
 /// Compiles Prisma include/select into SQL JOINs.
 class RelationCompiler {
+  /// Maximum nested-include depth. Guards against pathological or cyclic
+  /// include graphs that would otherwise emit an unbounded JOIN chain.
+  static const int maxIncludeDepth = 5;
+
   final SchemaRegistry _schema;
   final String _provider;
 
@@ -187,6 +191,7 @@ class RelationCompiler {
         parentAlias: baseAlias,
         includeValue: relationValue,
         aliases: aliases,
+        depth: 1,
       );
 
       if (result != null) {
@@ -224,7 +229,14 @@ class RelationCompiler {
     required String parentAlias,
     required dynamic includeValue,
     required Map<String, ColumnAlias> aliases,
+    required int depth,
   }) {
+    if (depth > maxIncludeDepth) {
+      throw StateError(
+        'Nested include depth exceeds the limit of $maxIncludeDepth at '
+        '"$relationName". Reduce nesting or split into separate queries.',
+      );
+    }
     final targetModel = _schema.getModel(relation.targetModel);
     if (targetModel == null) return null;
 
@@ -302,6 +314,7 @@ class RelationCompiler {
               parentAlias: tableAlias,
               includeValue: nested.value,
               aliases: aliases,
+              depth: depth + 1,
             );
             if (nestedResult != null) {
               nestedIncludes.add(nestedResult.includedRelation);

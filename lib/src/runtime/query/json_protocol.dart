@@ -104,6 +104,7 @@ enum QueryAction {
   findMany('findMany'),
   create('create'),
   createMany('createMany'),
+  createManyAndReturn('createManyAndReturn'),
   update('update'),
   updateMany('updateMany'),
   upsert('upsert'),
@@ -134,6 +135,7 @@ class JsonQueryBuilder {
   int? _take;
   int? _skip;
   Map<String, dynamic>? _cursor;
+  bool _skipDuplicates = false;
   bool _distinct = false;
   List<String>? _distinctFields;
   final bool _selectScalars = true;
@@ -262,6 +264,13 @@ class JsonQueryBuilder {
     return this;
   }
 
+  /// For createMany/createManyAndReturn: skip rows that violate a unique
+  /// constraint instead of erroring (`ON CONFLICT DO NOTHING`).
+  JsonQueryBuilder skipDuplicates([bool value = true]) {
+    _skipDuplicates = value;
+    return this;
+  }
+
   /// Set aggregation functions for aggregate queries.
   ///
   /// Example:
@@ -339,6 +348,7 @@ class JsonQueryBuilder {
     if (_take != null) arguments['take'] = _take;
     if (_skip != null) arguments['skip'] = _skip;
     if (_cursor != null) arguments['cursor'] = _cursor;
+    if (_skipDuplicates) arguments['skipDuplicates'] = true;
     if (_aggregate != null) arguments['_aggregate'] = _aggregate;
     if (_groupBy != null) arguments['by'] = _groupBy;
     if (_selectFields != null) arguments['selectFields'] = _selectFields;
