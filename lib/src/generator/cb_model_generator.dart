@@ -47,6 +47,7 @@ class CbModelGenerator {
         _buildListRelationFilter(model),
         _buildRelationFilter(model),
         _buildOrderByInput(model),
+        _buildInclude(model),
         ..._buildEnumConverters(model),
       ]));
 
@@ -91,15 +92,36 @@ class CbModelGenerator {
   // === Manual fromJson ===
 
   /// Generate manual fromJson body for the main model class.
+  ///
+  /// Relation fields ARE hydrated when present in the JSON (produced by an
+  /// `include`): the RelationDeserializer nests related rows under the
+  /// relation key, and here we deserialize them into the typed relation
+  /// model. Absent keys (no include) leave the relation null / empty.
   String _generateFromJsonBody(PrismaModel model) {
     final args = <String>[];
     for (final f in model.fields) {
-      if (f.isRelation) continue; // Skip relations
+      if (f.isRelation) {
+        args.add('${f.name}: ${_relationFromJsonExpr(f)}');
+        continue;
+      }
       final dartType = _toDartType(f.type);
       final key = f.dbName ?? f.name;
       args.add('${f.name}: ${_fromJsonExpr(f, key, dartType)}');
     }
     return 'return ${model.name}(${args.join(', ')},);';
+  }
+
+  /// fromJson expression for a relation field (nested typed model / list).
+  String _relationFromJsonExpr(PrismaField f) {
+    final key = f.name; // relation keys are not @map-ed
+    if (f.isList) {
+      return "(json['$key'] as List?)"
+          "?.map((e) => ${f.type}.fromJson(e as Map<String, dynamic>))"
+          ".toList() ?? const []";
+    }
+    return "json['$key'] != null "
+        "? ${f.type}.fromJson(json['$key'] as Map<String, dynamic>) "
+        ": null";
   }
 
   /// Generate a fromJson expression for a single field.
@@ -636,6 +658,34 @@ class CbModelGenerator {
             "if (is_ != null) 'is': is_!.toJson(), "
             "if (isNot != null) 'isNot': isNot!.toJson(),"
             "};");
+  }
+
+  // === Include (typed relation selection) ===
+
+  /// Typed include class: one `${RelatedModel}Include?` field per relation.
+  /// A non-null nested include includes that relation (empty = include with no
+  /// deeper relations); toJson yields the compiler's include-map shape.
+  Class _buildInclude(PrismaModel model) {
+    final relations = model.fields.where((f) => f.isRelation).toList();
+    final params = <Parameter>[];
+    // Statement-style toJson (no runtime helper): an empty nested include
+    // serializes to `true` (include, no deeper relations); a non-empty one
+    // nests via {'include': ...}, matching the relation compiler's shape.
+    final stmts = <String>['final map = <String, dynamic>{};'];
+    for (final f in relations) {
+      params.add(Parameter((p) => p
+        ..name = f.name
+        ..named = true
+        ..type = refer('${f.type}Include?')));
+      stmts.add("if (${f.name} != null) {"
+          " final n = ${f.name}!.toJson();"
+          " map['${f.name}'] = n.isEmpty ? true : <String, dynamic>{'include': n};"
+          " }");
+    }
+    stmts.add('return map;');
+    return _freezedClass('${model.name}Include', params,
+        doc: '/// Typed include for ${model.name} relations',
+        toJsonBody: stmts.join('\n'));
   }
 
   // === OrderByInput ===

@@ -89,6 +89,23 @@ model User {
       expect(code, contains('QueryAction.upsert'));
     });
 
+    test('findMany/findFirst take a typed XInclude param', () {
+      const schema = '''
+model Post {
+  id       String @id
+  author   User   @relation(fields: [authorId], references: [id])
+  authorId String
+}
+model User { id String @id }
+''';
+      final parsed = parser.parse(schema);
+      final code = CbDelegateGenerator(parsed, serverMode: true)
+          .generateDelegate(parsed.models.first);
+      expect(code, contains('PostInclude? include'));
+      expect(code, isNot(contains("include: refer('Map<String, dynamic>?')")));
+      expect(code, contains('include.toJson()'));
+    });
+
     test('aggregate + findFirstOrThrow are generated', () {
       const schema = '''
 model User {

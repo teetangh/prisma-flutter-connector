@@ -97,7 +97,7 @@ class CbDelegateGenerator {
       Parameter((p) => p
         ..name = 'include'
         ..named = true
-        ..type = refer('Map<String, dynamic>?')),
+        ..type = refer('${m}Include?')),
     ])
     ..body = Code('''
       final queryBuilder = JsonQueryBuilder()
@@ -105,7 +105,7 @@ class CbDelegateGenerator {
           .action(QueryAction.findUnique)
           .where(_whereUniqueToJson(where));
 
-      if (include != null) queryBuilder.include(include);
+      if (include != null) queryBuilder.include(include.toJson());
 
       final result = await _executor.executeQueryAsSingleMap(queryBuilder.build());
       return result != null ? $m.fromJson(_normalizeForJson(result)) : null;
@@ -146,7 +146,7 @@ class CbDelegateGenerator {
       Parameter((p) => p
         ..name = 'include'
         ..named = true
-        ..type = refer('Map<String, dynamic>?')),
+        ..type = refer('${m}Include?')),
     ])
     ..body = Code('''
       final queryBuilder = JsonQueryBuilder()
@@ -155,7 +155,7 @@ class CbDelegateGenerator {
 
       if (where != null) queryBuilder.where(_whereToJson(where));
       if (orderBy != null) queryBuilder.orderBy(_orderByToJson(orderBy));
-      if (include != null) queryBuilder.include(include);
+      if (include != null) queryBuilder.include(include.toJson());
 
       final result = await _executor.executeQueryAsSingleMap(queryBuilder.build());
       return result != null ? $m.fromJson(_normalizeForJson(result)) : null;
@@ -178,7 +178,7 @@ class CbDelegateGenerator {
       Parameter((p) => p
         ..name = 'include'
         ..named = true
-        ..type = refer('Map<String, dynamic>?')),
+        ..type = refer('${m}Include?')),
     ])
     ..body = Code('''
       final result =
@@ -214,7 +214,7 @@ class CbDelegateGenerator {
       Parameter((p) => p
         ..name = 'include'
         ..named = true
-        ..type = refer('Map<String, dynamic>?')),
+        ..type = refer('${m}Include?')),
       Parameter((p) => p
         ..name = 'includeRequired'
         ..named = true
@@ -243,7 +243,7 @@ class CbDelegateGenerator {
       if (orderBy is ${m}OrderByInput) queryBuilder.orderBy(_orderByToJson(orderBy));
       if (take != null) queryBuilder.take(take);
       if (skip != null) queryBuilder.skip(skip);
-      if (include != null) queryBuilder.include(include);
+      if (include != null) queryBuilder.include(include.toJson());
       if (includeRequired != null) queryBuilder.includeRequired(includeRequired);
       if (selectFields != null) queryBuilder.selectFields(selectFields);
       if (distinct == true) queryBuilder.distinct(distinctFields);
