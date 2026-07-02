@@ -29,7 +29,6 @@ class CbDelegateGenerator {
       ..directives.addAll([
         Directive.import('package:prisma_flutter_connector/$runtimeImport'),
         Directive.import('../models/${toSnakeCase(modelName)}.dart'),
-        Directive.import('../filters.dart'),
       ])
       ..body.add(_buildDelegateClass(modelName, tableName,
           hasUniqueFields: model.fields
@@ -813,7 +812,7 @@ class CbDelegateGenerator {
               final serialized = (entry.value as dynamic).toJson();
               if (serialized is Map) {
                 final cleaned = <String, dynamic>{};
-                for (final e in (serialized as Map).entries) {
+                for (final e in serialized.entries) {
                   if (e.value != null) cleaned[e.key.toString()] = e.value;
                 }
                 if (cleaned.isNotEmpty) result[entry.key] = cleaned;

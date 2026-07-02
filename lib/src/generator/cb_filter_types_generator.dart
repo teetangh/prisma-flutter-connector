@@ -130,7 +130,12 @@ class CbFilterTypesGenerator {
     ];
 
     final library = Library((b) => b
-      ..comments.add('/// Generated filter types for type-safe queries')
+      ..comments.addAll([
+        '/// Generated filter types for type-safe queries',
+        // @JsonKey on freezed constructor params (e.g. `in`, `string_contains`)
+        // is a valid pattern but trips this lint; suppress it file-wide.
+        'ignore_for_file: invalid_annotation_target',
+      ])
       ..directives.addAll(directives)
       ..body.addAll(body));
 

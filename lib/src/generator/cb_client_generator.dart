@@ -23,14 +23,11 @@ class CbClientGenerator {
       Directive.import('package:prisma_flutter_connector/$runtimeImport'),
     ];
 
-    // Import delegates and models
+    // The client class exposes delegates only; model types never appear in its
+    // surface, so it imports delegates but not model files.
     for (final model in schema.models) {
       final sn = toSnakeCase(model.name);
       directives.add(Directive.import('delegates/${sn}_delegate.dart'));
-    }
-    for (final model in schema.models) {
-      final sn = toSnakeCase(model.name);
-      directives.add(Directive.import('models/$sn.dart'));
     }
 
     final library = Library((b) => b

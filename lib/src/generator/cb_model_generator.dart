@@ -23,10 +23,13 @@ class CbModelGenerator {
   String generateModel(PrismaModel model) {
     final sn = toSnakeCase(model.name);
 
-    // Collect non-primitive type imports
+    // Collect non-primitive type imports (excluding the model's own type,
+    // which would be a redundant self-import for self-relations).
     final typeImports = <String>{};
     for (final f in model.fields) {
-      if (!_isPrimitiveType(f.type)) typeImports.add(f.type);
+      if (!_isPrimitiveType(f.type) && f.type != model.name) {
+        typeImports.add(f.type);
+      }
     }
 
     final directives = <Directive>[
@@ -37,6 +40,11 @@ class CbModelGenerator {
     ];
 
     final library = Library((b) => b
+      ..comments.add(
+        // @JsonKey on freezed constructor params (@map columns, relation
+        // fields) is a valid pattern that trips this lint; suppress file-wide.
+        'ignore_for_file: invalid_annotation_target',
+      )
       ..directives.addAll(directives)
       ..body.addAll([
         _buildMainClass(model),
