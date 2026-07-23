@@ -70,6 +70,8 @@ class CbDelegateGenerator {
         _findFirst(modelName, tableName),
         _findFirstOrThrow(modelName),
         _findMany(modelName, tableName, hasUniqueFields),
+        _findManyProjected(modelName, tableName, hasUniqueFields),
+        _findFirstProjected(modelName, tableName),
         _findManyRaw(modelName, tableName),
         _findFirstRaw(modelName, tableName),
         _create(modelName, tableName, relLiteral),
@@ -265,8 +267,146 @@ class CbDelegateGenerator {
       return results.map((json) => $m.fromJson(_normalizeForJson(json))).toList();
     '''));
 
+  /// Fully-typed projection finder: typed where/include/select/distinct with
+  /// Map rows out (projected/computed rows never hydrate typed models).
+  Method _findManyProjected(String m, String t, bool hasUniqueFields) =>
+      Method((b) => b
+        ..name = 'findManyProjected'
+        ..docs.addAll([
+          '/// Find multiple ${m}s as projected rows (maps).',
+          '///',
+          '/// Typed inputs; `Map` rows out — use for scalar projection',
+          '/// (`select:`/`distinctOn:`), computed correlated subqueries, and',
+          '/// include-with-select. Rows may be partial, so they are not',
+          '/// hydrated into typed models.',
+        ])
+        ..modifier = MethodModifier.async
+        ..returns = refer('Future<List<Map<String, dynamic>>>')
+        ..optionalParameters.addAll([
+          Parameter((p) => p
+            ..name = 'where'
+            ..named = true
+            ..type = refer('${m}WhereInput?')),
+          Parameter((p) => p
+            ..name = 'orderBy'
+            ..named = true
+            ..type = refer('dynamic')),
+          Parameter((p) => p
+            ..name = 'take'
+            ..named = true
+            ..type = refer('int?')),
+          Parameter((p) => p
+            ..name = 'skip'
+            ..named = true
+            ..type = refer('int?')),
+          if (hasUniqueFields)
+            Parameter((p) => p
+              ..name = 'cursor'
+              ..named = true
+              ..type = refer('${m}WhereUniqueInput?')),
+          Parameter((p) => p
+            ..name = 'include'
+            ..named = true
+            ..type = refer('${m}Include?')),
+          Parameter((p) => p
+            ..name = 'select'
+            ..named = true
+            ..type = refer('List<${m}ScalarField>?')),
+          Parameter((p) => p
+            ..name = 'computed'
+            ..named = true
+            ..type = refer('Map<String, ComputedField>?')),
+          Parameter((p) => p
+            ..name = 'distinct'
+            ..named = true
+            ..type = refer('bool?')),
+          Parameter((p) => p
+            ..name = 'distinctOn'
+            ..named = true
+            ..type = refer('List<${m}ScalarField>?')),
+        ])
+        ..body = Code('''
+      final queryBuilder = JsonQueryBuilder()
+          .model('$t')
+          .action(QueryAction.findMany);
+
+      if (where != null) queryBuilder.where(_whereToJson(where));
+      if (orderBy is Map<String, dynamic>) queryBuilder.orderBy(orderBy);
+      if (orderBy is List) queryBuilder.orderBy(orderBy);
+      if (orderBy is ${m}OrderByInput) queryBuilder.orderBy(_orderByToJson(orderBy));
+      if (take != null) queryBuilder.take(take);
+      if (skip != null) queryBuilder.skip(skip);
+      ${hasUniqueFields ? 'if (cursor != null) queryBuilder.cursor(_whereUniqueToJson(cursor));' : ''}
+      if (include != null) queryBuilder.include(include.toJson());
+      if (select != null && select.isNotEmpty) {
+        queryBuilder.selectFields([for (final f in select) f.fieldName]);
+      }
+      if (computed != null) queryBuilder.computed(computed);
+      if (distinct == true || (distinctOn != null && distinctOn.isNotEmpty)) {
+        queryBuilder.distinct(
+          distinctOn == null || distinctOn.isEmpty
+              ? null
+              : [for (final f in distinctOn) f.fieldName],
+        );
+      }
+
+      return await _executor.executeQueryAsMaps(queryBuilder.build());
+    '''));
+
+  /// findFirst variant of [_findManyProjected].
+  Method _findFirstProjected(String m, String t) => Method((b) => b
+    ..name = 'findFirstProjected'
+    ..docs.addAll([
+      '/// Find the first $m as a projected row (map). See findManyProjected.',
+    ])
+    ..modifier = MethodModifier.async
+    ..returns = refer('Future<Map<String, dynamic>?>')
+    ..optionalParameters.addAll([
+      Parameter((p) => p
+        ..name = 'where'
+        ..named = true
+        ..type = refer('${m}WhereInput?')),
+      Parameter((p) => p
+        ..name = 'orderBy'
+        ..named = true
+        ..type = refer('dynamic')),
+      Parameter((p) => p
+        ..name = 'include'
+        ..named = true
+        ..type = refer('${m}Include?')),
+      Parameter((p) => p
+        ..name = 'select'
+        ..named = true
+        ..type = refer('List<${m}ScalarField>?')),
+      Parameter((p) => p
+        ..name = 'computed'
+        ..named = true
+        ..type = refer('Map<String, ComputedField>?')),
+    ])
+    ..body = Code('''
+      final queryBuilder = JsonQueryBuilder()
+          .model('$t')
+          .action(QueryAction.findFirst);
+
+      if (where != null) queryBuilder.where(_whereToJson(where));
+      if (orderBy is Map<String, dynamic>) queryBuilder.orderBy(orderBy);
+      if (orderBy is List) queryBuilder.orderBy(orderBy);
+      if (orderBy is ${m}OrderByInput) queryBuilder.orderBy(_orderByToJson(orderBy));
+      if (include != null) queryBuilder.include(include.toJson());
+      if (select != null && select.isNotEmpty) {
+        queryBuilder.selectFields([for (final f in select) f.fieldName]);
+      }
+      if (computed != null) queryBuilder.computed(computed);
+
+      return await _executor.executeQueryAsSingleMap(queryBuilder.build());
+    '''));
+
   Method _findManyRaw(String m, String t) => Method((b) => b
     ..name = 'findManyRaw'
+    ..annotations.add(CodeExpression(
+        Code("Deprecated('Use findManyProjected (typed inputs) instead; "
+            'findManyRaw will be removed in 0.9.0'
+            "')")))
     ..docs
         .add('/// Find multiple ${m}s as raw maps (use with include/computed)')
     ..modifier = MethodModifier.async
@@ -334,6 +474,10 @@ class CbDelegateGenerator {
 
   Method _findFirstRaw(String m, String t) => Method((b) => b
     ..name = 'findFirstRaw'
+    ..annotations.add(CodeExpression(
+        Code("Deprecated('Use findFirstProjected (typed inputs) instead; "
+            'findFirstRaw will be removed in 0.9.0'
+            "')")))
     ..docs.add('/// Find the first $m as a raw map (use with include/computed)')
     ..modifier = MethodModifier.async
     ..returns = refer('Future<Map<String, dynamic>?>')

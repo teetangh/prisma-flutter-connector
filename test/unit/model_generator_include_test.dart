@@ -61,12 +61,29 @@ void main() {
       expect(flat, contains('class PostInclude'));
       expect(flat, contains('UserInclude? author'));
       expect(flat, contains('CommentInclude? comments'));
-      // toJson nests empty-include -> true, else {'include': ...}
+      // toJson nests empty-include -> true, else {'include': ..., 'select': ...}
       expect(flat, contains('final n = author!.toJson();'));
-      expect(
-          flat,
-          contains(
-              "map['author'] = n.isEmpty ? true : <String, dynamic>{'include': n}"));
+      expect(flat, contains('final s = author!.selectMap();'));
+      expect(flat, contains("map['author'] = (n.isEmpty && s == null) ? true"));
+      expect(flat, contains("if (n.isNotEmpty) 'include': n"));
+      expect(flat, contains("if (s != null) 'select': s"));
+    });
+
+    test('XInclude has typed per-relation select + ScalarField enum (#0.8.0)',
+        () {
+      final flat = _flat(modelCode('Post'));
+      // Include carries its own model's scalar-field select list
+      expect(flat, contains('List<PostScalarField>? select'));
+      // ScalarField enum generated with case-per-scalar + fieldName payload
+      expect(flat, contains('enum PostScalarField'));
+      expect(flat, contains("title('title')"));
+      expect(flat, contains("authorId('authorId')"));
+      // relations are NOT scalar cases
+      expect(flat, isNot(contains("author('author')")));
+      // selectMap emits {'field': true} or null
+      expect(flat,
+          contains('if (select == null || select!.isEmpty) return null;'));
+      expect(flat, contains('for (final f in select!) f.fieldName: true'));
     });
 
     test('relation-less model gets an empty XInclude', () {

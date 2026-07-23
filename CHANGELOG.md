@@ -4,6 +4,55 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-07-03
+
+The **typed-projection** release: the last raw-map surfaces (`select`,
+`selectFields`, `distinct`, computed fields, map-based include) now have typed
+equivalents, completing the surface needed to retire hand-built
+`JsonQueryBuilder` usage entirely.
+
+### Added
+
+#### `{Model}ScalarField` enums
+- One plain enum per model (a case per scalar field, carrying the Dart field
+  name; the compiler resolves `@map` columns via the registry). Near-zero
+  codegen cost — no freezed/part files.
+
+#### Typed per-relation include `select`
+- `XInclude` gains `select: List<{Model}ScalarField>?`, applied when the
+  include is nested under a parent include:
+  `AuthorInclude(posts: PostInclude(select: [PostScalarField.title]))`.
+  `toJson` emits `true` | `{'include': ..., 'select': ...}` — the shape the
+  relation compiler already consumes. `select` on the root include object is
+  ignored (root projection goes through the projected finders).
+
+#### `findManyProjected` / `findFirstProjected`
+- Fully-typed projection finders on every delegate: `XWhereInput`,
+  `orderBy` (Map | List | `XOrderByInput`), `take`/`skip`/`cursor`,
+  `XInclude` (with per-relation select), `select: List<XScalarField>`,
+  `computed: Map<String, ComputedField>`, `distinct`/`distinctOn:
+  List<XScalarField>` — with `Map<String, dynamic>` rows out (projected or
+  computed rows never hydrate typed models). This single surface replaces
+  every `.select()`/`.selectFields()`/computed/raw-helper call site.
+
+### Deprecated
+- **`findManyRaw` / `findFirstRaw`** — use the projected finders; removal
+  planned for 0.9.0.
+
+### Fixed
+- **Include-with-select dropped relation rows when the child primary key was
+  not selected** — the relation deserializer groups child rows by PK, so a
+  narrow `select` silently emptied the relation. PK columns are now always
+  carried in the aliased selection.
+
+### Notes
+- Nested typed relation filters (`XRelationFilter(is_:)` chains) compile to
+  correctly-correlated nested `EXISTS` — semantically equivalent to (and
+  better-correlated than) the legacy `FilterOperators.relationPath`, which is
+  now redundant. Limitation: repeating the SAME relation name along one chain
+  would collide on the `sub_<relation>` alias (not expressible with distinct
+  relation names).
+
 ## [0.7.1] - 2026-07-03
 
 ### Fixed
