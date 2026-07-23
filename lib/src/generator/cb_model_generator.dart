@@ -55,6 +55,7 @@ class CbModelGenerator {
         _buildListRelationFilter(model),
         _buildRelationFilter(model),
         _buildOrderByInput(model),
+        _buildScalarFieldEnum(model),
         _buildInclude(model),
         ..._buildRelationWriteInputs(model),
         ..._buildEnumConverters(model),
@@ -754,17 +755,63 @@ class CbModelGenerator {
     return specs;
   }
 
+  // === Scalar-field enum (typed projection) ===
+
+  /// Enum-case name for a scalar field, avoiding the identifiers every Dart
+  /// enum already declares (`values`, `index`, …).
+  String _scalarEnumCase(String name) {
+    const reserved = {
+      'values',
+      'index',
+      'hashCode',
+      'runtimeType',
+      'toString',
+      'noSuchMethod',
+    };
+    return reserved.contains(name) ? '${name}Field' : name;
+  }
+
+  /// Plain enum `{Model}ScalarField` — one case per scalar (non-relation)
+  /// field, carrying the Dart field name for the compiler to resolve via the
+  /// registry (@map-aware). Used by typed projection (`select:`/`distinctOn:`)
+  /// and per-relation include `select`.
+  Spec _buildScalarFieldEnum(PrismaModel model) {
+    final scalars = model.fields.where((f) => !f.isRelation).toList();
+    final cases = scalars
+        .map((f) => "  ${_scalarEnumCase(f.name)}('${f.name}')")
+        .join(',\n');
+    return Code('''
+/// Scalar fields of ${model.name} for typed projection.
+enum ${model.name}ScalarField {
+$cases;
+
+  const ${model.name}ScalarField(this.fieldName);
+
+  /// The Dart field name (the compiler resolves @map columns via the registry).
+  final String fieldName;
+}
+''');
+  }
+
   // === Include (typed relation selection) ===
 
-  /// Typed include class: one `${RelatedModel}Include?` field per relation.
-  /// A non-null nested include includes that relation (empty = include with no
-  /// deeper relations); toJson yields the compiler's include-map shape.
+  /// Typed include class: one `${RelatedModel}Include?` field per relation,
+  /// plus `select` (that model's own scalar fields) applied when this include
+  /// is NESTED under a parent include. A non-null nested include includes that
+  /// relation; toJson yields the compiler's include-map shape:
+  /// `true` | `{'include': ..., 'select': ...}`.
+  ///
+  /// NOTE: `select` on the ROOT include object of a query is ignored — root
+  /// projection goes through the finder's own `select` parameter
+  /// (findManyProjected).
   Class _buildInclude(PrismaModel model) {
     final relations = model.fields.where((f) => f.isRelation).toList();
-    final params = <Parameter>[];
-    // Statement-style toJson (no runtime helper): an empty nested include
-    // serializes to `true` (include, no deeper relations); a non-empty one
-    // nests via {'include': ...}, matching the relation compiler's shape.
+    final params = <Parameter>[
+      Parameter((p) => p
+        ..name = 'select'
+        ..named = true
+        ..type = refer('List<${model.name}ScalarField>?')),
+    ];
     final stmts = <String>['final map = <String, dynamic>{};'];
     for (final f in relations) {
       params.add(Parameter((p) => p
@@ -773,13 +820,29 @@ class CbModelGenerator {
         ..type = refer('${f.type}Include?')));
       stmts.add("if (${f.name} != null) {"
           " final n = ${f.name}!.toJson();"
-          " map['${f.name}'] = n.isEmpty ? true : <String, dynamic>{'include': n};"
+          " final s = ${f.name}!.selectMap();"
+          " map['${f.name}'] = (n.isEmpty && s == null)"
+          "     ? true"
+          "     : <String, dynamic>{"
+          "         if (n.isNotEmpty) 'include': n,"
+          "         if (s != null) 'select': s,"
+          "       };"
           " }");
     }
     stmts.add('return map;');
     return _freezedClass('${model.name}Include', params,
         doc: '/// Typed include for ${model.name} relations',
-        toJsonBody: stmts.join('\n'));
+        toJsonBody: stmts.join('\n'),
+        extraMethods: [
+          Method((m) => m
+            ..docs.add('/// Scalar projection for this include when nested '
+                'under a parent include; null = all fields.')
+            ..name = 'selectMap'
+            ..returns = refer('Map<String, dynamic>?')
+            ..body = Code('if (select == null || select!.isEmpty) return null;'
+                ' return <String, dynamic>{'
+                'for (final f in select!) f.fieldName: true};')),
+        ]);
   }
 
   // === OrderByInput ===
@@ -809,7 +872,9 @@ class CbModelGenerator {
   // === Shared: build a @freezed class ===
 
   Class _freezedClass(String name, List<Parameter> params,
-      {String? doc, required String toJsonBody}) {
+      {String? doc,
+      required String toJsonBody,
+      List<Method> extraMethods = const []}) {
     return Class((b) {
       if (doc != null) b.docs.add(doc);
       b
@@ -836,10 +901,13 @@ class CbModelGenerator {
             ..body =
                 Code("throw UnimplementedError('$name.fromJson not needed');")),
         ])
-        ..methods.add(Method((m) => m
-          ..name = 'toJson'
-          ..returns = refer('Map<String, dynamic>')
-          ..body = Code(toJsonBody)));
+        ..methods.addAll([
+          Method((m) => m
+            ..name = 'toJson'
+            ..returns = refer('Map<String, dynamic>')
+            ..body = Code(toJsonBody)),
+          ...extraMethods,
+        ]);
     });
   }
 
