@@ -1353,6 +1353,7 @@ RETURNING *
       value is Map<String, dynamic> &&
       (value.containsKey('connect') ||
           value.containsKey('disconnect') ||
+          value.containsKey('set') ||
           value.containsKey('create'));
 
   /// Parent PK value known at compile time (from `data` on create or `where`
@@ -1404,6 +1405,18 @@ RETURNING *
       final v = value as Map<String, dynamic>;
 
       if (relation.type == RelationType.manyToMany) {
+        // `set`: replace the full relation — clear all junction rows for the
+        // parent, then connect exactly the given targets.
+        if (v.containsKey('set')) {
+          final clear = _compileJunctionClear(relation, parentId.toString());
+          if (clear != null) mutations.add(clear);
+          mutations.addAll(_compileConnectOperations(
+            parentId: parentId.toString(),
+            relation: relation,
+            connectItems: _normalizeConnectDisconnect(v['set']),
+            effectiveSchema: effectiveSchema,
+          ));
+        }
         if (v.containsKey('connect')) {
           mutations.addAll(_compileConnectOperations(
             parentId: parentId.toString(),
@@ -1422,6 +1435,13 @@ RETURNING *
         }
       } else if (relation.type == RelationType.oneToMany ||
           relation.type == RelationType.oneToOne) {
+        if (v.containsKey('set')) {
+          throw UnsupportedError(
+            'Nested `set` on the ${relation.type.name} relation '
+            '"${entry.key}" is only supported for many-to-many relations '
+            '(1:N re-parenting is not implemented).',
+          );
+        }
         // Nested create: child rows carry the FK back to the parent.
         if (v.containsKey('create')) {
           final creates = v['create'];
@@ -1470,6 +1490,19 @@ RETURNING *
       }
     }
     return mutations;
+  }
+
+  /// DELETE all junction rows for [parentId] on an m2m relation (the clear
+  /// half of a nested `set`). Returns null when the relation lacks junction
+  /// metadata.
+  SqlQuery? _compileJunctionClear(RelationInfo relation, String parentId) {
+    if (relation.joinTable == null || relation.joinColumn == null) return null;
+    return SqlQuery(
+      sql: 'DELETE FROM ${_quoteIdentifier(relation.joinTable!)} '
+          'WHERE ${_quoteIdentifier(relation.joinColumn!)} = ${_placeholder(1)}',
+      args: [parentId],
+      argTypes: const [ArgType.string],
+    );
   }
 
   /// Normalize connect/disconnect input to a list of maps.

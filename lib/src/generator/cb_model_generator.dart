@@ -142,14 +142,17 @@ class CbModelGenerator {
         !_isEnumType(f.type);
     final effectiveRequired = f.isRequired && !hasDefault;
     if (f.isList) {
+      // List columns decode null-tolerantly even when required: a NULL in a
+      // non-null array column is dirty data, but falling back to [] beats
+      // crashing hydration of the whole row (matches the DB default).
       if (_isEnumType(f.type)) {
         return effectiveRequired
-            ? "(json['$key'] as List).map((e) => _\$${f.type}FromJson(e as String)).toList()"
+            ? "(json['$key'] as List?)?.map((e) => _\$${f.type}FromJson(e as String)).toList() ?? const []"
             : "(json['$key'] as List?)?.map((e) => _\$${f.type}FromJson(e as String)).toList()";
       }
       final defaultSuffix = hasDefault ? ' ?? ${f.defaultValue}' : '';
       return effectiveRequired
-          ? "(json['$key'] as List).cast<$dartType>()"
+          ? "(json['$key'] as List?)?.cast<$dartType>() ?? const []"
           : "(json['$key'] as List?)?.cast<$dartType>()$defaultSuffix";
     }
 
@@ -726,6 +729,12 @@ class CbModelGenerator {
               "if (connect != null) 'connect': connect!.map((e) => e.toJson()).toList()");
           entries.add(
               "if (disconnect != null) 'disconnect': disconnect!.map((e) => e.toJson()).toList()");
+          params.add(Parameter((p) => p
+            ..name = 'set'
+            ..named = true
+            ..type = refer('List<${related}WhereUniqueInput>?')));
+          entries.add(
+              "if (set != null) 'set': set!.map((e) => e.toJson()).toList()");
         }
         params.add(Parameter((p) => p
           ..name = 'create'

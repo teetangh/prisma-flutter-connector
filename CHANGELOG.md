@@ -4,6 +4,36 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-24
+
+The **null-semantics** release — closes the gaps found while migrating the
+familiarise backend to a fully typed data layer, and completes the raw-helper
+deprecation cycle.
+
+### Added
+- **`setNull` on typed updates** — `update`/`updateMany` gain
+  `setNull: List<{Model}ScalarField>?`; listed fields are injected as explicit
+  `NULL` assignments (typed inputs otherwise drop null fields, making
+  null-clears inexpressible).
+- **`isNull` on every filter class** — `isNull: true` compiles to `IS NULL`,
+  `isNull: false` to `IS NOT NULL` (all scalar/enum/BigInt/Bytes/Json/list
+  filters).
+- **Nested `set` for many-to-many relations** — to-many relation write inputs
+  gain `set: List<{Related}WhereUniqueInput>?`; the engine clears the junction
+  rows for the parent and connects exactly the given targets (replace
+  semantics). `set` on 1:N/1:1 throws `UnsupportedError` (re-parenting is not
+  implemented) instead of silently dropping data.
+
+### Changed
+- **Null-tolerant array decode** — required `String[]`-style columns now
+  hydrate SQL `NULL` as `const []` instead of crashing `fromJson` (dirty data
+  tolerated in favour of the column default).
+
+### Removed
+- **`findManyRaw` / `findFirstRaw`** — deprecated in 0.8.0, removed as
+  scheduled. Use `findManyProjected` / `findFirstProjected` (typed inputs,
+  Map rows) or typed `findMany` + `toJson()`.
+
 ## [0.8.0] - 2026-07-03
 
 The **typed-projection** release: the last raw-map surfaces (`select`,
