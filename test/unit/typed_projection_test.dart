@@ -214,11 +214,10 @@ model User { id String @id }
       expect(flat, contains('executeQueryAsSingleMap'));
     });
 
-    test('raw helpers are @Deprecated pointing at projected finders', () {
+    test('raw helpers are removed in 0.9.0', () {
       final flat = _flat(delegate());
-      expect(flat, contains('@Deprecated('));
-      expect(flat, contains("'Use findManyProjected (typed inputs) instead"));
-      expect(flat, contains("'Use findFirstProjected (typed inputs) instead"));
+      expect(flat, isNot(contains('findManyRaw')));
+      expect(flat, isNot(contains('findFirstRaw')));
     });
   });
 }

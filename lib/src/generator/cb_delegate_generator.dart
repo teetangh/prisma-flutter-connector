@@ -72,8 +72,6 @@ class CbDelegateGenerator {
         _findMany(modelName, tableName, hasUniqueFields),
         _findManyProjected(modelName, tableName, hasUniqueFields),
         _findFirstProjected(modelName, tableName),
-        _findManyRaw(modelName, tableName),
-        _findFirstRaw(modelName, tableName),
         _create(modelName, tableName, relLiteral),
         _createMany(modelName, tableName),
         _createManyAndReturn(modelName, tableName),
@@ -401,113 +399,6 @@ class CbDelegateGenerator {
       return await _executor.executeQueryAsSingleMap(queryBuilder.build());
     '''));
 
-  Method _findManyRaw(String m, String t) => Method((b) => b
-    ..name = 'findManyRaw'
-    ..annotations.add(CodeExpression(
-        Code("Deprecated('Use findManyProjected (typed inputs) instead; "
-            'findManyRaw will be removed in 0.9.0'
-            "')")))
-    ..docs
-        .add('/// Find multiple ${m}s as raw maps (use with include/computed)')
-    ..modifier = MethodModifier.async
-    ..returns = refer('Future<List<Map<String, dynamic>>>')
-    ..optionalParameters.addAll([
-      Parameter((p) => p
-        ..name = 'where'
-        ..named = true
-        ..type = refer('Map<String, dynamic>?')),
-      Parameter((p) => p
-        ..name = 'orderBy'
-        ..named = true
-        ..type = refer('dynamic')),
-      Parameter((p) => p
-        ..name = 'take'
-        ..named = true
-        ..type = refer('int?')),
-      Parameter((p) => p
-        ..name = 'skip'
-        ..named = true
-        ..type = refer('int?')),
-      Parameter((p) => p
-        ..name = 'include'
-        ..named = true
-        ..type = refer('Map<String, dynamic>?')),
-      Parameter((p) => p
-        ..name = 'includeRequired'
-        ..named = true
-        ..type = refer('Map<String, dynamic>?')),
-      Parameter((p) => p
-        ..name = 'selectFields'
-        ..named = true
-        ..type = refer('List<String>?')),
-      Parameter((p) => p
-        ..name = 'computed'
-        ..named = true
-        ..type = refer('Map<String, ComputedField>?')),
-      Parameter((p) => p
-        ..name = 'distinct'
-        ..named = true
-        ..type = refer('bool?')),
-      Parameter((p) => p
-        ..name = 'distinctFields'
-        ..named = true
-        ..type = refer('List<String>?')),
-    ])
-    ..body = Code('''
-      final queryBuilder = JsonQueryBuilder()
-          .model('$t')
-          .action(QueryAction.findMany);
-
-      if (where != null) queryBuilder.where(where);
-      if (orderBy is Map<String, dynamic>) queryBuilder.orderBy(orderBy);
-      if (orderBy is List) queryBuilder.orderBy(orderBy);
-      if (take != null) queryBuilder.take(take);
-      if (skip != null) queryBuilder.skip(skip);
-      if (include != null) queryBuilder.include(include);
-      if (includeRequired != null) queryBuilder.includeRequired(includeRequired);
-      if (selectFields != null) queryBuilder.selectFields(selectFields);
-      if (computed != null) queryBuilder.computed(computed);
-      if (distinct == true) queryBuilder.distinct(distinctFields);
-
-      return await _executor.executeQueryAsMaps(queryBuilder.build());
-    '''));
-
-  Method _findFirstRaw(String m, String t) => Method((b) => b
-    ..name = 'findFirstRaw'
-    ..annotations.add(CodeExpression(
-        Code("Deprecated('Use findFirstProjected (typed inputs) instead; "
-            'findFirstRaw will be removed in 0.9.0'
-            "')")))
-    ..docs.add('/// Find the first $m as a raw map (use with include/computed)')
-    ..modifier = MethodModifier.async
-    ..returns = refer('Future<Map<String, dynamic>?>')
-    ..optionalParameters.addAll([
-      Parameter((p) => p
-        ..name = 'where'
-        ..named = true
-        ..type = refer('Map<String, dynamic>?')),
-      Parameter((p) => p
-        ..name = 'orderBy'
-        ..named = true
-        ..type = refer('dynamic')),
-      Parameter((p) => p
-        ..name = 'include'
-        ..named = true
-        ..type = refer('Map<String, dynamic>?')),
-    ])
-    ..body = Code('''
-      final queryBuilder = JsonQueryBuilder()
-          .model('$t')
-          .action(QueryAction.findFirst);
-
-      if (where != null) queryBuilder.where(where);
-      if (orderBy is Map<String, dynamic>) queryBuilder.orderBy(orderBy);
-      if (orderBy is List) queryBuilder.orderBy(orderBy);
-      if (include != null) queryBuilder.include(include);
-
-      return await _executor.executeQueryAsSingleMap(queryBuilder.build());
-    '''));
-
   Method _create(String m, String t, String relLiteral) => Method((b) => b
     ..name = 'create'
     ..docs.add('/// Create a new $m')
@@ -611,9 +502,20 @@ class CbDelegateGenerator {
         ..named = true
         ..required = true
         ..type = refer('Update${m}Input')),
+      Parameter((p) => p
+        ..name = 'setNull'
+        ..named = true
+        ..type = refer('List<${m}ScalarField>?')),
     ])
     ..body = Code('''
       final data0 = data.toJson();
+      // Explicit null-clears: typed inputs drop null fields, so fields to be
+      // set to NULL are listed here and injected as explicit nulls.
+      if (setNull != null) {
+        for (final f in setNull) {
+          data0[f.fieldName] = null;
+        }
+      }
       final query = JsonQueryBuilder()
           .model('$t')
           .action(QueryAction.update)
@@ -685,13 +587,23 @@ class CbDelegateGenerator {
         ..named = true
         ..required = true
         ..type = refer('Update${m}Input')),
+      Parameter((p) => p
+        ..name = 'setNull'
+        ..named = true
+        ..type = refer('List<${m}ScalarField>?')),
     ])
     ..body = Code('''
+      final data0 = data.toJson();
+      if (setNull != null) {
+        for (final f in setNull) {
+          data0[f.fieldName] = null;
+        }
+      }
       final query = JsonQueryBuilder()
           .model('$t')
           .action(QueryAction.updateMany)
           .where(_whereToJson(where))
-          .data(data.toJson())
+          .data(data0)
           .build();
 
       return await _executor.executeMutation(query);

@@ -61,6 +61,8 @@ class CbFilterTypesGenerator {
             if (lte != null) 'lte': lte,
             if (gt != null) 'gt': gt,
             if (gte != null) 'gte': gte,
+            if (isNull == true) 'isNull': true,
+            if (isNull == false) 'isNotNull': true,
           };
         ''',
       ),
@@ -170,7 +172,10 @@ class CbFilterTypesGenerator {
 
   Class _filter(String name, String doc, List<Parameter> params,
       {String? toJsonBodyOverride}) {
-    final toJsonBody = toJsonBodyOverride ?? _filterToJsonBody(params);
+    // Every filter gets a null-check operator: isNull:true -> IS NULL,
+    // isNull:false -> IS NOT NULL (compiler operators isNull/isNotNull).
+    final allParams = [...params, _p('bool?', 'isNull')];
+    final toJsonBody = toJsonBodyOverride ?? _filterToJsonBody(allParams);
     return Class((b) => b
       ..name = name
       ..docs.add('/// Filter for $doc fields')
@@ -184,7 +189,7 @@ class CbFilterTypesGenerator {
           ..factory = true
           ..constant = true
           ..redirect = refer('_$name')
-          ..optionalParameters.addAll(params)),
+          ..optionalParameters.addAll(allParams)),
         Constructor((c) => c
           ..factory = true
           ..name = 'fromJson'
@@ -205,6 +210,12 @@ class CbFilterTypesGenerator {
     final entries = <String>[];
     for (final p in params) {
       final name = p.name;
+      if (name == 'isNull') {
+        // true -> IS NULL, false -> IS NOT NULL (distinct compiler operators).
+        entries.add("if (isNull == true) 'isNull': true");
+        entries.add("if (isNull == false) 'isNotNull': true");
+        continue;
+      }
       final jsonKey = name == 'in_' ? 'in' : name;
       final typeStr = p.type?.symbol ?? '';
       entries.add(
