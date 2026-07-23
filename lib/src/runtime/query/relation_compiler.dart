@@ -463,7 +463,16 @@ class RelationCompiler {
       fieldToColumn[field.name] = field.columnName;
     }
 
-    for (final fieldName in selectedFields) {
+    // Always carry the primary key: the relation deserializer groups/dedupes
+    // child rows by PK, so a select that omits it would silently drop the
+    // relation's rows from the hydrated result.
+    final effectiveFields = [
+      ...selectedFields,
+      for (final pk in model.primaryKeys)
+        if (!selectedFields.contains(pk.name)) pk.name,
+    ];
+
+    for (final fieldName in effectiveFields) {
       // Get actual column name (may differ from field name)
       final columnName = fieldToColumn[fieldName] ?? fieldName;
 
