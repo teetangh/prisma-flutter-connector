@@ -107,6 +107,9 @@ class PrismaModel {
   final List<PrismaField> fields;
   final List<PrismaRelation> relations;
 
+  /// Composite primary key fields from `@@id([a, b])`.
+  final List<String> compositeId;
+
   /// Composite unique keys from block attributes: `@@id([a, b])` (also treated
   /// as a unique) and each `@@unique([a, b])`. Single-field lists are omitted
   /// (those are covered by field-level `@id`/`@unique`).
@@ -117,8 +120,12 @@ class PrismaModel {
     this.dbName,
     required this.fields,
     required this.relations,
+    this.compositeId = const [],
     this.compositeUniques = const [],
   });
+
+  /// Whether this model defines a composite primary key via `@@id([a, b])`.
+  bool get hasCompositeId => compositeId.isNotEmpty;
 
   /// Get the database table name (original name if renamed, otherwise model name)
   String get tableName => dbName ?? name;
@@ -476,13 +483,15 @@ class PrismaParser {
       // renames for the database table name. Match line-by-line with
       // comments stripped so a commented-out `// @@map("x")` is ignored.
       String? explicitTableName;
-      // Composite unique keys from @@id([...]) and @@unique([...]).
+      // Composite primary key from @@id([...]) and composite unique keys from
+      // @@id([...]) and @@unique([...]).
+      final compositeId = <String>[];
       final compositeUniques = <List<String>>[];
+      final seenCompositeKeys = <String>{};
+      final singleIdFields = <String>{};
+      final singleUniqueFields = <String>{};
       for (final line in modelBody.split('\n')) {
-        var active = line;
-        final commentIndex = active.indexOf('//');
-        if (commentIndex >= 0) active = active.substring(0, commentIndex);
-        active = active.trim();
+        final active = _stripLineComment(line).trim();
         final mapMatch =
             RegExp(r'^@@map\(\s*"([^"]+)"\s*\)').firstMatch(active);
         if (mapMatch != null) {
@@ -490,17 +499,38 @@ class PrismaParser {
           continue;
         }
         final keyMatch =
-            RegExp(r'^@@(id|unique)\(\s*\[([^\]]*)\]').firstMatch(active);
+            RegExp(r'^@@(id|unique)\((.*)\)\s*$').firstMatch(active);
         if (keyMatch != null) {
-          final parts = keyMatch
-              .group(2)!
-              .split(',')
-              .map((f) => f.trim())
-              .where((f) => f.isNotEmpty)
-              .toList();
-          // Only composite (>1) keys need a compound input; single-field
-          // @@unique is already addressable via the field-level unique.
-          if (parts.length > 1) compositeUniques.add(parts);
+          final kind = keyMatch.group(1)!;
+          final inside = keyMatch.group(2)!;
+          final bracketMatch =
+              RegExp(r'\bfields:\s*\[([^\]]*)\]').firstMatch(inside) ??
+                  RegExp(r'\[([^\]]*)\]').firstMatch(inside);
+          if (bracketMatch != null) {
+            final parts = bracketMatch
+                .group(1)!
+                .split(',')
+                .map((f) => f.replaceAll(RegExp(r'\(.*\)$'), '').trim())
+                .where((f) => f.isNotEmpty)
+                .map((f) => _normalizeFieldName(
+                    _handleReservedKeyword(f, 'field').dartName))
+                .toList();
+            if (parts.length == 1) {
+              if (kind == 'id') {
+                singleIdFields.add(parts.first);
+              } else {
+                singleUniqueFields.add(parts.first);
+              }
+            } else if (parts.length > 1) {
+              if (kind == 'id' && compositeId.isEmpty) {
+                compositeId.addAll(parts);
+              }
+              final sig = parts.join(',');
+              if (seenCompositeKeys.add(sig)) {
+                compositeUniques.add(parts);
+              }
+            }
+          }
         }
       }
       final modelDbName = explicitTableName ?? modelResult.dbName;
@@ -514,7 +544,7 @@ class PrismaParser {
 
       // Parse each line in the model
       for (final line in modelBody.split('\n')) {
-        final trimmed = line.trim();
+        final trimmed = _stripLineComment(line).trim();
         if (trimmed.isEmpty ||
             trimmed.startsWith('//') ||
             trimmed.startsWith('@@')) {
@@ -533,6 +563,7 @@ class PrismaParser {
           final fieldResult = _handleReservedKeyword(schemaFieldName, 'field');
           final dartFieldName = fieldResult.dartName;
           final fieldDbName = fieldResult.dbName;
+          final normalizedName = _normalizeFieldName(dartFieldName);
 
           if (fieldResult.warning != null) {
             warnings.add(fieldResult.warning!);
@@ -550,8 +581,10 @@ class PrismaParser {
             fieldType = fieldType.substring(0, fieldType.length - 1);
           }
 
-          final isId = attributes.contains('@id');
-          final isUnique = attributes.contains('@unique');
+          final isId = attributes.contains('@id') ||
+              singleIdFields.contains(normalizedName);
+          final isUnique = attributes.contains('@unique') ||
+              singleUniqueFields.contains(normalizedName);
           final isUpdatedAt = attributes.contains('@updatedAt');
           final isCreatedAt = attributes.contains('@default(now())');
 
@@ -577,40 +610,55 @@ class PrismaParser {
           List<String>? relationToFields;
 
           if (isRelation) {
-            // Parse relation metadata
-            final relationMatch =
-                RegExp(r'@relation\(([^)]*)\)').firstMatch(attributes);
-            if (relationMatch != null) {
-              final relationContent = relationMatch.group(1)!;
-
-              // Extract relation name (first unnamed string in quotes)
-              final nameMatch =
-                  RegExp(r'^"([^"]+)"').firstMatch(relationContent.trim());
-              if (nameMatch != null) {
-                relationName = nameMatch.group(1);
+            // Parse relation metadata (order-independent)
+            final relationContent =
+                _extractAttributeContent(attributes, '@relation(');
+            if (relationContent != null) {
+              // Extract relation name: either named `name: "..."` or positional `"..."` (excluding `map: "..."`)
+              final namedRelMatch =
+                  RegExp(r'\bname:\s*"([^"]+)"').firstMatch(relationContent);
+              if (namedRelMatch != null) {
+                relationName = namedRelMatch.group(1);
+              } else {
+                final withoutMap =
+                    relationContent.replaceAll(RegExp(r'\bmap:\s*"[^"]*"'), '');
+                final posRelMatch = RegExp(r'"([^"]+)"').firstMatch(withoutMap);
+                if (posRelMatch != null) {
+                  relationName = posRelMatch.group(1);
+                }
               }
 
               // Extract fields: [field1, field2]
-              final fieldsMatch =
-                  RegExp(r'fields:\s*\[([^\]]*)\]').firstMatch(relationContent);
+              final fieldsMatch = RegExp(r'\bfields:\s*\[([^\]]*)\]')
+                  .firstMatch(relationContent);
               if (fieldsMatch != null) {
                 relationFromFields = fieldsMatch
                     .group(1)!
                     .split(',')
-                    .map((f) => f.trim().replaceAll(RegExp(r'["\[\]]'), ''))
+                    .map((f) => f
+                        .replaceAll(RegExp(r'\(.*\)$'), '')
+                        .trim()
+                        .replaceAll(RegExp(r'["\[\]]'), ''))
                     .where((f) => f.isNotEmpty)
+                    .map((f) => _normalizeFieldName(
+                        _handleReservedKeyword(f, 'field').dartName))
                     .toList();
               }
 
               // Extract references: [field1, field2]
-              final referencesMatch = RegExp(r'references:\s*\[([^\]]*)\]')
+              final referencesMatch = RegExp(r'\breferences:\s*\[([^\]]*)\]')
                   .firstMatch(relationContent);
               if (referencesMatch != null) {
                 relationToFields = referencesMatch
                     .group(1)!
                     .split(',')
-                    .map((f) => f.trim().replaceAll(RegExp(r'["\[\]]'), ''))
+                    .map((f) => f
+                        .replaceAll(RegExp(r'\(.*\)$'), '')
+                        .trim()
+                        .replaceAll(RegExp(r'["\[\]]'), ''))
                     .where((f) => f.isNotEmpty)
+                    .map((f) => _normalizeFieldName(
+                        _handleReservedKeyword(f, 'field').dartName))
                     .toList();
               }
 
@@ -630,9 +678,6 @@ class PrismaParser {
 
           // Resolve field type to potentially renamed model type
           final resolvedFieldType = modelNameMap[fieldType] ?? fieldType;
-
-          // Normalize field name (PascalCase → camelCase)
-          final normalizedName = _normalizeFieldName(dartFieldName);
 
           // Explicit @map("column_name") on the field (block-level @@ lines
           // are skipped above, so this cannot match @@map)
@@ -678,6 +723,7 @@ class PrismaParser {
         dbName: modelDbName,
         fields: fields,
         relations: relations,
+        compositeId: compositeId,
         compositeUniques: compositeUniques,
       ));
     }
@@ -689,27 +735,82 @@ class PrismaParser {
     );
   }
 
-  /// Extract model/enum blocks using brace counting instead of [^}] regex.
+  /// Strip `// ...` comment from a single line, ignoring `//` inside `"..."`.
+  String _stripLineComment(String line) {
+    var inQuotes = false;
+    for (var i = 0; i < line.length; i++) {
+      final ch = line[i];
+      if (ch == '"' && (i == 0 || line[i - 1] != '\\')) {
+        inQuotes = !inQuotes;
+      } else if (!inQuotes &&
+          ch == '/' &&
+          i + 1 < line.length &&
+          line[i + 1] == '/') {
+        return line.substring(0, i);
+      }
+    }
+    return line;
+  }
+
+  /// Extract model/enum blocks using comment- and quote-aware brace counting.
   ///
-  /// Handles inline comments containing `{` or `}` which break simple regex.
+  /// Handles inline comments containing `{` or `}` (even unbalanced) which
+  /// break simple regex or naive brace counting.
   List<_Block> _extractBlocks(String content, String keyword) {
+    final strippedContent =
+        content.split('\n').map(_stripLineComment).join('\n');
     final blocks = <_Block>[];
-    final pattern = RegExp('$keyword\\s+(\\w+)\\s*\\{');
-    for (final match in pattern.allMatches(content)) {
+    final pattern = RegExp('^\\s*$keyword\\s+(\\w+)\\s*\\{', multiLine: true);
+    for (final match in pattern.allMatches(strippedContent)) {
       final name = match.group(1)!;
       final start = match.end; // position after the opening {
       var depth = 1;
       var i = start;
-      while (i < content.length && depth > 0) {
-        final ch = content[i];
-        if (ch == '{') depth++;
-        if (ch == '}') depth--;
+      var inQuotes = false;
+      while (i < strippedContent.length && depth > 0) {
+        final ch = strippedContent[i];
+        if (ch == '"' && (i == 0 || strippedContent[i - 1] != '\\')) {
+          inQuotes = !inQuotes;
+        } else if (!inQuotes) {
+          if (ch == '{') depth++;
+          if (ch == '}') depth--;
+        }
         i++;
       }
       // i is now past the closing }, body is between start and i-1
-      blocks.add(_Block(name: name, body: content.substring(start, i - 1)));
+      blocks.add(
+          _Block(name: name, body: strippedContent.substring(start, i - 1)));
     }
     return blocks;
+  }
+
+  /// Extracts content inside an attribute like `@default(` or `@relation(`
+  /// handling nested parentheses.
+  static String? _extractAttributeContent(String attributes, String prefix) {
+    final startIndex = attributes.indexOf(prefix);
+    if (startIndex == -1) return null;
+
+    final contentStart = startIndex + prefix.length;
+    var depth = 1;
+    var i = contentStart;
+    var inQuotes = false;
+
+    while (i < attributes.length && depth > 0) {
+      final char = attributes[i];
+      if (char == '"' && (i == 0 || attributes[i - 1] != '\\')) {
+        inQuotes = !inQuotes;
+      } else if (!inQuotes) {
+        if (char == '(') {
+          depth++;
+        } else if (char == ')') {
+          depth--;
+        }
+      }
+      i++;
+    }
+
+    if (depth != 0) return null; // Unbalanced parentheses
+    return attributes.substring(contentStart, i - 1);
   }
 
   /// Extracts content inside @default(...) handling nested parentheses.

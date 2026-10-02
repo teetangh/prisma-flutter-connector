@@ -1174,6 +1174,119 @@ model OrgInvoiceCounter {
         final model = result.models.first;
         expect(model.fields.any((f) => (f.isId || f.isUnique) && !f.isRelation),
             false);
+        expect(model.hasCompositeId, isTrue);
+        expect(model.compositeId, equals(['organizationId', 'fiscalYear']));
+        expect(
+            model.compositeUniques,
+            equals([
+              ['organizationId', 'fiscalYear']
+            ]));
+      });
+
+      test(
+          'supports order-independent @@id and @@unique with named args and sort modifiers',
+          () {
+        const schema = '''
+model LedgerItem {
+  orgId     String
+  seqNo     Int
+  code      String
+  createdAt DateTime
+
+  @@id(name: "pk_ledger", fields: [orgId, seqNo(sort: Desc)])
+  @@unique(map: "uq_code_created", fields: [code, createdAt(sort: Desc)], name: "codeCreated")
+}
+''';
+
+        final result = parser.parse(schema);
+        final model = result.models.first;
+        expect(model.hasCompositeId, isTrue);
+        expect(model.compositeId, equals(['orgId', 'seqNo']));
+        expect(
+          model.compositeUniques,
+          equals([
+            ['orgId', 'seqNo'],
+            ['code', 'createdAt'],
+          ]),
+        );
+      });
+
+      test(
+          'single-field @@unique([field]) and @@id([field]) mark the scalar field',
+          () {
+        const schema = '''
+model SsoProvider {
+  id         String
+  providerId String
+
+  @@id([id])
+  @@unique([providerId])
+}
+''';
+
+        final result = parser.parse(schema);
+        final model = result.models.first;
+        expect(model.hasCompositeId, isFalse);
+        expect(model.compositeUniques, isEmpty);
+        final idField = model.fields.firstWhere((f) => f.name == 'id');
+        final providerIdField =
+            model.fields.firstWhere((f) => f.name == 'providerId');
+        expect(idField.isId, isTrue);
+        expect(providerIdField.isUnique, isTrue);
+      });
+
+      test('supports order-independent @relation attributes', () {
+        const schema = '''
+model Message {
+  id          String @id
+  senderId    String
+  recipientId String
+  reviewerId  String
+  sender      User   @relation(fields: [senderId], references: [id], "SentMessages")
+  recipient   User   @relation(fields: [recipientId], name: "ReceivedMessages", references: [id])
+  reviewer    User   @relation(fields: [reviewerId], references: [id], map: "fk_reviewer")
+}
+
+model User {
+  id String @id
+}
+''';
+
+        final result = parser.parse(schema);
+        final model = result.models.firstWhere((m) => m.name == 'Message');
+        final sender = model.fields.firstWhere((f) => f.name == 'sender');
+        final recipient = model.fields.firstWhere((f) => f.name == 'recipient');
+        final reviewer = model.fields.firstWhere((f) => f.name == 'reviewer');
+
+        expect(sender.relationName, equals('SentMessages'));
+        expect(sender.relationFromFields, equals(['senderId']));
+        expect(sender.relationToFields, equals(['id']));
+
+        expect(recipient.relationName, equals('ReceivedMessages'));
+        expect(recipient.relationFromFields, equals(['recipientId']));
+        expect(recipient.relationToFields, equals(['id']));
+
+        expect(reviewer.relationName, isNull);
+        expect(reviewer.relationFromFields, equals(['reviewerId']));
+        expect(reviewer.relationToFields, equals(['id']));
+      });
+
+      test(
+          'handles comments containing balanced and unbalanced braces inside models',
+          () {
+        const schema = '''
+model SsoProvider {
+  id         String @id
+  // slug for /api/auth/sso/.../{providerId}/... and unbalanced } brace
+  providerId String @unique
+  domain     String
+}
+''';
+
+        final result = parser.parse(schema);
+        final model = result.models.first;
+        expect(model.fields.map((f) => f.name).toList(),
+            equals(['id', 'providerId', 'domain']));
       });
     });
   });

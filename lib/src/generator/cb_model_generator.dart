@@ -193,14 +193,16 @@ class CbModelGenerator {
           ? "(json['$key'] as num).toInt()"
           : "(json['$key'] as num?)?.toInt()$defaultSuffix",
       'double' => effectiveRequired
-          ? "(json['$key'] as num).toDouble()"
-          : "(json['$key'] as num?)?.toDouble()$defaultSuffix",
+          ? "(json['$key'] is num ? (json['$key'] as num).toDouble() : double.parse(json['$key'].toString()))"
+          : "json['$key'] != null ? (json['$key'] is num ? (json['$key'] as num).toDouble() : double.parse(json['$key'].toString())) : ${hasDefault ? f.defaultValue : 'null'}",
       'bool' => effectiveRequired
           ? "json['$key'] as bool"
           : "(json['$key'] as bool?)$defaultSuffix",
       'DateTime' => effectiveRequired
           ? "json['$key'] is DateTime ? json['$key'] as DateTime : DateTime.parse(json['$key'] as String)"
           : "json['$key'] != null ? (json['$key'] is DateTime ? json['$key'] as DateTime : DateTime.parse(json['$key'] as String)) : null",
+      'dynamic' =>
+        hasDefault ? "json['$key'] ?? ${f.defaultValue}" : "json['$key']",
       'Map<String, dynamic>' => f.isRequired
           ? "json['$key'] as Map<String, dynamic>"
           : "json['$key'] as Map<String, dynamic>?",
@@ -307,6 +309,16 @@ class CbModelGenerator {
     return true;
   }
 
+  String _whereUniqueValueExpr(PrismaField f, {required bool nullable}) {
+    final name = f.name;
+    final dartType = _toDartType(f.type);
+    final q = nullable ? '?' : '';
+    if (_isEnumType(f.type)) return '_\$${f.type}ToJson($name)';
+    if (dartType == 'DateTime') return '$name$q.toIso8601String()';
+    if (dartType == 'BigInt') return '$name$q.toString()';
+    return name;
+  }
+
   /// Generate toJson body for WhereUniqueInput.
   ///
   /// Compound keys are FLATTENED into their individual field equalities, so
@@ -318,7 +330,8 @@ class CbModelGenerator {
         model.fields.where((f) => (f.isId || f.isUnique) && !f.isRelation);
     final entries = <String>[];
     for (final f in uniqueFields) {
-      entries.add("if (${f.name} != null) '${f.name}': ${f.name}");
+      final expr = _whereUniqueValueExpr(f, nullable: true);
+      entries.add("if (${f.name} != null) '${f.name}': $expr");
     }
     for (final key in model.compositeUniques) {
       final fieldName = key.join('_');
@@ -350,17 +363,23 @@ class CbModelGenerator {
     return 'return <String, dynamic>{${entries.join(', ')},};';
   }
 
+  /// Sortable scalar fields for OrderByInput.
+  Iterable<PrismaField> _sortableFields(PrismaModel model) =>
+      model.fields.where((f) =>
+          !f.isRelation &&
+          (f.type == 'String' ||
+              f.type == 'Int' ||
+              f.type == 'BigInt' ||
+              f.type == 'Float' ||
+              f.type == 'Decimal' ||
+              f.type == 'DateTime' ||
+              f.type == 'Boolean' ||
+              f.isCreatedAt ||
+              f.isUpdatedAt));
+
   /// Generate toJson body for OrderByInput.
   String _generateOrderByToJsonBody(PrismaModel model) {
-    final sortableFields = model.fields.where((f) =>
-        !f.isRelation &&
-        (f.type == 'String' ||
-            f.type == 'Int' ||
-            f.type == 'Float' ||
-            f.type == 'DateTime' ||
-            f.type == 'Boolean' ||
-            f.isCreatedAt ||
-            f.isUpdatedAt));
+    final sortableFields = _sortableFields(model);
     final entries = <String>[];
     for (final f in sortableFields) {
       entries.add("if (${f.name} != null) '${f.name}': ${f.name}!.name");
@@ -369,6 +388,9 @@ class CbModelGenerator {
   }
 
   // === Field parameter builders ===
+
+  String _nullableScalarType(String dartType) =>
+      dartType == 'dynamic' ? 'dynamic' : '$dartType?';
 
   Parameter _modelFieldToParam(PrismaField f) {
     if (f.isRelation) {
@@ -415,7 +437,7 @@ class CbModelGenerator {
         type = dartType;
         isRequired = true;
       } else if (!f.isRequired && !f.isList) {
-        type = '$dartType?';
+        type = _nullableScalarType(dartType);
       } else if (f.isList && f.isRequired) {
         type = 'List<$dartType>';
         isRequired = true;
@@ -475,9 +497,9 @@ class CbModelGenerator {
         // nullable and let the database apply the schema default
         annotations.add(CodeExpression(Code('Default(${f.defaultValue})')));
       }
-      type = f.isList ? 'List<$dartType>?' : '$dartType?';
+      type = f.isList ? 'List<$dartType>?' : _nullableScalarType(dartType);
     } else {
-      type = f.isList ? 'List<$dartType>?' : '$dartType?';
+      type = f.isList ? 'List<$dartType>?' : _nullableScalarType(dartType);
     }
 
     return Parameter((p) => p
@@ -500,7 +522,8 @@ class CbModelGenerator {
       params.add(Parameter((p) => p
         ..name = f.name
         ..named = true
-        ..type = refer(f.isList ? 'List<$dartType>?' : '$dartType?')));
+        ..type = refer(
+            f.isList ? 'List<$dartType>?' : _nullableScalarType(dartType))));
     }
     _addRelationWriteParams(model, params);
 
@@ -522,10 +545,12 @@ class CbModelGenerator {
     final params = <Parameter>[];
 
     for (final f in uniqueFields) {
+      final dartType = _toDartType(f.type);
       params.add(Parameter((p) => p
         ..name = f.name
         ..named = true
-        ..type = refer(f.isList ? 'List<${f.type}>?' : '${f.type}?')));
+        ..type = refer(
+            f.isList ? 'List<$dartType>?' : _nullableScalarType(dartType))));
     }
 
     // One compound-unique input class per @@id/@@unique composite key.
@@ -547,7 +572,8 @@ class CbModelGenerator {
           ..named = true
           ..required = true
           ..type = refer(_toDartType(f.type))));
-        entries.add("'$fieldName': $fieldName");
+        final expr = _whereUniqueValueExpr(f, nullable: false);
+        entries.add("'$fieldName': $expr");
       }
       specs.add(_freezedClass(typeName, compoundParams,
           doc: '/// Compound unique key ($key) for ${model.name}',
@@ -857,15 +883,7 @@ $cases;
   // === OrderByInput ===
 
   Class _buildOrderByInput(PrismaModel model) {
-    final sortableFields = model.fields.where((f) =>
-        !f.isRelation &&
-        (f.type == 'String' ||
-            f.type == 'Int' ||
-            f.type == 'Float' ||
-            f.type == 'DateTime' ||
-            f.type == 'Boolean' ||
-            f.isCreatedAt ||
-            f.isUpdatedAt));
+    final sortableFields = _sortableFields(model);
 
     final params = sortableFields
         .map((f) => Parameter((p) => p
@@ -1043,7 +1061,7 @@ $cases;
         'Float' || 'Decimal' => 'double',
         'Boolean' => 'bool',
         'DateTime' => 'DateTime',
-        'Json' => 'Map<String, dynamic>',
+        'Json' => 'dynamic',
         'Bytes' => 'List<int>',
         _ => t,
       };

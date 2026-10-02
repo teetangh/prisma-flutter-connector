@@ -22,7 +22,6 @@ class CbDelegateGenerator {
   /// Generate delegate class for a single model.
   String generateDelegate(PrismaModel model) {
     final modelName = model.name;
-    final tableName = model.tableName;
     final runtimeImport = serverMode ? 'runtime_server.dart' : 'runtime.dart';
 
     final library = Library((b) => b
@@ -30,21 +29,32 @@ class CbDelegateGenerator {
         Directive.import('package:prisma_flutter_connector/$runtimeImport'),
         Directive.import('../models/${toSnakeCase(modelName)}.dart'),
       ])
-      ..body.add(_buildDelegateClass(modelName, tableName,
-          hasUniqueFields: model.fields
-                  .any((f) => (f.isId || f.isUnique) && !f.isRelation) ||
-              model.compositeUniques.isNotEmpty,
-          relationFields: model.fields
-              .where((f) => f.isRelation)
-              .map((f) => f.name)
-              .toList())));
+      ..body.addAll([
+        _buildDelegateClass(model,
+            hasUniqueFields: model.fields
+                    .any((f) => (f.isId || f.isUnique) && !f.isRelation) ||
+                model.compositeUniques.isNotEmpty,
+            relationFields: model.fields
+                .where((f) => f.isRelation)
+                .map((f) => f.name)
+                .toList()),
+        Code('''
+// ignore: unused_element
+extension _${modelName}ExecutorMutationAsMap on BaseExecutor {
+  Future<Map<String, dynamic>?> executeMutationAsMap(JsonQuery query) =>
+      executeQueryAsSingleMap(query);
+}
+'''),
+      ]));
 
     final emitter = DartEmitter(useNullSafetySyntax: true);
     return _formatter.format('${library.accept(emitter)}');
   }
 
-  Class _buildDelegateClass(String modelName, String tableName,
+  Class _buildDelegateClass(PrismaModel model,
       {required bool hasUniqueFields, required List<String> relationFields}) {
+    final modelName = model.name;
+    final tableName = model.tableName;
     final relLiteral = relationFields.isEmpty
         ? 'const <String>{}'
         : '{${relationFields.map((n) => "'$n'").join(', ')}}';
@@ -75,7 +85,7 @@ class CbDelegateGenerator {
         _create(modelName, tableName, relLiteral),
         _createMany(modelName, tableName),
         _createManyAndReturn(modelName, tableName),
-        if (hasUniqueFields) _update(modelName, tableName, relLiteral),
+        if (hasUniqueFields) _update(model, relLiteral),
         if (hasUniqueFields) _upsert(modelName, tableName),
         _updateMany(modelName, tableName),
         if (hasUniqueFields) _delete(modelName, tableName),
@@ -123,13 +133,19 @@ class CbDelegateGenerator {
     ..docs.add('/// Find a single $m or throw if not found')
     ..modifier = MethodModifier.async
     ..returns = refer('Future<$m>')
-    ..optionalParameters.add(Parameter((p) => p
-      ..name = 'where'
-      ..named = true
-      ..required = true
-      ..type = refer('${m}WhereUniqueInput')))
+    ..optionalParameters.addAll([
+      Parameter((p) => p
+        ..name = 'where'
+        ..named = true
+        ..required = true
+        ..type = refer('${m}WhereUniqueInput')),
+      Parameter((p) => p
+        ..name = 'include'
+        ..named = true
+        ..type = refer('${m}Include?')),
+    ])
     ..body = Code('''
-      final result = await findUnique(where: where);
+      final result = await findUnique(where: where, include: include);
       if (result == null) {
         throw Exception('$m not found');
       }
@@ -486,28 +502,95 @@ class CbDelegateGenerator {
       return results.map((json) => $m.fromJson(_normalizeForJson(json))).toList();
     '''));
 
-  Method _update(String m, String t, String relLiteral) => Method((b) => b
-    ..name = 'update'
-    ..docs.add('/// Update a $m')
-    ..modifier = MethodModifier.async
-    ..returns = refer('Future<$m>')
-    ..optionalParameters.addAll([
-      Parameter((p) => p
-        ..name = 'where'
-        ..named = true
-        ..required = true
-        ..type = refer('${m}WhereUniqueInput')),
-      Parameter((p) => p
-        ..name = 'data'
-        ..named = true
-        ..required = true
-        ..type = refer('Update${m}Input')),
-      Parameter((p) => p
-        ..name = 'setNull'
-        ..named = true
-        ..type = refer('List<${m}ScalarField>?')),
-    ])
-    ..body = Code('''
+  String _extractFieldFromUpdatedRow(PrismaField f, {required bool required}) {
+    final raw = f.dbName != null
+        ? "(updatedRow['${f.dbName}'] ?? updatedRow['${f.name}'])"
+        : "updatedRow['${f.name}']";
+    return switch (f.type) {
+      'String' => required ? '$raw as String' : '$raw as String?',
+      'Int' => required ? '($raw as num).toInt()' : '($raw as num?)?.toInt()',
+      'BigInt' => required
+          ? 'BigInt.parse($raw.toString())'
+          : '($raw != null ? BigInt.parse($raw.toString()) : null)',
+      'Float' || 'Decimal' => required
+          ? '($raw is num ? ($raw as num).toDouble() : double.parse($raw.toString()))'
+          : '($raw != null ? ($raw is num ? ($raw as num).toDouble() : double.parse($raw.toString())) : null)',
+      'Boolean' => required ? '$raw as bool' : '$raw as bool?',
+      'DateTime' => required
+          ? '($raw is DateTime ? $raw as DateTime : DateTime.parse($raw as String))'
+          : '($raw != null ? ($raw is DateTime ? $raw as DateTime : DateTime.parse($raw as String)) : null)',
+      _ => schema.enums.any((e) => e.name == f.type)
+          ? (required
+              ? '${f.type}.values.firstWhere((e) => e.toJson() == $raw)'
+              : '($raw != null ? ${f.type}.values.firstWhere((e) => e.toJson() == $raw) : null)')
+          : raw,
+    };
+  }
+
+  String _pkWhereUniqueFromUpdated(PrismaModel model) {
+    final m = model.name;
+    final idField =
+        model.fields.where((f) => f.isId && !f.isRelation).firstOrNull;
+    if (idField != null) {
+      final extracted = _extractFieldFromUpdatedRow(idField, required: false);
+      return '${m}WhereUniqueInput(${idField.name}: $extracted)';
+    }
+    final compositeKey = model.compositeId.isNotEmpty
+        ? model.compositeId
+        : (model.compositeUniques.isNotEmpty
+            ? model.compositeUniques.first
+            : null);
+    if (compositeKey != null && compositeKey.length > 1) {
+      final paramName = compositeKey.join('_');
+      final compoundClass =
+          '$m${compositeKey.map((k) => k[0].toUpperCase() + k.substring(1)).join()}CompoundUnique';
+      final args = compositeKey.map((fieldName) {
+        final f = model.fields.firstWhere((mf) => mf.name == fieldName);
+        final extracted = _extractFieldFromUpdatedRow(f, required: true);
+        return '$fieldName: $extracted';
+      }).join(', ');
+      return '${m}WhereUniqueInput($paramName: $compoundClass($args))';
+    }
+    final uniqueField =
+        model.fields.where((f) => f.isUnique && !f.isRelation).firstOrNull;
+    if (uniqueField != null) {
+      final extracted =
+          _extractFieldFromUpdatedRow(uniqueField, required: false);
+      return '${m}WhereUniqueInput(${uniqueField.name}: $extracted)';
+    }
+    return 'where';
+  }
+
+  Method _update(PrismaModel model, String relLiteral) {
+    final m = model.name;
+    final t = model.tableName;
+    final pkWhereUnique = _pkWhereUniqueFromUpdated(model);
+    return Method((b) => b
+      ..name = 'update'
+      ..docs.add('/// Update a $m')
+      ..modifier = MethodModifier.async
+      ..returns = refer('Future<$m>')
+      ..optionalParameters.addAll([
+        Parameter((p) => p
+          ..name = 'where'
+          ..named = true
+          ..required = true
+          ..type = refer('${m}WhereUniqueInput')),
+        Parameter((p) => p
+          ..name = 'data'
+          ..named = true
+          ..required = true
+          ..type = refer('Update${m}Input')),
+        Parameter((p) => p
+          ..name = 'setNull'
+          ..named = true
+          ..type = refer('List<${m}ScalarField>?')),
+        Parameter((p) => p
+          ..name = 'include'
+          ..named = true
+          ..type = refer('${m}Include?')),
+      ])
+      ..body = Code('''
       final data0 = data.toJson();
       // Explicit null-clears: typed inputs drop null fields, so fields to be
       // set to NULL are listed here and injected as explicit nulls.
@@ -524,15 +607,25 @@ class CbDelegateGenerator {
           .build();
 
       const relationFields = $relLiteral;
+      final Map<String, dynamic>? updatedRow;
       if (data0.keys.any(relationFields.contains)) {
-        await _executor.executeMutationWithRelationsReturning(query);
+        updatedRow =
+            await _executor.executeMutationWithRelationsReturning(query);
       } else {
-        await _executor.executeMutation(query);
+        updatedRow = await _executor.executeMutationAsMap(query);
       }
-
-      // Fetch the updated record
-      return await findUniqueOrThrow(where: where);
+      if (updatedRow == null) {
+        throw Exception('$m not found');
+      }
+      if (include != null) {
+        return await findUniqueOrThrow(
+          where: $pkWhereUnique,
+          include: include,
+        );
+      }
+      return $m.fromJson(_normalizeForJson(updatedRow));
     '''));
+  }
 
   Method _upsert(String m, String t) => Method((b) => b
     ..name = 'upsert'
@@ -620,17 +713,17 @@ class CbDelegateGenerator {
       ..required = true
       ..type = refer('${m}WhereUniqueInput')))
     ..body = Code('''
-      // Fetch before deleting
-      final existing = await findUniqueOrThrow(where: where);
-
       final query = JsonQueryBuilder()
           .model('$t')
           .action(QueryAction.delete)
           .where(_whereUniqueToJson(where))
           .build();
 
-      await _executor.executeMutation(query);
-      return existing;
+      final deletedRow = await _executor.executeMutationAsMap(query);
+      if (deletedRow == null) {
+        throw Exception('$m not found');
+      }
+      return $m.fromJson(_normalizeForJson(deletedRow));
     '''));
 
   Method _deleteMany(String m, String t) => Method((b) => b
