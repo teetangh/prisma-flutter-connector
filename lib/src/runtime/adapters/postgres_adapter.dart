@@ -70,24 +70,20 @@ class PostgresAdapter implements SqlDriverAdapter {
     return conn ?? _pool!;
   }
 
-  /// Check if connection is alive, reconnect if factory provided.
-  /// No-op in pooled mode (the pool manages connection health).
+  /// Check if connection is open, reconnect if factory provided and connection is closed.
+  /// No-op in pooled mode (the pool manages connection health) or when the connection is open.
   Future<void> _ensureConnected() async {
+    if (_pool != null || _connectionFactory == null) return;
     final conn = _connection;
-    if (conn == null || _connectionFactory == null) return;
-    try {
-      await conn.execute('SELECT 1').timeout(
-            const Duration(seconds: 5),
-          );
-    } catch (_) {
-      // Connection dead — attempt reconnect
+    if (conn != null && conn.isOpen) return;
+    if (conn != null) {
       try {
         await conn.close();
       } catch (_) {
         // Already closed, ignore
       }
-      _connection = await _connectionFactory!();
     }
+    _connection = await _connectionFactory!();
   }
 
   @override
@@ -144,11 +140,11 @@ class PostgresAdapter implements SqlDriverAdapter {
   @override
   Future<void> executeScript(String script) async {
     try {
-      // Split script into individual statements and execute
-      final statements = script.split(';').where((s) => s.trim().isNotEmpty);
+      await _ensureConnected();
+      final statements = splitSqlStatements(script);
 
       for (final statement in statements) {
-        await _session.execute(statement.trim());
+        await _session.execute(statement);
       }
     } catch (e) {
       throw AdapterError(
@@ -159,14 +155,184 @@ class PostgresAdapter implements SqlDriverAdapter {
     }
   }
 
+  /// Split a SQL script into individual statements while ignoring semicolons
+  /// inside single-quoted literals (`'...'` with `''` escapes), double-quoted
+  /// identifiers (`"..."` with `""` escapes), dollar-quoted blocks (`$$...$$`
+  /// or `$tag$...$tag$`), line comments (`--...`), and block comments (`/*...*/`).
+  static List<String> splitSqlStatements(String script) {
+    final statements = <String>[];
+    final current = StringBuffer();
+    final len = script.length;
+
+    var inSingleQuote = false;
+    var inDoubleQuote = false;
+    var inLineComment = false;
+    var inBlockComment = false;
+    String? dollarQuoteTag;
+
+    for (var i = 0; i < len; i++) {
+      final ch = script[i];
+
+      if (inLineComment) {
+        current.write(ch);
+        if (ch == '\n') {
+          inLineComment = false;
+        }
+        continue;
+      }
+
+      if (inBlockComment) {
+        current.write(ch);
+        if (ch == '*' && i + 1 < len && script[i + 1] == '/') {
+          current.write('/');
+          i++;
+          inBlockComment = false;
+        }
+        continue;
+      }
+
+      if (dollarQuoteTag != null) {
+        if (script.startsWith(dollarQuoteTag, i)) {
+          current.write(dollarQuoteTag);
+          i += dollarQuoteTag.length - 1;
+          dollarQuoteTag = null;
+        } else {
+          current.write(ch);
+        }
+        continue;
+      }
+
+      if (inSingleQuote) {
+        current.write(ch);
+        if (ch == "'") {
+          if (i + 1 < len && script[i + 1] == "'") {
+            current.write("'");
+            i++;
+          } else {
+            inSingleQuote = false;
+          }
+        }
+        continue;
+      }
+
+      if (inDoubleQuote) {
+        current.write(ch);
+        if (ch == '"') {
+          if (i + 1 < len && script[i + 1] == '"') {
+            current.write('"');
+            i++;
+          } else {
+            inDoubleQuote = false;
+          }
+        }
+        continue;
+      }
+
+      // Not inside any quote or comment
+      if (ch == '-' && i + 1 < len && script[i + 1] == '-') {
+        current.write('--');
+        i++;
+        inLineComment = true;
+        continue;
+      }
+
+      if (ch == '/' && i + 1 < len && script[i + 1] == '*') {
+        current.write('/*');
+        i++;
+        inBlockComment = true;
+        continue;
+      }
+
+      if (ch == "'") {
+        current.write(ch);
+        inSingleQuote = true;
+        continue;
+      }
+
+      if (ch == '"') {
+        current.write(ch);
+        inDoubleQuote = true;
+        continue;
+      }
+
+      if (ch == r'$') {
+        final tag = _matchDollarQuoteTag(script, i);
+        if (tag != null) {
+          dollarQuoteTag = tag;
+          current.write(tag);
+          i += tag.length - 1;
+          continue;
+        }
+      }
+
+      if (ch == ';') {
+        final trimmed = current.toString().trim();
+        if (trimmed.isNotEmpty) {
+          statements.add(trimmed);
+        }
+        current.clear();
+        continue;
+      }
+
+      current.write(ch);
+    }
+
+    final remaining = current.toString().trim();
+    if (remaining.isNotEmpty) {
+      statements.add(remaining);
+    }
+
+    return statements;
+  }
+
+  /// Match a PostgreSQL dollar-quote delimiter (`$$` or `$tag$`) starting at [index].
+  /// Returns the full tag string if matched, or `null` if `$` is not a dollar-quote opener
+  /// (e.g., a positional parameter like `$1`).
+  static String? _matchDollarQuoteTag(String script, int index) {
+    final len = script.length;
+    if (index + 1 >= len) return null;
+    if (script[index + 1] == r'$') {
+      return r'$$';
+    }
+    final firstCode = script.codeUnitAt(index + 1);
+    if (!_isDollarTagStart(firstCode)) return null;
+    var j = index + 2;
+    while (j < len && _isDollarTagPart(script.codeUnitAt(j))) {
+      j++;
+    }
+    if (j < len && script[j] == r'$') {
+      return script.substring(index, j + 1);
+    }
+    return null;
+  }
+
+  static bool _isDollarTagStart(int c) =>
+      (c >= 0x41 && c <= 0x5A) || // A-Z
+      (c >= 0x61 && c <= 0x7A) || // a-z
+      c == 0x5F || // _
+      c >= 0x80;
+
+  static bool _isDollarTagPart(int c) =>
+      _isDollarTagStart(c) || (c >= 0x30 && c <= 0x39); // 0-9
+
   @override
   Future<Transaction> startTransaction([IsolationLevel? isolationLevel]) async {
-    final pool = _pool;
-    if (pool != null) {
-      // Pin a dedicated pool connection for the transaction's lifetime.
-      return PostgresTransaction._startPooled(pool, isolationLevel);
+    try {
+      final pool = _pool;
+      if (pool != null) {
+        // Pin a dedicated pool connection for the transaction's lifetime.
+        return await PostgresTransaction._startPooled(pool, isolationLevel);
+      }
+      await _ensureConnected();
+      return await PostgresTransaction._start(_connection!, isolationLevel);
+    } catch (e) {
+      if (e is AdapterError) rethrow;
+      throw AdapterError(
+        'Failed to start transaction: ${e.toString()}',
+        code: _extractErrorCode(e),
+        originalError: e,
+      );
     }
-    return PostgresTransaction._start(_connection!, isolationLevel);
   }
 
   @override
@@ -213,11 +379,11 @@ class PostgresAdapter implements SqlDriverAdapter {
           break;
 
         case ArgType.json:
-          // PostgreSQL expects JSON as string
+          // PostgreSQL expects JSON as valid JSON string
           if (arg is String) {
             converted.add(arg);
           } else {
-            converted.add(arg.toString());
+            converted.add(jsonEncode(arg));
           }
           break;
 
@@ -410,7 +576,10 @@ class PostgresAdapter implements SqlDriverAdapter {
   }
 
   /// Extract error code from PostgreSQL exception.
-  String? _extractErrorCode(Object error) {
+  static String? _extractErrorCode(Object error) {
+    if (error is pg.ServerException) {
+      return error.code ?? error.severity.toString();
+    }
     if (error is pg.PgException) {
       // postgres package 3.x uses 'severity' enum
       return error.severity.toString();
@@ -524,6 +693,7 @@ class PostgresTransaction implements Transaction {
     } catch (e) {
       throw AdapterError(
         'Failed to commit transaction: ${e.toString()}',
+        code: PostgresAdapter._extractErrorCode(e),
         originalError: e,
       );
     } finally {
@@ -543,6 +713,7 @@ class PostgresTransaction implements Transaction {
     } catch (e) {
       throw AdapterError(
         'Failed to rollback transaction: ${e.toString()}',
+        code: PostgresAdapter._extractErrorCode(e),
         originalError: e,
       );
     } finally {

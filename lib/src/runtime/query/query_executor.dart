@@ -113,6 +113,9 @@ mixin ResultSetConverter {
   }
 }
 
+/// Alias for [ForeignKeyException] for compatibility.
+typedef ForeignKeyConstraintException = ForeignKeyException;
+
 /// Abstract base class for query execution.
 ///
 /// This interface is implemented by both [QueryExecutor] (for normal operations)
@@ -130,6 +133,9 @@ abstract class BaseExecutor {
 
   /// Execute a mutation (CREATE, UPDATE, DELETE) and return affected rows.
   Future<int> executeMutation(JsonQuery query);
+
+  /// Execute a mutation (CREATE, UPDATE, DELETE) and return the mutated row as a map.
+  Future<Map<String, dynamic>?> executeMutationAsMap(JsonQuery query);
 
   /// Execute a count query.
   Future<int> executeCount(JsonQuery query);
@@ -159,8 +165,149 @@ abstract class BaseExecutor {
   );
 }
 
+/// Shared execution, logging, and error-mapping helpers for executors.
+mixin _ExecutorHelpers {
+  SqlDriverAdapter get adapter;
+  QueryLogger? get logger;
+
+  /// Helper to execute SQL with logging and error mapping.
+  Future<T> _executeWithLogging<T>({
+    required String sql,
+    required List<dynamic> parameters,
+    String? model,
+    String? operation,
+    required Future<T> Function() execute,
+  }) async {
+    final startTime = DateTime.now();
+
+    logger?.onQueryStart(QueryStartEvent(
+      sql: sql,
+      parameters: parameters,
+      model: model,
+      operation: operation,
+      startTime: startTime,
+    ));
+
+    try {
+      final result = await execute();
+      final duration = DateTime.now().difference(startTime);
+      final int rowCount;
+      if (result is SqlResultSet) {
+        rowCount = result.rows.length;
+      } else if (result is int) {
+        rowCount = result;
+      } else {
+        rowCount = 0;
+      }
+
+      logger?.onQueryEnd(QueryEndEvent(
+        sql: sql,
+        parameters: parameters,
+        model: model,
+        operation: operation,
+        duration: duration,
+        rowCount: rowCount,
+      ));
+
+      return result;
+    } catch (e, stackTrace) {
+      final duration = DateTime.now().difference(startTime);
+      logger?.onQueryError(QueryErrorEvent(
+        sql: sql,
+        parameters: parameters,
+        model: model,
+        operation: operation,
+        duration: duration,
+        error: e,
+        stackTrace: stackTrace,
+      ));
+      throw _mapError(e);
+    }
+  }
+
+  /// Map adapter errors to typed Prisma exceptions.
+  PrismaException _mapError(Object error) {
+    if (error is PrismaException) return error;
+
+    if (error is AdapterError) {
+      String? constraintName;
+      final orig = error.originalError;
+      if (orig != null) {
+        try {
+          constraintName = (orig as dynamic).constraintName as String?;
+        } catch (_) {
+          // Original error does not expose constraintName
+        }
+      }
+
+      // Map based on database provider
+      switch (adapter.provider) {
+        case 'postgresql':
+        case 'supabase':
+          if (error.code == '40001' || error.code == '40P01') {
+            return TransactionException(
+              error.message,
+              originalError: error.originalError,
+              context: {'sqlState': error.code},
+            );
+          }
+          return PrismaErrorMapper.fromPostgresError(
+            error.message,
+            sqlState: error.code,
+            constraintName: constraintName,
+            originalError: error.originalError,
+          );
+        case 'mysql':
+          final errorCode =
+              error.code != null ? int.tryParse(error.code!) : null;
+          return PrismaErrorMapper.fromMySqlError(
+            error.message,
+            errorCode: errorCode,
+            constraintName: constraintName,
+            originalError: error.originalError,
+          );
+        case 'sqlite':
+          final errorCode =
+              error.code != null ? int.tryParse(error.code!) : null;
+          return PrismaErrorMapper.fromSqliteError(
+            error.message,
+            errorCode: errorCode,
+            originalError: error.originalError,
+          );
+        default:
+          // Fallback for any other provider
+          return InternalException(
+            error.message,
+            originalError: error,
+            context: {'code': error.code},
+          );
+      }
+    }
+
+    return InternalException(
+      error.toString(),
+      originalError: error,
+    );
+  }
+
+  /// Infer ArgType from a Dart value.
+  ArgType _inferArgType(dynamic value) {
+    if (value == null) return ArgType.unknown;
+    if (value is int) return ArgType.int64;
+    if (value is double) return ArgType.double;
+    if (value is bool) return ArgType.boolean;
+    if (value is String) return ArgType.string;
+    if (value is DateTime) return ArgType.dateTime;
+    if (value is List<int>) return ArgType.bytes;
+    if (value is Map) return ArgType.json;
+    return ArgType.unknown;
+  }
+}
+
 /// Executes Prisma queries against a database adapter.
-class QueryExecutor with ResultSetConverter implements BaseExecutor {
+class QueryExecutor
+    with ResultSetConverter, _ExecutorHelpers
+    implements BaseExecutor {
   @override
   final SqlDriverAdapter adapter;
   final SqlCompiler compiler;
@@ -170,6 +317,7 @@ class QueryExecutor with ResultSetConverter implements BaseExecutor {
   final SchemaRegistry? schema;
 
   /// Optional query logger for debugging and monitoring.
+  @override
   final QueryLogger? logger;
 
   QueryExecutor({
@@ -243,145 +391,12 @@ class QueryExecutor with ResultSetConverter implements BaseExecutor {
     final argTypes = parameters.map((p) => _inferArgType(p)).toList();
     final sqlQuery = SqlQuery(sql: sql, args: parameters, argTypes: argTypes);
 
-    final startTime = DateTime.now();
-    logger?.onQueryStart(QueryStartEvent(
+    return _executeWithLogging(
       sql: sql,
       parameters: parameters,
       operation: 'rawMutation',
-      startTime: startTime,
-    ));
-
-    try {
-      final result = await adapter.executeRaw(sqlQuery);
-      final duration = DateTime.now().difference(startTime);
-
-      logger?.onQueryEnd(QueryEndEvent(
-        sql: sql,
-        parameters: parameters,
-        operation: 'rawMutation',
-        duration: duration,
-        rowCount: result,
-      ));
-
-      return result;
-    } catch (e, stackTrace) {
-      final duration = DateTime.now().difference(startTime);
-      logger?.onQueryError(QueryErrorEvent(
-        sql: sql,
-        parameters: parameters,
-        operation: 'rawMutation',
-        duration: duration,
-        error: e,
-        stackTrace: stackTrace,
-      ));
-      throw _mapError(e);
-    }
-  }
-
-  /// Helper to execute SQL with logging and error mapping.
-  Future<SqlResultSet> _executeWithLogging({
-    required String sql,
-    required List<dynamic> parameters,
-    String? model,
-    String? operation,
-    required Future<SqlResultSet> Function() execute,
-  }) async {
-    final startTime = DateTime.now();
-
-    logger?.onQueryStart(QueryStartEvent(
-      sql: sql,
-      parameters: parameters,
-      model: model,
-      operation: operation,
-      startTime: startTime,
-    ));
-
-    try {
-      final result = await execute();
-      final duration = DateTime.now().difference(startTime);
-
-      logger?.onQueryEnd(QueryEndEvent(
-        sql: sql,
-        parameters: parameters,
-        model: model,
-        operation: operation,
-        duration: duration,
-        rowCount: result.rows.length,
-      ));
-
-      return result;
-    } catch (e, stackTrace) {
-      final duration = DateTime.now().difference(startTime);
-      logger?.onQueryError(QueryErrorEvent(
-        sql: sql,
-        parameters: parameters,
-        model: model,
-        operation: operation,
-        duration: duration,
-        error: e,
-        stackTrace: stackTrace,
-      ));
-      throw _mapError(e);
-    }
-  }
-
-  /// Map adapter errors to typed Prisma exceptions.
-  PrismaException _mapError(Object error) {
-    if (error is PrismaException) return error;
-
-    if (error is AdapterError) {
-      // Map based on database provider
-      switch (adapter.provider) {
-        case 'postgresql':
-        case 'supabase':
-          return PrismaErrorMapper.fromPostgresError(
-            error.message,
-            sqlState: error.code,
-            originalError: error.originalError,
-          );
-        case 'mysql':
-          final errorCode =
-              error.code != null ? int.tryParse(error.code!) : null;
-          return PrismaErrorMapper.fromMySqlError(
-            error.message,
-            errorCode: errorCode,
-            originalError: error.originalError,
-          );
-        case 'sqlite':
-          final errorCode =
-              error.code != null ? int.tryParse(error.code!) : null;
-          return PrismaErrorMapper.fromSqliteError(
-            error.message,
-            errorCode: errorCode,
-            originalError: error.originalError,
-          );
-        default:
-          // Fallback for any other provider
-          return InternalException(
-            error.message,
-            originalError: error,
-            context: {'code': error.code},
-          );
-      }
-    }
-
-    return InternalException(
-      error.toString(),
-      originalError: error,
+      execute: () => adapter.executeRaw(sqlQuery),
     );
-  }
-
-  /// Infer ArgType from a Dart value.
-  ArgType _inferArgType(dynamic value) {
-    if (value == null) return ArgType.unknown;
-    if (value is int) return ArgType.int64;
-    if (value is double) return ArgType.double;
-    if (value is bool) return ArgType.boolean;
-    if (value is String) return ArgType.string;
-    if (value is DateTime) return ArgType.dateTime;
-    if (value is List<int>) return ArgType.bytes;
-    if (value is Map) return ArgType.json;
-    return ArgType.unknown;
   }
 
   /// Execute a mutation (CREATE, UPDATE, DELETE) and return affected rows.
@@ -391,13 +406,41 @@ class QueryExecutor with ResultSetConverter implements BaseExecutor {
 
     // For CREATE queries, we want to return the created row
     if (query.action == 'create') {
-      final result = await adapter.queryRaw(sqlQuery);
+      final result = await _executeWithLogging(
+        sql: sqlQuery.sql,
+        parameters: sqlQuery.args,
+        model: query.modelName,
+        operation: query.action,
+        execute: () => adapter.queryRaw(sqlQuery),
+      );
       return result.rows.isNotEmpty ? 1 : 0;
     }
 
     // For other mutations, return affected row count
-    final affectedRows = await adapter.executeRaw(sqlQuery);
-    return affectedRows;
+    return _executeWithLogging(
+      sql: sqlQuery.sql,
+      parameters: sqlQuery.args,
+      model: query.modelName,
+      operation: query.action,
+      execute: () => adapter.executeRaw(sqlQuery),
+    );
+  }
+
+  /// Execute a mutation (CREATE, UPDATE, DELETE) and return the mutated record as a map.
+  @override
+  Future<Map<String, dynamic>?> executeMutationAsMap(JsonQuery query) async {
+    final sqlQuery = compiler.compile(query);
+
+    final result = await _executeWithLogging(
+      sql: sqlQuery.sql,
+      parameters: sqlQuery.args,
+      model: query.modelName,
+      operation: query.action,
+      execute: () => adapter.queryRaw(sqlQuery),
+    );
+
+    final maps = resultSetToMaps(result);
+    return maps.isEmpty ? null : maps.first;
   }
 
   /// Execute a mutation with potential relation operations (connect/disconnect).
@@ -433,7 +476,13 @@ class QueryExecutor with ResultSetConverter implements BaseExecutor {
     final compiled = compiler.compileWithRelations(query);
 
     // Execute main mutation
-    final result = await adapter.queryRaw(compiled.mainQuery);
+    final result = await _executeWithLogging(
+      sql: compiled.mainQuery.sql,
+      parameters: compiled.mainQuery.args,
+      model: query.modelName,
+      operation: query.action,
+      execute: () => adapter.queryRaw(compiled.mainQuery),
+    );
     final mainRow =
         result.rows.isNotEmpty ? resultSetToMaps(result).first : null;
 
@@ -493,25 +542,10 @@ class QueryExecutor with ResultSetConverter implements BaseExecutor {
     JsonQuery query, {
     IsolationLevel? isolationLevel,
   }) async {
-    return executeInTransaction<Map<String, dynamic>?>((txExecutor) async {
-      // Compile with relation support
-      final compiled = compiler.compileWithRelations(query);
-
-      // Execute main mutation
-      final result = await txExecutor.transaction.queryRaw(compiled.mainQuery);
-      final mainRow =
-          result.rows.isNotEmpty ? resultSetToMaps(result).first : null;
-
-      // Rebuild relation mutations from the RETURNING row so DB-generated
-      // parent ids are used (fixes nested writes on @default(uuid()) create).
-      final relationMutations =
-          compiler.buildRelationMutationsFromResult(query, mainRow);
-      for (final relationQuery in relationMutations) {
-        await txExecutor.transaction.executeRaw(relationQuery);
-      }
-
-      return mainRow;
-    }, isolationLevel: isolationLevel);
+    return executeInTransaction<Map<String, dynamic>?>(
+      (txExecutor) => txExecutor.executeMutationWithRelationsReturning(query),
+      isolationLevel: isolationLevel,
+    );
   }
 
   /// Execute a query and deserialize results to maps.
@@ -630,7 +664,12 @@ class QueryExecutor with ResultSetConverter implements BaseExecutor {
     Future<T> Function(TransactionExecutor) callback, {
     IsolationLevel? isolationLevel,
   }) async {
-    final transaction = await adapter.startTransaction(isolationLevel);
+    final Transaction transaction;
+    try {
+      transaction = await adapter.startTransaction(isolationLevel);
+    } catch (e) {
+      throw _mapError(e);
+    }
 
     try {
       final txExecutor = TransactionExecutor(
@@ -638,6 +677,7 @@ class QueryExecutor with ResultSetConverter implements BaseExecutor {
         compiler: compiler,
         adapter: adapter,
         schema: schema,
+        logger: logger,
       );
 
       final result = await callback(txExecutor);
@@ -647,7 +687,14 @@ class QueryExecutor with ResultSetConverter implements BaseExecutor {
       return result;
     } catch (e) {
       if (transaction.isActive) {
-        await transaction.rollback();
+        try {
+          await transaction.rollback();
+        } catch (_) {
+          // Ignore rollback failure so original error is preserved
+        }
+      }
+      if (e is AdapterError) {
+        throw _mapError(e);
       }
       rethrow;
     }
@@ -674,7 +721,9 @@ class QueryExecutor with ResultSetConverter implements BaseExecutor {
 }
 
 /// Query executor for use within transactions.
-class TransactionExecutor with ResultSetConverter implements BaseExecutor {
+class TransactionExecutor
+    with ResultSetConverter, _ExecutorHelpers
+    implements BaseExecutor {
   final Transaction transaction;
   final SqlCompiler compiler;
   final SqlDriverAdapter _adapter;
@@ -684,11 +733,16 @@ class TransactionExecutor with ResultSetConverter implements BaseExecutor {
   /// relation deserialization.
   final SchemaRegistry? schema;
 
+  /// Optional query logger for debugging and monitoring.
+  @override
+  final QueryLogger? logger;
+
   TransactionExecutor({
     required this.transaction,
     required this.compiler,
     required SqlDriverAdapter adapter,
     this.schema,
+    this.logger,
   }) : _adapter = adapter;
 
   @override
@@ -697,7 +751,47 @@ class TransactionExecutor with ResultSetConverter implements BaseExecutor {
   /// Execute a query within the transaction.
   Future<SqlResultSet> executeQuery(JsonQuery query) async {
     final sqlQuery = compiler.compile(query);
-    return transaction.queryRaw(sqlQuery);
+    return _executeWithLogging(
+      sql: sqlQuery.sql,
+      parameters: sqlQuery.args,
+      model: query.modelName,
+      operation: query.action,
+      execute: () => transaction.queryRaw(sqlQuery),
+    );
+  }
+
+  /// Execute raw SQL within the transaction and return results.
+  Future<List<Map<String, dynamic>>> executeRaw(
+    String sql,
+    List<dynamic> parameters,
+  ) async {
+    final argTypes = parameters.map((p) => _inferArgType(p)).toList();
+    final sqlQuery = SqlQuery(sql: sql, args: parameters, argTypes: argTypes);
+
+    final result = await _executeWithLogging(
+      sql: sql,
+      parameters: parameters,
+      operation: 'raw',
+      execute: () => transaction.queryRaw(sqlQuery),
+    );
+
+    return resultSetToMaps(result);
+  }
+
+  /// Execute raw SQL mutation within the transaction and return affected rows.
+  Future<int> executeMutationRaw(
+    String sql,
+    List<dynamic> parameters,
+  ) async {
+    final argTypes = parameters.map((p) => _inferArgType(p)).toList();
+    final sqlQuery = SqlQuery(sql: sql, args: parameters, argTypes: argTypes);
+
+    return _executeWithLogging(
+      sql: sql,
+      parameters: parameters,
+      operation: 'rawMutation',
+      execute: () => transaction.executeRaw(sqlQuery),
+    );
   }
 
   /// Execute a mutation within the transaction.
@@ -706,11 +800,40 @@ class TransactionExecutor with ResultSetConverter implements BaseExecutor {
     final sqlQuery = compiler.compile(query);
 
     if (query.action == 'create') {
-      final result = await transaction.queryRaw(sqlQuery);
+      final result = await _executeWithLogging(
+        sql: sqlQuery.sql,
+        parameters: sqlQuery.args,
+        model: query.modelName,
+        operation: query.action,
+        execute: () => transaction.queryRaw(sqlQuery),
+      );
       return result.rows.isNotEmpty ? 1 : 0;
     }
 
-    return transaction.executeRaw(sqlQuery);
+    return _executeWithLogging(
+      sql: sqlQuery.sql,
+      parameters: sqlQuery.args,
+      model: query.modelName,
+      operation: query.action,
+      execute: () => transaction.executeRaw(sqlQuery),
+    );
+  }
+
+  /// Execute a mutation within the transaction and return the mutated record as a map.
+  @override
+  Future<Map<String, dynamic>?> executeMutationAsMap(JsonQuery query) async {
+    final sqlQuery = compiler.compile(query);
+
+    final result = await _executeWithLogging(
+      sql: sqlQuery.sql,
+      parameters: sqlQuery.args,
+      model: query.modelName,
+      operation: query.action,
+      execute: () => transaction.queryRaw(sqlQuery),
+    );
+
+    final maps = resultSetToMaps(result);
+    return maps.isEmpty ? null : maps.first;
   }
 
   /// Execute a query and deserialize results to maps.
@@ -723,7 +846,13 @@ class TransactionExecutor with ResultSetConverter implements BaseExecutor {
     final sqlQuery = compiler.compile(query);
 
     // Execute the query
-    final result = await transaction.queryRaw(sqlQuery);
+    final result = await _executeWithLogging(
+      sql: sqlQuery.sql,
+      parameters: sqlQuery.args,
+      model: query.modelName,
+      operation: query.action,
+      execute: () => transaction.queryRaw(sqlQuery),
+    );
 
     // Check if we need to deserialize relations
     final hasRelations =
@@ -822,13 +951,25 @@ class TransactionExecutor with ResultSetConverter implements BaseExecutor {
   ) async {
     // Runs within the ambient transaction (no new BEGIN).
     final compiled = compiler.compileWithRelations(query);
-    final result = await transaction.queryRaw(compiled.mainQuery);
+    final result = await _executeWithLogging(
+      sql: compiled.mainQuery.sql,
+      parameters: compiled.mainQuery.args,
+      model: query.modelName,
+      operation: query.action,
+      execute: () => transaction.queryRaw(compiled.mainQuery),
+    );
     final mainRow =
         result.rows.isNotEmpty ? resultSetToMaps(result).first : null;
     final relationMutations =
         compiler.buildRelationMutationsFromResult(query, mainRow);
     for (final relationQuery in relationMutations) {
-      await transaction.executeRaw(relationQuery);
+      await _executeWithLogging(
+        sql: relationQuery.sql,
+        parameters: relationQuery.args,
+        model: query.modelName,
+        operation: 'relationMutation',
+        execute: () => transaction.executeRaw(relationQuery),
+      );
     }
     return mainRow;
   }

@@ -494,8 +494,8 @@ class RelationCompiler {
 
   String _quote(String identifier) {
     return switch (_provider) {
-      'mysql' => '`$identifier`',
-      _ => '"$identifier"',
+      'mysql' => '`${identifier.replaceAll('`', '``')}`',
+      _ => '"${identifier.replaceAll('"', '""')}"',
     };
   }
 }
