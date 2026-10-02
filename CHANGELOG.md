@@ -4,6 +4,40 @@ All notable changes to the Prisma Flutter Connector.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-02
+
+The **pure-Dart v1.0** release — decouples `prisma_flutter_connector` from the
+Flutter SDK, removes legacy v0.1 GraphQL/StringBuffer code, fixes SQLite
+transaction execution, and hardens repository security.
+
+### Security
+- **Removed leaked validation scripts and prompt dump** — removed
+  `test/validation/check_tables.dart`, `test/validation/crud_validation.dart`,
+  and `.github/1.md`.
+
+### Breaking Changes / Removed
+- **Decoupled from Flutter SDK (`#41`, `#46`, `#62`)** — `pubspec.yaml` no
+  longer depends on `flutter`, `sqflite`, `supabase_flutter`,
+  `graphql_flutter`, `gql`, `mysql1`, or `flutter_test`/`flutter_lints`. The
+  package now installs and compiles in 100% pure Dart (`sdk: '>=3.0.0 <4.0.0'`).
+- **Removed dead v0.1 GraphQL client & StringBuffer generators (`#45`, `#47`, `#48`)** —
+  deleted `lib/src/client/` and legacy
+  `{model,delegate,filter,filter_types,client,schema_registry,api}_generator.dart`
+  in favor of the `code_builder` AST generators (`Cb*Generator`).
+- **Removed placeholder MySQL & MongoDB integration stubs** — removed
+  unimplemented MySQL/MongoDB test placeholders and CI workflows.
+
+### Fixed
+- **Pure-Dart `SQLiteAdapter` & `SQLiteTransaction` deadlock / `rawInsert` fix (`#42`)** —
+  introduced pure-Dart `SQLiteDatabase` / `SQLiteExecutor` /
+  `SQLiteCallbackDatabase` interfaces (plus a dynamic bridge for `sqflite`
+  `Database` instances), dispatched `INSERT`/`UPDATE`/`DELETE` to
+  `rawInsert`/`rawUpdate`/`rawDelete` respectively, and executed transaction
+  statements directly on the live transaction executor instead of queueing
+  uncompleted `Completer`s.
+- **Updated `.mcp.json` (`#45`)** — switched to `"command": "dart"`,
+  `"args": ["mcp-server", "--force-roots-fallback"]`.
+
 ## [0.9.0] - 2026-07-24
 
 The **null-semantics** release — closes the gaps found while migrating the

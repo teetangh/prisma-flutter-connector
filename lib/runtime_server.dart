@@ -77,16 +77,15 @@
 ///   // Both succeed or both rollback
 /// });
 /// ```
-library prisma_flutter_connector.runtime_server;
+library;
 
 // Core adapter types (pure Dart - no Flutter dependencies)
 export 'src/runtime/adapters/types.dart';
 
-// Server-safe database adapters (use only `postgres` package)
+// Pure-Dart database adapters
 export 'src/runtime/adapters/postgres_adapter.dart';
 export 'src/runtime/adapters/supabase_adapter.dart';
-// Note: SQLite adapter is NOT exported here as it requires Flutter's sqflite package
-// Use `runtime.dart` instead if you need SQLite support in a Flutter app
+export 'src/runtime/adapters/sqlite_adapter.dart';
 
 // Query building (pure Dart - no Flutter dependencies)
 export 'src/runtime/query/json_protocol.dart';
