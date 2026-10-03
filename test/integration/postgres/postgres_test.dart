@@ -153,9 +153,13 @@ void main() {
     setUpAll(() async {
       schema = buildTestSchema();
 
-      final dbUrl = Platform.environment['DATABASE_URL'] ??
-          Platform.environment['POSTGRES_DATABASE_URL'] ??
-          'postgresql://test_user:test_password@localhost:5432/test_db';
+      final configuredDbUrl = Platform.environment['DATABASE_URL'] ??
+          Platform.environment['POSTGRES_DATABASE_URL'];
+      final hasExplicitDbUrl =
+          configuredDbUrl != null && configuredDbUrl.trim().isNotEmpty;
+      final dbUrl = hasExplicitDbUrl
+          ? configuredDbUrl
+          : 'postgresql://test_user:test_password@localhost:5432/test_db';
 
       try {
         final uri = Uri.parse(dbUrl);
@@ -187,6 +191,7 @@ void main() {
         );
         usingLivePostgres = true;
       } catch (_) {
+        if (hasExplicitDbUrl) rethrow;
         connection = _InMemoryPostgresConnection();
         usingLivePostgres = false;
       }

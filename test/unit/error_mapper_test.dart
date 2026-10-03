@@ -411,5 +411,51 @@ SELECT 1;
       expect(conn.executedSql[3], endsWith(r'$body$ LANGUAGE plpgsql'));
       expect(conn.executedSql[4], equals('SELECT 1'));
     });
+
+    test('_ensureConnected serializes concurrent reconnects into a single factory call', () async {
+      final deadConn = _FakePgConnection(isOpen: false);
+      final freshConn = _FakePgConnection(isOpen: true);
+      var factoryCalls = 0;
+      final adapter = PostgresAdapter(
+        deadConn,
+        connectionFactory: () async {
+          factoryCalls++;
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          return freshConn;
+        },
+      );
+
+      await Future.wait([
+        adapter.queryRaw(const SqlQuery(
+          sql: 'SELECT 1',
+          args: [],
+          argTypes: [],
+        )),
+        adapter.queryRaw(const SqlQuery(
+          sql: 'SELECT 2',
+          args: [],
+          argTypes: [],
+        )),
+      ]);
+
+      expect(factoryCalls, equals(1));
+      expect(freshConn.executedSql, containsAll(['SELECT 1', 'SELECT 2']));
+    });
+
+    test('splitSqlStatements handles E-escaped strings and dollar signs in identifiers', () {
+      const script = r"""
+INSERT INTO "notes" ("body") VALUES (E'backslash \'quote;inside\' literal');
+SELECT col$tag$1 FROM "tbl";
+SELECT 'still;one;statement';
+""";
+      final statements = PostgresAdapter.splitSqlStatements(script);
+      expect(statements, hasLength(3));
+      expect(
+        statements[0],
+        equals(r'''INSERT INTO "notes" ("body") VALUES (E'backslash \'quote;inside\' literal')'''),
+      );
+      expect(statements[1], equals(r'SELECT col$tag$1 FROM "tbl"'));
+      expect(statements[2], equals("SELECT 'still;one;statement'"));
+    });
   });
 }

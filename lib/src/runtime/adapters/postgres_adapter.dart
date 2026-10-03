@@ -70,15 +70,35 @@ class PostgresAdapter implements SqlDriverAdapter {
     return conn ?? _pool!;
   }
 
+  /// In-flight reconnect future used to serialize concurrent reconnect attempts.
+  Future<void>? _reconnecting;
+
   /// Check if connection is open, reconnect if factory provided and connection is closed.
   /// No-op in pooled mode (the pool manages connection health) or when the connection is open.
   Future<void> _ensureConnected() async {
     if (_pool != null || _connectionFactory == null) return;
     final conn = _connection;
     if (conn != null && conn.isOpen) return;
-    if (conn != null) {
+    final inFlight = _reconnecting;
+    if (inFlight != null) {
+      await inFlight;
+      return;
+    }
+    final reconnectFuture = _reconnect(conn);
+    _reconnecting = reconnectFuture;
+    try {
+      await reconnectFuture;
+    } finally {
+      if (identical(_reconnecting, reconnectFuture)) {
+        _reconnecting = null;
+      }
+    }
+  }
+
+  Future<void> _reconnect(pg.Connection? deadConn) async {
+    if (deadConn != null) {
       try {
-        await conn.close();
+        await deadConn.close();
       } catch (_) {
         // Already closed, ignore
       }
@@ -156,15 +176,17 @@ class PostgresAdapter implements SqlDriverAdapter {
   }
 
   /// Split a SQL script into individual statements while ignoring semicolons
-  /// inside single-quoted literals (`'...'` with `''` escapes), double-quoted
-  /// identifiers (`"..."` with `""` escapes), dollar-quoted blocks (`$$...$$`
-  /// or `$tag$...$tag$`), line comments (`--...`), and block comments (`/*...*/`).
+  /// inside single-quoted literals (`'...'` with `''` escapes and `E'...'`
+  /// with backslash escapes), double-quoted identifiers (`"..."` with `""`
+  /// escapes), dollar-quoted blocks (`$$...$$` or `$tag$...$tag$`), line
+  /// comments (`--...`), and block comments (`/*...*/`).
   static List<String> splitSqlStatements(String script) {
     final statements = <String>[];
     final current = StringBuffer();
     final len = script.length;
 
     var inSingleQuote = false;
+    var inEscapeString = false;
     var inDoubleQuote = false;
     var inLineComment = false;
     var inBlockComment = false;
@@ -204,12 +226,18 @@ class PostgresAdapter implements SqlDriverAdapter {
 
       if (inSingleQuote) {
         current.write(ch);
+        if (inEscapeString && ch == r'\' && i + 1 < len) {
+          current.write(script[i + 1]);
+          i++;
+          continue;
+        }
         if (ch == "'") {
           if (i + 1 < len && script[i + 1] == "'") {
             current.write("'");
             i++;
           } else {
             inSingleQuote = false;
+            inEscapeString = false;
           }
         }
         continue;
@@ -246,6 +274,12 @@ class PostgresAdapter implements SqlDriverAdapter {
       if (ch == "'") {
         current.write(ch);
         inSingleQuote = true;
+        final precededByE =
+            i > 0 && (script[i - 1] == 'E' || script[i - 1] == 'e');
+        final ePrecededByIdent = i > 1 &&
+            (_isDollarTagPart(script.codeUnitAt(i - 2)) ||
+                script[i - 2] == r'$');
+        inEscapeString = precededByE && !ePrecededByIdent;
         continue;
       }
 
@@ -256,12 +290,17 @@ class PostgresAdapter implements SqlDriverAdapter {
       }
 
       if (ch == r'$') {
-        final tag = _matchDollarQuoteTag(script, i);
-        if (tag != null) {
-          dollarQuoteTag = tag;
-          current.write(tag);
-          i += tag.length - 1;
-          continue;
+        final prevIsIdent = i > 0 &&
+            (_isDollarTagPart(script.codeUnitAt(i - 1)) ||
+                script[i - 1] == r'$');
+        if (!prevIsIdent) {
+          final tag = _matchDollarQuoteTag(script, i);
+          if (tag != null) {
+            dollarQuoteTag = tag;
+            current.write(tag);
+            i += tag.length - 1;
+            continue;
+          }
         }
       }
 
