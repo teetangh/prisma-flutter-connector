@@ -203,46 +203,83 @@ model User {
         ),
       );
 
-      // delete uses executeMutationAsMap in 1 round-trip without pre-fetching
+      // delete pre-fetches row via findUniqueOrThrow and executes mutation
       final deleteStart = code.indexOf('Future<User> delete(');
       final deleteEnd = code.indexOf('Future<int> deleteMany(');
       final deleteMethod = code.substring(deleteStart, deleteEnd);
       expect(
         deleteMethod,
         contains(
-          'final deletedRow = await _executor.executeMutationAsMap(query);',
+          'final existing = await findUniqueOrThrow(where: where);',
         ),
       );
-      expect(deleteMethod, isNot(contains('findUniqueOrThrow')));
       expect(
         deleteMethod,
-        contains('return User.fromJson(_normalizeForJson(deletedRow));'),
+        contains('final affected = await _executor.executeMutation(query);'),
       );
+      expect(deleteMethod, contains('return existing;'));
     });
 
-    test('parses and generates full familiarise_web schema if available', () {
-      final schemaFile = File(
-        '/usr/local/google/home/kaustavg/github/familiarise_web/prisma/schema.prisma',
+    test('generates non-RETURNING update fallback for SQLite provider', () {
+      const sqliteSchemaStr = '''
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id    String @id @default(uuid())
+  email String @unique
+}
+''';
+      final sqliteSchema = PrismaParser().parse(sqliteSchemaStr);
+      final code = CbDelegateGenerator(sqliteSchema)
+          .generateDelegate(sqliteSchema.models.first)
+          .replaceAll(RegExp(r'\s+'), ' ');
+
+      expect(
+        code,
+        contains('final existing = await findUniqueOrThrow(where: where);'),
       );
-      if (!schemaFile.existsSync()) return;
-
-      final parsed = PrismaParser().parse(schemaFile.readAsStringSync());
-      expect(parsed.models.length, greaterThanOrEqualTo(135));
-      expect(parsed.enums.length, greaterThanOrEqualTo(100));
-
-      final models = CbModelGenerator(parsed).generateAll();
-      final delegates =
-          CbDelegateGenerator(parsed, serverMode: true).generateAll();
-      final filters = CbFilterTypesGenerator(parsed).generate();
-      final client = CbClientGenerator(parsed, serverMode: true).generate();
-      final registry =
-          CbSchemaRegistryGenerator(parsed, serverMode: true).generate();
-
-      expect(models.length, equals(parsed.models.length + parsed.enums.length));
-      expect(delegates.length, equals(parsed.models.length));
-      expect(filters, isNotEmpty);
-      expect(client, isNotEmpty);
-      expect(registry, isNotEmpty);
+      expect(
+        code,
+        contains('final affected = await _executor.executeMutation(query);'),
+      );
+      expect(code, isNot(contains('executeMutationAsMap(query)')));
     });
+
+    final integrationSchemaPath =
+        Platform.environment['PRISMA_INTEGRATION_SCHEMA'];
+    test(
+      'parses and generates full familiarise_web schema if available',
+      () {
+        final schemaFile = File(integrationSchemaPath!);
+
+        final parsed = PrismaParser().parse(schemaFile.readAsStringSync());
+        expect(parsed.models.length, greaterThanOrEqualTo(135));
+        expect(parsed.enums.length, greaterThanOrEqualTo(100));
+
+        final models = CbModelGenerator(parsed).generateAll();
+        final delegates =
+            CbDelegateGenerator(parsed, serverMode: true).generateAll();
+        final filters = CbFilterTypesGenerator(parsed).generate();
+        final client = CbClientGenerator(parsed, serverMode: true).generate();
+        final registry =
+            CbSchemaRegistryGenerator(parsed, serverMode: true).generate();
+
+        expect(
+          models.length,
+          equals(parsed.models.length + parsed.enums.length),
+        );
+        expect(delegates.length, equals(parsed.models.length));
+        expect(filters, isNotEmpty);
+        expect(client, isNotEmpty);
+        expect(registry, isNotEmpty);
+      },
+      skip: integrationSchemaPath == null ||
+              !File(integrationSchemaPath).existsSync()
+          ? 'PRISMA_INTEGRATION_SCHEMA not set or file does not exist'
+          : null,
+    );
   });
 }

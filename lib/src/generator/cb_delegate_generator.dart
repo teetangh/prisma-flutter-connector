@@ -565,6 +565,46 @@ extension _${modelName}ExecutorMutationAsMap on BaseExecutor {
     final m = model.name;
     final t = model.tableName;
     final pkWhereUnique = _pkWhereUniqueFromUpdated(model);
+    final supportsUpdateReturning =
+        schema.datasourceProvider == 'postgresql' ||
+            schema.datasourceProvider == 'supabase';
+    final mutationBlock = supportsUpdateReturning
+        ? '''
+      const relationFields = $relLiteral;
+      final Map<String, dynamic>? updatedRow;
+      if (data0.keys.any(relationFields.contains)) {
+        updatedRow =
+            await _executor.executeMutationWithRelationsReturning(query);
+      } else {
+        updatedRow = await _executor.executeMutationAsMap(query);
+      }
+      if (updatedRow == null) {
+        throw Exception('$m not found');
+      }
+      if (include != null) {
+        return await findUniqueOrThrow(
+          where: $pkWhereUnique,
+          include: include,
+        );
+      }
+      return $m.fromJson(_normalizeForJson(updatedRow));'''
+        : '''
+      final existing = await findUniqueOrThrow(where: where);
+      final updatedRow = <String, dynamic>{...existing.toJson(), ...data0};
+      const relationFields = $relLiteral;
+      if (data0.keys.any(relationFields.contains)) {
+        await _executor.executeMutationWithRelations(query);
+      } else {
+        final affected = await _executor.executeMutation(query);
+        if (affected == 0) {
+          throw Exception('$m not found');
+        }
+      }
+      return await findUniqueOrThrow(
+        where: $pkWhereUnique,
+        include: include,
+      );''';
+
     return Method((b) => b
       ..name = 'update'
       ..docs.add('/// Update a $m')
@@ -606,24 +646,7 @@ extension _${modelName}ExecutorMutationAsMap on BaseExecutor {
           .data(data0)
           .build();
 
-      const relationFields = $relLiteral;
-      final Map<String, dynamic>? updatedRow;
-      if (data0.keys.any(relationFields.contains)) {
-        updatedRow =
-            await _executor.executeMutationWithRelationsReturning(query);
-      } else {
-        updatedRow = await _executor.executeMutationAsMap(query);
-      }
-      if (updatedRow == null) {
-        throw Exception('$m not found');
-      }
-      if (include != null) {
-        return await findUniqueOrThrow(
-          where: $pkWhereUnique,
-          include: include,
-        );
-      }
-      return $m.fromJson(_normalizeForJson(updatedRow));
+$mutationBlock
     '''));
   }
 
@@ -713,17 +736,18 @@ extension _${modelName}ExecutorMutationAsMap on BaseExecutor {
       ..required = true
       ..type = refer('${m}WhereUniqueInput')))
     ..body = Code('''
+      final existing = await findUniqueOrThrow(where: where);
       final query = JsonQueryBuilder()
           .model('$t')
           .action(QueryAction.delete)
           .where(_whereUniqueToJson(where))
           .build();
 
-      final deletedRow = await _executor.executeMutationAsMap(query);
-      if (deletedRow == null) {
+      final affected = await _executor.executeMutation(query);
+      if (affected == 0) {
         throw Exception('$m not found');
       }
-      return $m.fromJson(_normalizeForJson(deletedRow));
+      return existing;
     '''));
 
   Method _deleteMany(String m, String t) => Method((b) => b
