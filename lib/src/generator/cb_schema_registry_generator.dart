@@ -66,7 +66,9 @@ class CbSchemaRegistryGenerator {
       final parts = <String>["name: '${field.name}'"];
       parts.add("columnName: '$columnName'");
       parts.add("type: '$dartType'");
-      if (field.isId) parts.add('isId: true');
+      if (field.isId || model.compositeId.contains(field.name)) {
+        parts.add('isId: true');
+      }
       if (field.isUnique) parts.add('isUnique: true');
       if (!field.isRequired) parts.add('isNullable: true');
       if (field.isUpdatedAt) parts.add('isUpdatedAt: true');
