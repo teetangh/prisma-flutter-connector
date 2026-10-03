@@ -24,11 +24,10 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+      - name: Setup Dart
+        uses: dart-lang/setup-dart@v1
         with:
-          flutter-version: '3.27.0'
-          channel: 'stable'
+          sdk: 'stable'
 
       - name: Install Prisma CLI
         run: npm install -g prisma@5
@@ -47,8 +46,8 @@ jobs:
         working-directory: test/integration/sqlite
         run: prisma generate
 
-      - name: Get Flutter dependencies
-        run: flutter pub get
+      - name: Get Dart dependencies
+        run: dart pub get
 
       - name: Generate Dart code from Prisma schema
         run: |
@@ -57,7 +56,7 @@ jobs:
             --output test/integration/sqlite/generated/
 
       - name: Run integration tests
-        run: flutter test test/integration/sqlite/sqlite_test.dart --coverage
+        run: dart test test/integration/sqlite/sqlite_test.dart
 
       - name: Upload coverage
         uses: codecov/codecov-action@v3

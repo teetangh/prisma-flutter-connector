@@ -19,20 +19,19 @@ jobs:
         with:
           submodules: 'recursive'
 
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+      - name: Setup Dart
+        uses: dart-lang/setup-dart@v1
         with:
-          flutter-version: '3.27.0'
-          channel: 'stable'
+          sdk: 'stable'
 
       - name: Get dependencies
-        run: flutter pub get
+        run: dart pub get
 
       - name: Run analyzer
-        run: flutter analyze
+        run: dart analyze
 
       - name: Run unit tests
-        run: flutter test test/unit/ --coverage
+        run: dart test test/unit/
 
       - name: Upload coverage
         uses: codecov/codecov-action@v3
