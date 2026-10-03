@@ -14,17 +14,16 @@
 ///
 /// ## Why This Exists
 ///
-/// The main `runtime.dart` exports the SQLite adapter which depends on `sqflite`,
-/// a Flutter plugin that imports `dart:ui`. This causes compilation errors in
-/// pure Dart environments where Flutter SDK is not available.
-///
-/// This library exports only the PostgreSQL and Supabase adapters which use the
-/// pure Dart `postgres` package.
+/// All runtime adapters (`PostgresAdapter`, `SupabaseAdapter`, and
+/// `SQLiteAdapter`) are now 100% pure Dart with zero `dart:ui` or Flutter SDK
+/// dependencies. `runtime_server.dart` is retained as the server-focused
+/// entrypoint and exports the PostgreSQL, Supabase, and SQLite adapters.
 ///
 /// ## Supported Databases
 ///
 /// - **PostgreSQL** via `postgres` package
-/// - **Supabase** (PostgreSQL with direct connection)
+/// - **Supabase** (PostgreSQL with direct or pooler connection)
+/// - **SQLite** (pure-Dart `SQLiteDatabase` / `SQLiteCallbackDatabase` or `sqflite`)
 ///
 /// ## Usage
 ///

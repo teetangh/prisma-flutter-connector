@@ -195,8 +195,8 @@ import 'package:prisma_flutter_connector/runtime.dart';
 // Option B: Pure-Dart callback adapter (e.g. wrapping package:sqlite3)
 final adapter = SQLiteAdapter(
   SQLiteCallbackDatabase(
-    onQuery: (sql, args) async => /* execute SELECT */,
-    onExecute: (sql, args) async => /* execute INSERT/UPDATE/DELETE */,
+    onQuery: (sql, args) async => const <Map<String, Object?>>[],
+    onExecute: (sql, args) async => 0,
   ),
 );
 ```
@@ -217,7 +217,7 @@ SqlDriverAdapter (PostgresAdapter / SupabaseAdapter / SQLiteAdapter)
 Database (PostgreSQL / Supabase / SQLite)
 ```
 
-## Testing
+## Testing & MCP Tooling
 
 ```bash
 # Run pure-Dart unit tests
@@ -226,6 +226,8 @@ dart test test/unit/
 # Run static analysis
 dart analyze
 ```
+
+> **Note on `.mcp.json` (`dart mcp-server`):** While the `prisma_flutter_connector` package supports Dart SDK `>=3.0.0 <4.0.0`, the optional `.mcp.json` developer configuration uses the built-in `dart mcp-server` command, which requires **Dart 3.9+** (or Flutter 3.35+).
 
 ## Documentation & Support
 

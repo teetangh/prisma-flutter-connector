@@ -66,7 +66,8 @@ class _FakeSqfliteDatabase extends _FakeSqfliteTransaction {
 
 void main() {
   group('SQLiteAdapter (#41, #42, #62)', () {
-    test('dispatches INSERT, UPDATE, and DELETE to distinct executor methods',
+    test(
+        'dispatches INSERT/UPDATE through rawUpdate (affected rows) and DELETE through rawDelete',
         () async {
       final db = _FakeSqfliteDatabase();
       final adapter = SQLiteAdapter(db);
@@ -93,13 +94,13 @@ void main() {
         ),
       );
 
-      expect(insertRes, 1);
+      expect(insertRes, 2);
       expect(updateRes, 2);
       expect(deleteRes, 3);
       expect(
         db.log,
         containsAllInOrder([
-          'txn.rawInsert: INSERT INTO "User" ("id", "name") VALUES (?, ?) | [u1, Alice]',
+          'txn.rawUpdate: INSERT INTO "User" ("id", "name") VALUES (?, ?) | [u1, Alice]',
           'txn.rawUpdate: UPDATE "User" SET "name" = ? WHERE "id" = ? | [Bob, u1]',
           'txn.rawDelete: DELETE FROM "User" WHERE "id" = ? | [u1]',
         ]),
@@ -163,7 +164,8 @@ void main() {
       expect(db.rolledBack, isTrue);
     });
 
-    test('supports SQLiteCallbackDatabase in pure Dart', () async {
+    test('supports SQLiteCallbackDatabase and nested SAVEPOINTs in pure Dart',
+        () async {
       final statements = <String>[];
       final callbackDb = SQLiteCallbackDatabase(
         onQuery: (sql, args) async {
@@ -184,6 +186,14 @@ void main() {
       final adapter = SQLiteAdapter(callbackDb);
       await adapter.executeScript(
           'CREATE TABLE t1 (id TEXT); CREATE TABLE t2 (id TEXT);');
+
+      await callbackDb.transaction((outerTxn) async {
+        await outerTxn.execute('INSERT INTO t1 VALUES ("outer")');
+        await callbackDb.transaction((innerTxn) async {
+          await innerTxn.execute('INSERT INTO t2 VALUES ("inner")');
+        });
+      });
+
       final res = await adapter.queryRaw(
         const SqlQuery(
           sql: 'SELECT * FROM t1 WHERE id = \$1',
@@ -200,6 +210,12 @@ void main() {
           'STMT: BEGIN',
           'STMT: CREATE TABLE t1 (id TEXT)',
           'STMT: CREATE TABLE t2 (id TEXT)',
+          'STMT: COMMIT',
+          'STMT: BEGIN',
+          'STMT: INSERT INTO t1 VALUES ("outer")',
+          'STMT: SAVEPOINT sp_1',
+          'STMT: INSERT INTO t2 VALUES ("inner")',
+          'STMT: RELEASE SAVEPOINT sp_1',
           'STMT: COMMIT',
           'QUERY: SELECT * FROM t1 WHERE id = ?',
         ]),

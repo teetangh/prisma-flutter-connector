@@ -70,6 +70,7 @@ class SQLiteCallbackDatabase implements SQLiteDatabase {
     List<Object?>? arguments,
   )? _onStatement;
   final Future<void> Function()? _onClose;
+  int _transactionDepth = 0;
 
   SQLiteCallbackDatabase({
     required Future<List<Map<String, Object?>>> Function(
@@ -135,16 +136,33 @@ class SQLiteCallbackDatabase implements SQLiteDatabase {
   Future<T> transaction<T>(
     Future<T> Function(SQLiteExecutor txn) action,
   ) async {
-    await execute('BEGIN');
+    final depth = _transactionDepth++;
+    final savepoint = 'sp_$depth';
+    if (depth == 0) {
+      await execute('BEGIN');
+    } else {
+      await execute('SAVEPOINT $savepoint');
+    }
     try {
       final result = await action(this);
-      await execute('COMMIT');
+      if (depth == 0) {
+        await execute('COMMIT');
+      } else {
+        await execute('RELEASE SAVEPOINT $savepoint');
+      }
       return result;
     } catch (_) {
       try {
-        await execute('ROLLBACK');
+        if (depth == 0) {
+          await execute('ROLLBACK');
+        } else {
+          await execute('ROLLBACK TO SAVEPOINT $savepoint');
+          await execute('RELEASE SAVEPOINT $savepoint');
+        }
       } catch (_) {}
       rethrow;
+    } finally {
+      _transactionDepth--;
     }
   }
 
@@ -347,13 +365,12 @@ class SQLiteAdapter implements SqlDriverAdapter {
       final sqliteQuery = _convertPlaceholders(query.sql);
       final verb = sqliteQuery.trimLeft().toUpperCase();
 
-      if (verb.startsWith('UPDATE')) {
-        return await executor.rawUpdate(sqliteQuery, query.args);
-      } else if (verb.startsWith('DELETE')) {
+      if (verb.startsWith('DELETE')) {
         return await executor.rawDelete(sqliteQuery, query.args);
-      } else if (verb.startsWith('INSERT') || verb.startsWith('REPLACE')) {
-        return await executor.rawInsert(sqliteQuery, query.args);
       } else {
+        // Use rawUpdate for UPDATE, INSERT, REPLACE, and other DML statements
+        // because sqflite's rawInsert returns last_insert_rowid() instead of
+        // the affected row count (changes()).
         return await executor.rawUpdate(sqliteQuery, query.args);
       }
     } catch (e) {
