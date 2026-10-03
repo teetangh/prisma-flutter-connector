@@ -6,18 +6,17 @@
 ///
 /// ## Features
 ///
-/// - **Direct Database Access**: Connect directly to PostgreSQL, MySQL, SQLite, and Supabase
+/// - **Direct Database Access**: Connect directly to PostgreSQL, Supabase, and SQLite
 /// - **Type-Safe Queries**: Build queries using Prisma's JSON protocol
 /// - **Multiple Adapters**: Swap database providers easily
 /// - **Transaction Support**: Full ACID transaction support
-/// - **Offline-First**: Use SQLite adapter for mobile offline capabilities
+/// - **Offline-First**: Use SQLite adapter for local/mobile offline capabilities
 ///
 /// ## Supported Databases
 ///
-/// - **PostgreSQL** via `postgres` package
-/// - **Supabase** (PostgreSQL with direct connection)
-/// - **SQLite** via `sqflite` package (mobile)
-/// - **MySQL** (coming soon)
+/// - **PostgreSQL** via `postgres` package (single connection or `pg.Pool`)
+/// - **Supabase** (PostgreSQL direct or Supavisor/PgBouncer pooled connection)
+/// - **SQLite** via pure-Dart [SQLiteDatabase] interface or `sqflite`
 ///
 /// ## Usage
 ///
@@ -80,7 +79,7 @@
 ///   // Both succeed or both rollback
 /// });
 /// ```
-library prisma_flutter_connector.runtime;
+library;
 
 // Core adapter types
 export 'src/runtime/adapters/types.dart';
@@ -95,6 +94,7 @@ export 'src/runtime/query/json_protocol.dart';
 export 'src/runtime/query/sql_compiler.dart';
 export 'src/runtime/query/query_executor.dart';
 export 'src/runtime/query/relation_compiler.dart';
+export 'src/runtime/query/computed_field.dart';
 
 // Schema registry for relations
 export 'src/runtime/schema/schema_registry.dart';

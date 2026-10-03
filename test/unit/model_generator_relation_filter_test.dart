@@ -1,10 +1,10 @@
-import 'package:prisma_flutter_connector/src/generator/model_generator.dart';
+import 'package:prisma_flutter_connector/src/generator/cb_model_generator.dart';
 import 'package:prisma_flutter_connector/src/generator/prisma_parser.dart';
 import 'package:test/test.dart';
 
 void main() {
   group('ModelGenerator Relation Filters', () {
-    late ModelGenerator generator;
+    late CbModelGenerator generator;
     late PrismaModel userModel;
     late PrismaModel orderModel;
     late PrismaModel productModel;
@@ -121,7 +121,7 @@ void main() {
         datasourceProvider: 'postgresql',
       );
 
-      generator = const ModelGenerator(schema);
+      generator = CbModelGenerator(schema);
       userModel = schema.models.firstWhere((m) => m.name == 'User');
       orderModel = schema.models.firstWhere((m) => m.name == 'Order');
       productModel = schema.models.firstWhere((m) => m.name == 'Product');
@@ -177,9 +177,7 @@ void main() {
       test('WhereInput includes relation filter fields', () {
         // WhereInput should include the relation filter fields
         expect(userCode, contains('class UserWhereInput'));
-        expect(userCode, contains('/// Filter by orders relation'));
         expect(userCode, contains('OrderListRelationFilter? orders,'));
-        expect(userCode, contains('/// Filter by favoriteProducts relation'));
         expect(
             userCode, contains('ProductListRelationFilter? favoriteProducts,'));
       });
@@ -269,7 +267,7 @@ void main() {
           datasourceProvider: 'postgresql',
         );
 
-        const selfRefGenerator = ModelGenerator(selfRefSchema);
+        final selfRefGenerator = CbModelGenerator(selfRefSchema);
         final categoryModel = selfRefSchema.models.first;
         final categoryCode = selfRefGenerator.generateModel(categoryModel);
 

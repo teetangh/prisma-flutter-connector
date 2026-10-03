@@ -6,7 +6,7 @@ import 'package:prisma_flutter_connector/src/runtime/adapters/postgres_adapter.d
 
 /// Custom enum[] columns arrive from the postgres driver as UndecodedBytes —
 /// either the binary ARRAY wire format or a text array literal. These tests
-/// cover the two parsers the adapter uses to turn them into List<String?>.
+/// cover the two parsers the adapter uses to turn them into `List<String?>`.
 void main() {
   group('parsePgBinaryArray', () {
     /// Build the 1-D PostgreSQL binary array wire format.

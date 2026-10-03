@@ -1,44 +1,37 @@
 /// Prisma Flutter Connector
 ///
-/// A generic, type-safe Flutter connector for Prisma backends using GraphQL.
-/// Works with ANY Prisma schema through code generation.
+/// A type-safe, pure-Dart Prisma ORM connector and code generator for Dart and
+/// Flutter applications. Connects directly to PostgreSQL, Supabase, and SQLite
+/// databases without requiring a GraphQL backend.
 ///
 /// ## Usage
 ///
 /// 1. Generate Dart code from your Prisma schema:
 /// ```bash
-/// flutter pub run prisma_flutter_connector:generate \
+/// dart run prisma_flutter_connector:generate \
 ///   --schema prisma/schema.prisma \
 ///   --output lib/generated/
 /// ```
 ///
-/// 2. Use the generated client:
+/// 2. Use the generated client with a database adapter:
 /// ```dart
-/// import 'package:your_app/generated/prisma_client.dart';
+/// import 'package:prisma_flutter_connector/prisma_flutter_connector.dart';
+/// import 'package:your_app/generated/index.dart';
 ///
-/// final client = PrismaClient(
-///   config: PrismaConfig(
-///     graphqlEndpoint: 'https://api.example.com/graphql',
-///   ),
-/// );
-///
-/// final data = await client.yourModel.list();
+/// final adapter = await SupabaseAdapter.fromConnectionString(databaseUrl);
+/// final prisma = PrismaClient(adapter: adapter);
+/// final users = await prisma.user.findMany();
 /// ```
-library prisma_flutter_connector;
+library;
 
-// Core client exports
-export 'src/client/prisma_config.dart';
-export 'src/client/base_client.dart';
-export 'src/client/base_api.dart';
+// Runtime exports (adapters, query compiler, executor, schema registry, errors, logging)
+export 'runtime.dart';
 
-// Exception exports
-export 'src/exceptions/prisma_exception.dart';
-export 'src/exceptions/network_exception.dart' show NetworkException;
-export 'src/exceptions/not_found_exception.dart';
-export 'src/exceptions/validation_exception.dart';
-
-// Generator exports (for CLI usage)
+// Generator exports (for CLI and programmatic codegen usage)
 export 'src/generator/prisma_parser.dart';
-export 'src/generator/model_generator.dart';
-export 'src/generator/api_generator.dart';
-export 'src/generator/filter_generator.dart';
+export 'src/generator/cb_model_generator.dart';
+export 'src/generator/cb_delegate_generator.dart';
+export 'src/generator/cb_filter_types_generator.dart';
+export 'src/generator/cb_client_generator.dart';
+export 'src/generator/cb_schema_registry_generator.dart';
+export 'src/generator/string_utils.dart';

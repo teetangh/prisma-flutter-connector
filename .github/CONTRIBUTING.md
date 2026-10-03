@@ -6,11 +6,11 @@ Thank you for your interest in contributing to the Prisma Flutter Connector!
 
 ### Prerequisites
 
-1. **Flutter SDK** (3.24.0 or higher)
-2. **Dart SDK** (included with Flutter)
-3. **Node.js** (20.x or higher)
+1. **Dart SDK** (3.0.0 or higher)
+2. **Flutter SDK** (optional, only for Flutter app examples)
+3. **Node.js** (20.x or higher, for Prisma CLI migrations)
 4. **Prisma CLI**: `npm install -g prisma`
-5. **Docker** (for integration tests)
+5. **Docker** (for PostgreSQL integration tests)
 6. **Git**
 
 ### Getting Started
@@ -18,48 +18,35 @@ Thank you for your interest in contributing to the Prisma Flutter Connector!
 1. **Fork and clone the repository**
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/prisma-flutter-connector.git
+git clone https://github.com/teetangh/prisma-flutter-connector.git
 cd prisma-flutter-connector
 ```
 
-2. **Initialize submodules**
+2. **Install dependencies**
 
 ```bash
-git submodule update --init --recursive
+dart pub get
 ```
 
-3. **Install dependencies**
+3. **Run analyzer**
 
 ```bash
-flutter pub get
-```
-
-4. **Run analyzer**
-
-```bash
-flutter analyze
+dart analyze
 ```
 
 ## Running Tests
 
 ### Quick Start
 
-The easiest way to run tests is using the **Makefile**:
+Run the pure-Dart unit test suite directly:
 
 ```bash
-# Run all tests (recommended before submitting PR)
-make test-all
+# Run unit tests
+dart test test/unit/
 
-# Run unit tests only
+# Or via Makefile:
 make test-unit
-
-# Run all integration tests
-make test-integration
-
-# Run specific database test
 make test-postgres
-make test-mysql
-make test-mongodb
 make test-sqlite
 ```
 
@@ -79,8 +66,6 @@ Alternatively, use the test runner scripts:
 
 # Test specific database
 ./scripts/test-database.sh postgres
-./scripts/test-database.sh mysql
-./scripts/test-database.sh mongodb
 ./scripts/test-database.sh sqlite
 ```
 
@@ -92,27 +77,23 @@ See the [test README](../test/README.md) for detailed instructions on manual tes
 
 ### Workflow Overview
 
-The project uses **modular GitHub Actions workflows** for better maintainability and easier debugging. Each workflow can be triggered independently or as part of the complete CI pipeline.
+The project uses **modular GitHub Actions workflows** for maintainability and clear diagnostics:
 
 #### Workflow Files
 
-- **`.github/workflows/ci.yml`** - Master workflow that orchestrates all tests
-- **`.github/workflows/unit-tests.yml`** - Unit tests
+- **`.github/workflows/unit-tests.yml`** - Pure-Dart unit tests
 - **`.github/workflows/lint.yml`** - Code quality (formatting + analyzer)
 - **`.github/workflows/postgres-integration.yml`** - PostgreSQL integration tests
-- **`.github/workflows/mysql-integration.yml`** - MySQL integration tests
-- **`.github/workflows/mongodb-integration.yml`** - MongoDB integration tests
 - **`.github/workflows/sqlite-integration.yml`** - SQLite integration tests
 - **`.github/workflows/supabase-integration.yml`** - Supabase integration tests
+- **`.github/workflows/publish.yml`** - Release workflow to pub.dev
 
 #### Execution Flow
 
 1. **Lint** - Code formatting and analyzer checks
-2. **Unit Tests** - Fast tests without external dependencies
-3. **Integration Tests** (run in parallel after unit tests pass):
+2. **Unit Tests** - Fast pure-Dart tests without external dependencies
+3. **Integration Tests**:
    - PostgreSQL (GitHub Actions service container)
-   - MySQL (GitHub Actions service container)
-   - MongoDB (Docker Compose)
    - SQLite (file-based, no service needed)
    - Supabase (requires GitHub secrets, conditional)
 
@@ -177,18 +158,13 @@ You can manually trigger workflows from the GitHub Actions tab:
 
 1. Go to the "Actions" tab in your GitHub repository
 2. Select the workflow you want to run:
-   - **CI - All Tests** - Run the complete test suite
    - **Unit Tests** - Run only unit tests
    - **PostgreSQL Integration Tests** - Run only PostgreSQL tests
-   - **MySQL Integration Tests** - Run only MySQL tests
-   - **MongoDB Integration Tests** - Run only MongoDB tests
    - **SQLite Integration Tests** - Run only SQLite tests
    - **Supabase Integration Tests** - Run only Supabase tests
    - **Code Quality** - Run linting and analysis
 3. Click "Run workflow"
 4. Select the branch and click "Run workflow"
-
-**Tip**: Run specific database workflows to debug integration test failures faster!
 
 ## Code Style
 
@@ -205,7 +181,7 @@ dart format .
 Follow the rules defined in `analysis_options.yaml`:
 
 ```bash
-flutter analyze
+dart analyze
 ```
 
 ### Generated Files
@@ -221,21 +197,17 @@ Exclude generated files from version control:
 prisma-flutter-connector/
 ├── lib/
 │   ├── src/
-│   │   ├── client/          # Generic Prisma client
-│   │   ├── generator/       # Code generation
-│   │   ├── config/          # Configuration
-│   │   ├── exceptions/      # Custom exceptions
-│   │   └── utils/           # Utilities
-│   └── prisma_flutter_connector.dart
+│   │   ├── generator/       # AST-based code_builder generators (Cb*) & PrismaParser
+│   │   └── runtime/         # Pure-Dart SQL compiler, QueryExecutor, adapters, errors
+│   ├── prisma_flutter_connector.dart
+│   ├── runtime.dart
+│   └── runtime_server.dart
 ├── test/
-│   ├── unit/               # Unit tests
-│   ├── integration/        # Integration tests
-│   └── e2e/                # End-to-end tests
-├── examples/
-│   └── ecommerce/          # Example application
+│   ├── unit/               # Pure-Dart unit tests
+│   └── integration/        # Integration tests (PostgreSQL, SQLite, Supabase)
+├── example/                # Example applications
 ├── bin/
 │   └── generate.dart       # CLI code generator
-├── prisma-submodule/       # Prisma as Git submodule
 └── .github/
     └── workflows/          # CI/CD workflows
 ```
@@ -247,7 +219,7 @@ prisma-flutter-connector/
 1. Create a feature branch: `git checkout -b feature/my-feature`
 2. Make your changes
 3. Add tests for new functionality
-4. Run tests and analyzer: `flutter test && flutter analyze`
+4. Run tests and analyzer: `dart test test/unit/ && dart analyze`
 5. Format code: `dart format .`
 6. Commit with descriptive message
 7. Push and create a pull request
@@ -257,18 +229,8 @@ prisma-flutter-connector/
 1. Create a bugfix branch: `git checkout -b fix/issue-123`
 2. Write a failing test that reproduces the bug
 3. Fix the bug
-4. Ensure all tests pass
+4. Ensure all tests pass (`dart test test/unit/`)
 5. Commit and create a pull request
-
-### Adding Support for a New Database
-
-1. Create directory: `test/integration/newdb/`
-2. Add `schema.prisma` with test models
-3. Add `docker-compose.yml` (if applicable)
-4. Add `.env.example` with connection string format
-5. Create `newdb_test.dart` with integration tests
-6. Update `.github/workflows/test.yml` to include new database
-7. Update documentation
 
 ## Commit Message Guidelines
 
@@ -287,7 +249,7 @@ feat: add support for PostgreSQL array types
 
 - Parse array types in Prisma schema
 - Generate List<T> types in Dart models
-- Add integration tests for array operations
+- Add unit tests for array operations
 ```
 
 ## Pull Request Process
@@ -311,9 +273,8 @@ Reviewers will check:
 
 ## Getting Help
 
-- **Issues**: [GitHub Issues](https://github.com/anthropics/prisma-flutter-connector/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/anthropics/prisma-flutter-connector/discussions)
-- **Discord**: (link to community Discord if available)
+- **Issues**: [GitHub Issues](https://github.com/teetangh/prisma-flutter-connector/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/teetangh/prisma-flutter-connector/discussions)
 
 ## License
 

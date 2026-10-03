@@ -1,11 +1,8 @@
 /// Supabase database adapter implementation.
 ///
-/// This adapter can work in two modes:
-/// 1. Direct PostgreSQL connection (using postgres package)
-/// 2. Supabase REST API (using supabase_flutter package)
-///
-/// For most use cases, direct PostgreSQL connection is recommended for better
-/// performance and full SQL support.
+/// Connects to Supabase PostgreSQL (direct or Supavisor/PgBouncer pooled)
+/// using the pure-Dart `postgres` package without requiring `supabase_flutter`
+/// or the Flutter SDK.
 library;
 
 import 'dart:async';
@@ -13,7 +10,7 @@ import 'package:postgres/postgres.dart' as pg;
 import 'package:prisma_flutter_connector/src/runtime/adapters/types.dart';
 import 'package:prisma_flutter_connector/src/runtime/adapters/postgres_adapter.dart';
 
-/// Supabase database adapter using direct PostgreSQL connection.
+/// Supabase database adapter using direct or pooled PostgreSQL connections.
 ///
 /// Example usage:
 /// ```dart
@@ -36,6 +33,13 @@ class SupabaseAdapter implements SqlDriverAdapter {
   SupabaseAdapter(pg.Connection connection, {ConnectionInfo? connectionInfo})
       : _pgAdapter =
             PostgresAdapter(connection, connectionInfo: connectionInfo);
+
+  /// Create a pooled Supabase adapter backed by [pg.Pool].
+  SupabaseAdapter.pooled(pg.Pool pool, {ConnectionInfo? connectionInfo})
+      : _pgAdapter = PostgresAdapter.pooled(
+          pool,
+          connectionInfo: connectionInfo,
+        );
 
   /// Create Supabase adapter from connection string.
   ///

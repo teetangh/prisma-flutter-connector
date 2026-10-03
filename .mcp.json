@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "dart": {
-      "command": "npx",
-      "args": ["@egyleader/dart-mcp-server"]
+      "command": "dart",
+      "args": ["mcp-server", "--force-roots-fallback"]
     }
   }
 }
