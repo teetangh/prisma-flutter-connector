@@ -3987,7 +3987,7 @@ void main() {
       late SqlCompiler compiler;
       setUp(() => compiler = SqlCompiler(provider: 'postgresql'));
 
-      test('path + equals -> #> ... = ?::jsonb', () {
+      test(r'path + equals -> #> $1::text[] = $2::jsonb', () {
         final q = JsonQueryBuilder()
             .model('Event')
             .action(QueryAction.findMany)
@@ -3998,11 +3998,17 @@ void main() {
           }
         }).build();
         final r = compiler.compile(q);
-        expect(r.sql, contains('"meta" #> \'{a,b}\' = \$1::jsonb'));
-        expect(r.args, equals(['"v"']));
+        expect(r.sql, contains('"meta" #> \$1::text[] = \$2::jsonb'));
+        expect(
+          r.args,
+          equals([
+            ['a', 'b'],
+            '"v"',
+          ]),
+        );
       });
 
-      test('string_contains -> #>> ... LIKE', () {
+      test(r'string_contains -> #>> $1::text[] LIKE $2', () {
         final q = JsonQueryBuilder()
             .model('Event')
             .action(QueryAction.findMany)
@@ -4013,8 +4019,39 @@ void main() {
           }
         }).build();
         final r = compiler.compile(q);
-        expect(r.sql, contains('"meta" #>> \'{name}\' LIKE \$1'));
-        expect(r.args, equals(['%foo%']));
+        expect(r.sql, contains('"meta" #>> \$1::text[] LIKE \$2'));
+        expect(
+          r.args,
+          equals([
+            ['name'],
+            '%foo%',
+          ]),
+        );
+      });
+
+      test(
+          'parameterizes malicious JSON path segments to prevent SQL injection',
+          () {
+        const maliciousSegment = "a'} = '1' OR 1=1 --";
+        final q = JsonQueryBuilder()
+            .model('Event')
+            .action(QueryAction.findMany)
+            .where({
+          'meta': {
+            'path': [maliciousSegment, 'nested'],
+            'equals': 'secret',
+          }
+        }).build();
+        final r = compiler.compile(q);
+        expect(r.sql, isNot(contains(maliciousSegment)));
+        expect(r.sql, contains('"meta" #> \$1::text[] = \$2::jsonb'));
+        expect(
+          r.args,
+          equals([
+            [maliciousSegment, 'nested'],
+            '"secret"',
+          ]),
+        );
       });
 
       test('array_contains -> @> ?::jsonb', () {
@@ -4043,6 +4080,304 @@ void main() {
           }
         }).build();
         expect(() => sqlite.compile(q), throwsA(isA<UnsupportedError>()));
+      });
+    });
+
+    group('Identifier escaping & SQL hardening', () {
+      test(
+          'escapes embedded double quotes in PostgreSQL and SQLite identifiers',
+          () {
+        final pgCompiler = SqlCompiler(provider: 'postgresql');
+        final q = JsonQueryBuilder()
+            .model('Us"er')
+            .action(QueryAction.findMany)
+            .where({'na"me': 'Alice'}).build();
+        final r = pgCompiler.compile(q);
+        expect(r.sql, contains('"Us""er"'));
+        expect(r.sql, contains('"na""me" = \$1'));
+      });
+
+      test('escapes embedded backticks in MySQL identifiers', () {
+        final mysqlCompiler = SqlCompiler(provider: 'mysql');
+        final q = JsonQueryBuilder()
+            .model('Us`er')
+            .action(QueryAction.findMany)
+            .where({'na`me': 'Alice'}).build();
+        final r = mysqlCompiler.compile(q);
+        expect(r.sql, contains('`Us``er`'));
+        expect(r.sql, contains('`na``me` = ?'));
+      });
+    });
+
+    group('Computed field placeholders across providers', () {
+      test(
+          'uses ? placeholders for computed fields in SELECT and WHERE on SQLite and MySQL',
+          () {
+        for (final provider in ['sqlite', 'mysql']) {
+          final compiler = SqlCompiler(provider: provider);
+          final q = JsonQueryBuilder()
+              .model('Consultant')
+              .action(QueryAction.findMany)
+              .computed({
+            'minPrice': ComputedField.min(
+              'price',
+              from: 'Plan',
+              where: {
+                'consultantId': const FieldRef('id'),
+                'active': true,
+                'currency': 'USD',
+              },
+            ),
+          }).where({'status': 'verified'}).build();
+
+          final r = compiler.compile(q);
+          expect(r.sql, isNot(contains(r'$1')),
+              reason: 'Provider $provider should not emit \$N placeholders');
+          expect(r.sql, contains('?'),
+              reason: 'Provider $provider should emit ? placeholders');
+          expect(
+            r.args,
+            equals([
+              true,
+              'USD',
+              'verified',
+            ]),
+          );
+        }
+      });
+    });
+
+    group('Many-to-Many integer PK type preservation (#50)', () {
+      late SchemaRegistry intM2mSchema;
+      late SqlCompiler compiler;
+
+      setUp(() {
+        intM2mSchema = SchemaRegistry();
+        intM2mSchema.registerModel(const ModelSchema(
+          name: 'Post',
+          tableName: 'Post',
+          fields: {
+            'id': FieldInfo(
+              name: 'id',
+              columnName: 'id',
+              type: 'Int',
+              isId: true,
+            ),
+            'title': FieldInfo(
+              name: 'title',
+              columnName: 'title',
+              type: 'String',
+            ),
+          },
+          relations: {
+            'categories': RelationInfo(
+              name: 'categories',
+              type: RelationType.manyToMany,
+              targetModel: 'Category',
+              foreignKey: 'id',
+              references: ['id'],
+              joinTable: '_CategoryToPost',
+              joinColumn: 'B',
+              inverseJoinColumn: 'A',
+            ),
+          },
+        ));
+        intM2mSchema.registerModel(const ModelSchema(
+          name: 'Category',
+          tableName: 'Category',
+          fields: {
+            'id': FieldInfo(
+              name: 'id',
+              columnName: 'id',
+              type: 'Int',
+              isId: true,
+            ),
+            'name': FieldInfo(
+              name: 'name',
+              columnName: 'name',
+              type: 'String',
+            ),
+          },
+        ));
+        compiler = SqlCompiler(provider: 'postgresql', schema: intM2mSchema);
+      });
+
+      test(
+          'preserves int PKs and ArgType.int64 in M2M connect, disconnect, and set',
+          () {
+        final createQuery =
+            JsonQueryBuilder().model('Post').action(QueryAction.create).data({
+          'id': 10,
+          'title': 'Hello',
+          'categories': {
+            'connect': [
+              {'id': 1},
+              {'id': 2},
+            ],
+          },
+        }).build();
+
+        final compiledCreate = compiler.compileWithRelations(createQuery);
+        expect(compiledCreate.relationMutations, hasLength(2));
+        expect(compiledCreate.relationMutations[0].args, equals([10, 1]));
+        expect(
+          compiledCreate.relationMutations[0].argTypes,
+          equals([ArgType.int64, ArgType.int64]),
+        );
+        expect(compiledCreate.relationMutations[1].args, equals([10, 2]));
+        expect(
+          compiledCreate.relationMutations[1].argTypes,
+          equals([ArgType.int64, ArgType.int64]),
+        );
+
+        // Also test buildRelationMutationsFromResult with DB-generated int PK
+        final fromResult = compiler.buildRelationMutationsFromResult(
+          JsonQueryBuilder().model('Post').action(QueryAction.create).data({
+            'title': 'Auto ID',
+            'categories': {
+              'connect': [
+                {'id': 5},
+              ],
+            },
+          }).build(),
+          {'id': 99, 'title': 'Auto ID'},
+        );
+        expect(fromResult, hasLength(1));
+        expect(fromResult.first.args, equals([99, 5]));
+        expect(
+            fromResult.first.argTypes, equals([ArgType.int64, ArgType.int64]));
+
+        // Update with set + disconnect
+        final updateQuery = JsonQueryBuilder()
+            .model('Post')
+            .action(QueryAction.update)
+            .where({'id': 10}).data({
+          'categories': {
+            'set': [
+              {'id': 3},
+            ],
+            'disconnect': [
+              {'id': 4},
+            ],
+          },
+        }).build();
+
+        final compiledUpdate = compiler.compileWithRelations(updateQuery);
+        expect(compiledUpdate.relationMutations, hasLength(3));
+        // 1. clear junction for post 10
+        expect(compiledUpdate.relationMutations[0].args, equals([10]));
+        expect(compiledUpdate.relationMutations[0].argTypes,
+            equals([ArgType.int64]));
+        // 2. connect set target 3
+        expect(compiledUpdate.relationMutations[1].args, equals([10, 3]));
+        expect(
+          compiledUpdate.relationMutations[1].argTypes,
+          equals([ArgType.int64, ArgType.int64]),
+        );
+        // 3. disconnect target 4
+        expect(compiledUpdate.relationMutations[2].args, equals([10, 4]));
+        expect(
+          compiledUpdate.relationMutations[2].argTypes,
+          equals([ArgType.int64, ArgType.int64]),
+        );
+      });
+    });
+
+    group('Subquery pagination for findMany with 1:N and M:N includes', () {
+      late SchemaRegistry relSchema;
+      late SqlCompiler compiler;
+
+      setUp(() {
+        relSchema = SchemaRegistry();
+        relSchema.registerModel(const ModelSchema(
+          name: 'User',
+          tableName: 'users',
+          fields: {
+            'id': FieldInfo(
+                name: 'id', columnName: 'id', type: 'Int', isId: true),
+            'name': FieldInfo(name: 'name', columnName: 'name', type: 'String'),
+          },
+          relations: {
+            'posts': RelationInfo(
+              name: 'posts',
+              type: RelationType.oneToMany,
+              targetModel: 'Post',
+              foreignKey: 'authorId',
+              references: ['id'],
+            ),
+            'profile': RelationInfo(
+              name: 'profile',
+              type: RelationType.oneToOne,
+              targetModel: 'Profile',
+              foreignKey: 'userId',
+              references: ['id'],
+              isOwner: false,
+            ),
+          },
+        ));
+        relSchema.registerModel(const ModelSchema(
+          name: 'Post',
+          tableName: 'posts',
+          fields: {
+            'id': FieldInfo(
+                name: 'id', columnName: 'id', type: 'Int', isId: true),
+            'title':
+                FieldInfo(name: 'title', columnName: 'title', type: 'String'),
+            'authorId': FieldInfo(
+                name: 'authorId', columnName: 'authorId', type: 'Int'),
+          },
+        ));
+        relSchema.registerModel(const ModelSchema(
+          name: 'Profile',
+          tableName: 'profiles',
+          fields: {
+            'id': FieldInfo(
+                name: 'id', columnName: 'id', type: 'Int', isId: true),
+            'userId':
+                FieldInfo(name: 'userId', columnName: 'userId', type: 'Int'),
+          },
+        ));
+        compiler = SqlCompiler(provider: 'postgresql', schema: relSchema);
+      });
+
+      test(
+          'wraps parent table in subquery when findMany has take/skip and 1:N include',
+          () {
+        final q = JsonQueryBuilder()
+            .model('User')
+            .action(QueryAction.findMany)
+            .where({'name': 'Alice'})
+            .include({'posts': true})
+            .orderBy({'id': 'asc'})
+            .take(5)
+            .skip(10)
+            .build();
+
+        final r = compiler.compile(q);
+        expect(
+          r.sql,
+          contains(
+            'FROM (SELECT * FROM "users" WHERE "name" = \$1 ORDER BY "id" ASC LIMIT 5 OFFSET 10) AS "t0"',
+          ),
+        );
+        expect(r.sql,
+            contains('LEFT JOIN "posts" "t1" ON "t1"."authorId" = "t0"."id"'));
+        expect(r.sql, endsWith('ORDER BY "t0"."id" ASC'));
+        expect(r.args, equals(['Alice']));
+      });
+
+      test('does not wrap in subquery when include is only 1:1', () {
+        final q = JsonQueryBuilder()
+            .model('User')
+            .action(QueryAction.findMany)
+            .include({'profile': true})
+            .take(5)
+            .build();
+
+        final r = compiler.compile(q);
+        expect(r.sql, isNot(contains('FROM (SELECT *')));
+        expect(r.sql, contains('FROM "users" "t0"'));
+        expect(r.sql, contains('LIMIT 5'));
       });
     });
   });

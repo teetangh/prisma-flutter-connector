@@ -335,13 +335,29 @@ class SqlCompiler {
     }
 
     // Build WHERE clause
-    // Pass baseAlias when JOINs are present to disambiguate column names
+    // Determine if pagination + to-many include requires a parent subquery so
+    // LIMIT/OFFSET apply to parent rows before 1:N or M:N JOINs multiply rows.
+    final take = args['take'] as int?;
+    final skip = args['skip'] as int?;
+    final cursor = args['cursor'];
+    final hasCursor = cursor is Map<String, dynamic> && cursor.isNotEmpty;
+    final hasPagination = take != null || skip != null || hasCursor;
+    final useParentSubquery = !single &&
+        compiledRelations != null &&
+        compiledRelations.isNotEmpty &&
+        _includeHasToMany(query.modelName, include) &&
+        hasPagination;
+
+    final whereBaseAlias = useParentSubquery
+        ? (hasRelationPath ? baseAlias : null)
+        : (needsAlias ? baseAlias : null);
+
     // Start param index after computed field params
     // Note: 'where' already extracted above for hasRelationPath check
     final (whereClause, whereArgs, whereTypes) = _buildWhereClause(
       where,
       modelName: query.modelName,
-      baseAlias: needsAlias ? baseAlias : null,
+      baseAlias: whereBaseAlias,
       startIndex: computedArgs.length + 1,
     );
 
@@ -351,13 +367,12 @@ class SqlCompiler {
     var effectiveWhere = whereClause;
     var cursorArgs = <dynamic>[];
     var cursorTypes = <ArgType>[];
-    final cursor = args['cursor'];
-    if (cursor is Map<String, dynamic> && cursor.isNotEmpty) {
+    if (hasCursor) {
       final (cc, cv, ct) = _buildCursorClause(
         cursor,
         args['orderBy'],
         modelName: query.modelName,
-        baseAlias: needsAlias ? baseAlias : null,
+        baseAlias: whereBaseAlias,
         startIndex: computedArgs.length + 1 + whereArgs.length,
       );
       if (cc.isNotEmpty) {
@@ -373,13 +388,9 @@ class SqlCompiler {
     final orderBy = args['orderBy'];
     final orderByClause = _buildOrderByClause(
       orderBy,
-      baseAlias: needsAlias ? baseAlias : null,
+      baseAlias: whereBaseAlias,
       modelName: query.modelName,
     );
-
-    // Build LIMIT/OFFSET
-    final take = args['take'] as int?;
-    final skip = args['skip'] as int?;
 
     // Construct SQL with optional table alias
     // Build DISTINCT clause (v0.2.9+)
@@ -402,39 +413,73 @@ class SqlCompiler {
     }
 
     final sql = StringBuffer();
-    if (needsAlias) {
+    if (useParentSubquery) {
+      final innerSql = StringBuffer(
+          'SELECT $distinctClause* FROM ${_quoteIdentifier(tableName)}');
+      if (hasRelationPath) {
+        innerSql.write(' "$baseAlias"');
+      }
+      if (effectiveWhere.isNotEmpty) {
+        innerSql.write(' WHERE $effectiveWhere');
+      }
+      if (orderByClause.isNotEmpty) {
+        innerSql.write(' ORDER BY $orderByClause');
+      }
+      if (take != null) {
+        innerSql.write(' LIMIT $take');
+      }
+      if (skip != null) {
+        innerSql.write(' OFFSET $skip');
+      }
+
       sql.write(
-          'SELECT $distinctClause$selectClause FROM ${_quoteIdentifier(tableName)} "$baseAlias"');
+          'SELECT $selectClause FROM (${innerSql.toString()}) AS "$baseAlias"');
       if (joinClauses.isNotEmpty) {
         sql.write(' $joinClauses');
       }
+      final outerOrderByClause = _buildOrderByClause(
+        orderBy,
+        baseAlias: baseAlias,
+        modelName: query.modelName,
+      );
+      if (outerOrderByClause.isNotEmpty) {
+        sql.write(' ORDER BY $outerOrderByClause');
+      }
     } else {
-      sql.write(
-          'SELECT $distinctClause$selectClause FROM ${_quoteIdentifier(tableName)}');
-    }
+      if (needsAlias) {
+        sql.write(
+            'SELECT $distinctClause$selectClause FROM ${_quoteIdentifier(tableName)} "$baseAlias"');
+        if (joinClauses.isNotEmpty) {
+          sql.write(' $joinClauses');
+        }
+      } else {
+        sql.write(
+            'SELECT $distinctClause$selectClause FROM ${_quoteIdentifier(tableName)}');
+      }
 
-    if (effectiveWhere.isNotEmpty) {
-      sql.write(' WHERE $effectiveWhere');
-    }
+      if (effectiveWhere.isNotEmpty) {
+        sql.write(' WHERE $effectiveWhere');
+      }
 
-    if (orderByClause.isNotEmpty) {
-      sql.write(' ORDER BY $orderByClause');
-    }
+      if (orderByClause.isNotEmpty) {
+        sql.write(' ORDER BY $orderByClause');
+      }
 
-    // `single` (findUnique/findFirst) normally caps at one row — but a to-many
-    // include multiplies rows via JOIN, so LIMIT 1 would truncate the child
-    // collection. Suppress it then and let the deserializer group + the caller
-    // take the first parent. To-one-only includes stay capped.
-    final singleWithToMany =
-        single && _includeHasToMany(query.modelName, include);
-    if (single && !singleWithToMany) {
-      sql.write(' LIMIT 1');
-    } else if (take != null) {
-      sql.write(' LIMIT $take');
-    }
+      // `single` (findUnique/findFirst) normally caps at one row — but a to-many
+      // include multiplies rows via JOIN, so LIMIT 1 would truncate the child
+      // collection. Suppress it then and let the deserializer group + the caller
+      // take the first parent. To-one-only includes stay capped.
+      final singleWithToMany =
+          single && _includeHasToMany(query.modelName, include);
+      if (single && !singleWithToMany) {
+        sql.write(' LIMIT 1');
+      } else if (take != null) {
+        sql.write(' LIMIT $take');
+      }
 
-    if (skip != null) {
-      sql.write(' OFFSET $skip');
+      if (skip != null) {
+        sql.write(' OFFSET $skip');
+      }
     }
 
     // Combine computed field args (first), WHERE args, then cursor args.
@@ -1405,13 +1450,19 @@ RETURNING *
       final v = value as Map<String, dynamic>;
 
       if (relation.type == RelationType.manyToMany) {
+        final parentModel = effectiveSchema.getModel(query.modelName);
+        final parentPkField = parentModel?.primaryKeys.isNotEmpty == true
+            ? parentModel!.primaryKeys.first
+            : null;
         // `set`: replace the full relation — clear all junction rows for the
         // parent, then connect exactly the given targets.
         if (v.containsKey('set')) {
-          final clear = _compileJunctionClear(relation, parentId.toString());
+          final clear =
+              _compileJunctionClear(relation, parentId, parentPkField);
           if (clear != null) mutations.add(clear);
           mutations.addAll(_compileConnectOperations(
-            parentId: parentId.toString(),
+            parentId: parentId,
+            parentPkField: parentPkField,
             relation: relation,
             connectItems: _normalizeConnectDisconnect(v['set']),
             effectiveSchema: effectiveSchema,
@@ -1419,7 +1470,8 @@ RETURNING *
         }
         if (v.containsKey('connect')) {
           mutations.addAll(_compileConnectOperations(
-            parentId: parentId.toString(),
+            parentId: parentId,
+            parentPkField: parentPkField,
             relation: relation,
             connectItems: _normalizeConnectDisconnect(v['connect']),
             effectiveSchema: effectiveSchema,
@@ -1427,7 +1479,8 @@ RETURNING *
         }
         if (v.containsKey('disconnect')) {
           mutations.addAll(_compileDisconnectOperations(
-            parentId: parentId.toString(),
+            parentId: parentId,
+            parentPkField: parentPkField,
             relation: relation,
             disconnectItems: _normalizeConnectDisconnect(v['disconnect']),
             effectiveSchema: effectiveSchema,
@@ -1492,16 +1545,37 @@ RETURNING *
     return mutations;
   }
 
+  /// Infer the [ArgType] for a primary-key value in relation mutations.
+  ArgType _inferPkArgType(dynamic id, [FieldInfo? pkField]) {
+    if (id is int) return ArgType.int64;
+    if (id is BigInt) return ArgType.int64;
+    if (id is String) return ArgType.string;
+    if (pkField != null) {
+      final t = pkField.type.toLowerCase();
+      if (t == 'int' || t == 'integer' || t == 'bigint') {
+        return ArgType.int64;
+      }
+      if (t == 'string' || t == 'uuid') {
+        return ArgType.string;
+      }
+    }
+    return _inferArgType(id);
+  }
+
   /// DELETE all junction rows for [parentId] on an m2m relation (the clear
   /// half of a nested `set`). Returns null when the relation lacks junction
   /// metadata.
-  SqlQuery? _compileJunctionClear(RelationInfo relation, String parentId) {
+  SqlQuery? _compileJunctionClear(
+    RelationInfo relation,
+    dynamic parentId, [
+    FieldInfo? parentPkField,
+  ]) {
     if (relation.joinTable == null || relation.joinColumn == null) return null;
     return SqlQuery(
       sql: 'DELETE FROM ${_quoteIdentifier(relation.joinTable!)} '
           'WHERE ${_quoteIdentifier(relation.joinColumn!)} = ${_placeholder(1)}',
       args: [parentId],
-      argTypes: const [ArgType.string],
+      argTypes: [_inferPkArgType(parentId, parentPkField)],
     );
   }
 
@@ -1528,7 +1602,8 @@ RETURNING *
   /// INSERT INTO "_JunctionTable" ("A", "B") VALUES ($1, $2) ON CONFLICT DO NOTHING
   /// ```
   List<SqlQuery> _compileConnectOperations({
-    required String parentId,
+    required dynamic parentId,
+    FieldInfo? parentPkField,
     required RelationInfo relation,
     required List<Map<String, dynamic>> connectItems,
     required SchemaRegistry effectiveSchema,
@@ -1547,12 +1622,14 @@ RETURNING *
 
     // Get target model's primary key field name (fallback to 'id' for compatibility)
     final targetModel = effectiveSchema.getModel(relation.targetModel);
-    final targetPkFieldName = targetModel?.primaryKeys.isNotEmpty == true
-        ? targetModel!.primaryKeys.first.name
-        : 'id';
+    final targetPkField = targetModel?.primaryKeys.isNotEmpty == true
+        ? targetModel!.primaryKeys.first
+        : null;
+    final targetPkFieldName = targetPkField?.name ?? 'id';
+    final parentArgType = _inferPkArgType(parentId, parentPkField);
 
     for (final item in connectItems) {
-      final targetId = item[targetPkFieldName]?.toString();
+      final targetId = item[targetPkFieldName];
       if (targetId == null) continue;
 
       // Generate INSERT with ON CONFLICT DO NOTHING to handle duplicates
@@ -1577,7 +1654,7 @@ RETURNING *
       queries.add(SqlQuery(
         sql: sql,
         args: [parentId, targetId],
-        argTypes: [ArgType.string, ArgType.string],
+        argTypes: [parentArgType, _inferPkArgType(targetId, targetPkField)],
       ));
     }
 
@@ -1591,7 +1668,8 @@ RETURNING *
   /// DELETE FROM "_JunctionTable" WHERE "A" = $1 AND "B" = $2
   /// ```
   List<SqlQuery> _compileDisconnectOperations({
-    required String parentId,
+    required dynamic parentId,
+    FieldInfo? parentPkField,
     required RelationInfo relation,
     required List<Map<String, dynamic>> disconnectItems,
     required SchemaRegistry effectiveSchema,
@@ -1610,12 +1688,14 @@ RETURNING *
 
     // Get target model's primary key field name (fallback to 'id' for compatibility)
     final targetModel = effectiveSchema.getModel(relation.targetModel);
-    final targetPkFieldName = targetModel?.primaryKeys.isNotEmpty == true
-        ? targetModel!.primaryKeys.first.name
-        : 'id';
+    final targetPkField = targetModel?.primaryKeys.isNotEmpty == true
+        ? targetModel!.primaryKeys.first
+        : null;
+    final targetPkFieldName = targetPkField?.name ?? 'id';
+    final parentArgType = _inferPkArgType(parentId, parentPkField);
 
     for (final item in disconnectItems) {
-      final targetId = item[targetPkFieldName]?.toString();
+      final targetId = item[targetPkFieldName];
       if (targetId == null) continue;
 
       final sql = 'DELETE FROM $junctionTable '
@@ -1624,7 +1704,7 @@ RETURNING *
       queries.add(SqlQuery(
         sql: sql,
         args: [parentId, targetId],
-        argTypes: [ArgType.string, ArgType.string],
+        argTypes: [parentArgType, _inferPkArgType(targetId, targetPkField)],
       ));
     }
 
@@ -1958,7 +2038,8 @@ RETURNING *
             args.add(eqValue);
             argTypes.add(_inferArgType(eqValue));
             final paramIndex = startParamIndex + args.length - 1;
-            conditions.add('${_quoteIdentifier(field)} = \$$paramIndex');
+            conditions.add(
+                '${_quoteIdentifier(field)} = ${_placeholder(paramIndex)}');
           }
         }
         // For other operators in computed field WHERE, skip for now
@@ -1971,7 +2052,8 @@ RETURNING *
           args.add(value);
           argTypes.add(_inferArgType(value));
           final paramIndex = startParamIndex + args.length - 1;
-          conditions.add('${_quoteIdentifier(field)} = \$$paramIndex');
+          conditions
+              .add('${_quoteIdentifier(field)} = ${_placeholder(paramIndex)}');
         }
       }
     }
@@ -2965,17 +3047,23 @@ WHERE $joinTable.$joinColumn = $parentRef.$pkCol''';
     final types = <ArgType>[];
     final parts = <String>[];
 
-    // Address the target: `col #> '{a,b}'` (jsonb) or `col #>> '{a,b}'` (text).
+    // Address the target: `col #> $1::text[]` (jsonb) or `col #>> $1::text[]` (text).
     final path = filter['path'];
-    String pathLiteral = '';
-    if (path is List && path.isNotEmpty) {
-      pathLiteral = "'{${path.join(',')}}'";
+    final hasPath = path is List && path.isNotEmpty;
+    String? pathPlaceholder;
+    String getPathPlaceholder() {
+      if (pathPlaceholder != null) return pathPlaceholder!;
+      pathPlaceholder = '${_placeholder(paramIndex++)}::text[]';
+      values.add(path.map((e) => e.toString()).toList());
+      types.add(ArgType.unknown);
+      return pathPlaceholder!;
     }
+
     String jsonbExpr() =>
-        pathLiteral.isEmpty ? columnName : '$columnName #> $pathLiteral';
-    String textExpr() => pathLiteral.isEmpty
+        !hasPath ? columnName : '$columnName #> ${getPathPlaceholder()}';
+    String textExpr() => !hasPath
         ? '$columnName #>> \'{}\''
-        : '$columnName #>> $pathLiteral';
+        : '$columnName #>> ${getPathPlaceholder()}';
 
     for (final entry in filter.entries) {
       switch (entry.key) {
@@ -3130,13 +3218,13 @@ WHERE $joinTable.$joinColumn = $parentRef.$pkCol''';
     switch (provider) {
       case 'postgresql':
       case 'supabase':
-        return '"$name"';
+        return '"${name.replaceAll('"', '""')}"';
       case 'mysql':
-        return '`$name`';
+        return '`${name.replaceAll('`', '``')}`';
       case 'sqlite':
-        return '"$name"';
+        return '"${name.replaceAll('"', '""')}"';
       default:
-        return '"$name"';
+        return '"${name.replaceAll('"', '""')}"';
     }
   }
 
