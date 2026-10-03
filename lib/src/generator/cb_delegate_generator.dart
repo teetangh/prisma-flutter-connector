@@ -565,9 +565,8 @@ extension _${modelName}ExecutorMutationAsMap on BaseExecutor {
     final m = model.name;
     final t = model.tableName;
     final pkWhereUnique = _pkWhereUniqueFromUpdated(model);
-    final supportsUpdateReturning =
-        schema.datasourceProvider == 'postgresql' ||
-            schema.datasourceProvider == 'supabase';
+    final supportsUpdateReturning = schema.datasourceProvider == 'postgresql' ||
+        schema.datasourceProvider == 'supabase';
     final mutationBlock = supportsUpdateReturning
         ? '''
       const relationFields = $relLiteral;
