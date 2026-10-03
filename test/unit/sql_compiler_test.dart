@@ -4029,7 +4029,9 @@ void main() {
         );
       });
 
-      test('parameterizes malicious JSON path segments to prevent SQL injection', () {
+      test(
+          'parameterizes malicious JSON path segments to prevent SQL injection',
+          () {
         const maliciousSegment = "a'} = '1' OR 1=1 --";
         final q = JsonQueryBuilder()
             .model('Event')
@@ -4082,13 +4084,14 @@ void main() {
     });
 
     group('Identifier escaping & SQL hardening', () {
-      test('escapes embedded double quotes in PostgreSQL and SQLite identifiers', () {
+      test(
+          'escapes embedded double quotes in PostgreSQL and SQLite identifiers',
+          () {
         final pgCompiler = SqlCompiler(provider: 'postgresql');
         final q = JsonQueryBuilder()
             .model('Us"er')
             .action(QueryAction.findMany)
-            .where({'na"me': 'Alice'})
-            .build();
+            .where({'na"me': 'Alice'}).build();
         final r = pgCompiler.compile(q);
         expect(r.sql, contains('"Us""er"'));
         expect(r.sql, contains('"na""me" = \$1'));
@@ -4099,8 +4102,7 @@ void main() {
         final q = JsonQueryBuilder()
             .model('Us`er')
             .action(QueryAction.findMany)
-            .where({'na`me': 'Alice'})
-            .build();
+            .where({'na`me': 'Alice'}).build();
         final r = mysqlCompiler.compile(q);
         expect(r.sql, contains('`Us``er`'));
         expect(r.sql, contains('`na``me` = ?'));
@@ -4108,29 +4110,31 @@ void main() {
     });
 
     group('Computed field placeholders across providers', () {
-      test('uses ? placeholders for computed fields in SELECT and WHERE on SQLite and MySQL', () {
+      test(
+          'uses ? placeholders for computed fields in SELECT and WHERE on SQLite and MySQL',
+          () {
         for (final provider in ['sqlite', 'mysql']) {
           final compiler = SqlCompiler(provider: provider);
           final q = JsonQueryBuilder()
               .model('Consultant')
               .action(QueryAction.findMany)
               .computed({
-                'minPrice': ComputedField.min(
-                  'price',
-                  from: 'Plan',
-                  where: {
-                    'consultantId': const FieldRef('id'),
-                    'active': true,
-                    'currency': 'USD',
-                  },
-                ),
-              })
-              .where({'status': 'verified'})
-              .build();
+            'minPrice': ComputedField.min(
+              'price',
+              from: 'Plan',
+              where: {
+                'consultantId': const FieldRef('id'),
+                'active': true,
+                'currency': 'USD',
+              },
+            ),
+          }).where({'status': 'verified'}).build();
 
           final r = compiler.compile(q);
-          expect(r.sql, isNot(contains(r'$1')), reason: 'Provider $provider should not emit \$N placeholders');
-          expect(r.sql, contains('?'), reason: 'Provider $provider should emit ? placeholders');
+          expect(r.sql, isNot(contains(r'$1')),
+              reason: 'Provider $provider should not emit \$N placeholders');
+          expect(r.sql, contains('?'),
+              reason: 'Provider $provider should emit ? placeholders');
           expect(
             r.args,
             equals([
@@ -4198,21 +4202,20 @@ void main() {
         compiler = SqlCompiler(provider: 'postgresql', schema: intM2mSchema);
       });
 
-      test('preserves int PKs and ArgType.int64 in M2M connect, disconnect, and set', () {
-        final createQuery = JsonQueryBuilder()
-            .model('Post')
-            .action(QueryAction.create)
-            .data({
-              'id': 10,
-              'title': 'Hello',
-              'categories': {
-                'connect': [
-                  {'id': 1},
-                  {'id': 2},
-                ],
-              },
-            })
-            .build();
+      test(
+          'preserves int PKs and ArgType.int64 in M2M connect, disconnect, and set',
+          () {
+        final createQuery =
+            JsonQueryBuilder().model('Post').action(QueryAction.create).data({
+          'id': 10,
+          'title': 'Hello',
+          'categories': {
+            'connect': [
+              {'id': 1},
+              {'id': 2},
+            ],
+          },
+        }).build();
 
         final compiledCreate = compiler.compileWithRelations(createQuery);
         expect(compiledCreate.relationMutations, hasLength(2));
@@ -4229,46 +4232,42 @@ void main() {
 
         // Also test buildRelationMutationsFromResult with DB-generated int PK
         final fromResult = compiler.buildRelationMutationsFromResult(
-          JsonQueryBuilder()
-              .model('Post')
-              .action(QueryAction.create)
-              .data({
-                'title': 'Auto ID',
-                'categories': {
-                  'connect': [
-                    {'id': 5},
-                  ],
-                },
-              })
-              .build(),
+          JsonQueryBuilder().model('Post').action(QueryAction.create).data({
+            'title': 'Auto ID',
+            'categories': {
+              'connect': [
+                {'id': 5},
+              ],
+            },
+          }).build(),
           {'id': 99, 'title': 'Auto ID'},
         );
         expect(fromResult, hasLength(1));
         expect(fromResult.first.args, equals([99, 5]));
-        expect(fromResult.first.argTypes, equals([ArgType.int64, ArgType.int64]));
+        expect(
+            fromResult.first.argTypes, equals([ArgType.int64, ArgType.int64]));
 
         // Update with set + disconnect
         final updateQuery = JsonQueryBuilder()
             .model('Post')
             .action(QueryAction.update)
-            .where({'id': 10})
-            .data({
-              'categories': {
-                'set': [
-                  {'id': 3},
-                ],
-                'disconnect': [
-                  {'id': 4},
-                ],
-              },
-            })
-            .build();
+            .where({'id': 10}).data({
+          'categories': {
+            'set': [
+              {'id': 3},
+            ],
+            'disconnect': [
+              {'id': 4},
+            ],
+          },
+        }).build();
 
         final compiledUpdate = compiler.compileWithRelations(updateQuery);
         expect(compiledUpdate.relationMutations, hasLength(3));
         // 1. clear junction for post 10
         expect(compiledUpdate.relationMutations[0].args, equals([10]));
-        expect(compiledUpdate.relationMutations[0].argTypes, equals([ArgType.int64]));
+        expect(compiledUpdate.relationMutations[0].argTypes,
+            equals([ArgType.int64]));
         // 2. connect set target 3
         expect(compiledUpdate.relationMutations[1].args, equals([10, 3]));
         expect(
@@ -4294,7 +4293,8 @@ void main() {
           name: 'User',
           tableName: 'users',
           fields: {
-            'id': FieldInfo(name: 'id', columnName: 'id', type: 'Int', isId: true),
+            'id': FieldInfo(
+                name: 'id', columnName: 'id', type: 'Int', isId: true),
             'name': FieldInfo(name: 'name', columnName: 'name', type: 'String'),
           },
           relations: {
@@ -4319,23 +4319,30 @@ void main() {
           name: 'Post',
           tableName: 'posts',
           fields: {
-            'id': FieldInfo(name: 'id', columnName: 'id', type: 'Int', isId: true),
-            'title': FieldInfo(name: 'title', columnName: 'title', type: 'String'),
-            'authorId': FieldInfo(name: 'authorId', columnName: 'authorId', type: 'Int'),
+            'id': FieldInfo(
+                name: 'id', columnName: 'id', type: 'Int', isId: true),
+            'title':
+                FieldInfo(name: 'title', columnName: 'title', type: 'String'),
+            'authorId': FieldInfo(
+                name: 'authorId', columnName: 'authorId', type: 'Int'),
           },
         ));
         relSchema.registerModel(const ModelSchema(
           name: 'Profile',
           tableName: 'profiles',
           fields: {
-            'id': FieldInfo(name: 'id', columnName: 'id', type: 'Int', isId: true),
-            'userId': FieldInfo(name: 'userId', columnName: 'userId', type: 'Int'),
+            'id': FieldInfo(
+                name: 'id', columnName: 'id', type: 'Int', isId: true),
+            'userId':
+                FieldInfo(name: 'userId', columnName: 'userId', type: 'Int'),
           },
         ));
         compiler = SqlCompiler(provider: 'postgresql', schema: relSchema);
       });
 
-      test('wraps parent table in subquery when findMany has take/skip and 1:N include', () {
+      test(
+          'wraps parent table in subquery when findMany has take/skip and 1:N include',
+          () {
         final q = JsonQueryBuilder()
             .model('User')
             .action(QueryAction.findMany)
@@ -4353,7 +4360,8 @@ void main() {
             'FROM (SELECT * FROM "users" WHERE "name" = \$1 ORDER BY "id" ASC LIMIT 5 OFFSET 10) AS "t0"',
           ),
         );
-        expect(r.sql, contains('LEFT JOIN "posts" "t1" ON "t1"."authorId" = "t0"."id"'));
+        expect(r.sql,
+            contains('LEFT JOIN "posts" "t1" ON "t1"."authorId" = "t0"."id"'));
         expect(r.sql, endsWith('ORDER BY "t0"."id" ASC'));
         expect(r.args, equals(['Alice']));
       });

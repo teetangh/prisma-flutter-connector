@@ -414,7 +414,8 @@ class SqlCompiler {
 
     final sql = StringBuffer();
     if (useParentSubquery) {
-      final innerSql = StringBuffer('SELECT $distinctClause* FROM ${_quoteIdentifier(tableName)}');
+      final innerSql = StringBuffer(
+          'SELECT $distinctClause* FROM ${_quoteIdentifier(tableName)}');
       if (hasRelationPath) {
         innerSql.write(' "$baseAlias"');
       }
@@ -431,7 +432,8 @@ class SqlCompiler {
         innerSql.write(' OFFSET $skip');
       }
 
-      sql.write('SELECT $selectClause FROM (${innerSql.toString()}) AS "$baseAlias"');
+      sql.write(
+          'SELECT $selectClause FROM (${innerSql.toString()}) AS "$baseAlias"');
       if (joinClauses.isNotEmpty) {
         sql.write(' $joinClauses');
       }

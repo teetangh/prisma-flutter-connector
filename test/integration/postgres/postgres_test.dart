@@ -32,7 +32,8 @@ void main() {
         name: 'User',
         tableName: 'User',
         fields: {
-          'id': FieldInfo(name: 'id', columnName: 'id', type: 'String', isId: true),
+          'id': FieldInfo(
+              name: 'id', columnName: 'id', type: 'String', isId: true),
           'email': FieldInfo(
             name: 'email',
             columnName: 'email',
@@ -78,9 +79,12 @@ void main() {
         name: 'Post',
         tableName: 'Post',
         fields: {
-          'id': FieldInfo(name: 'id', columnName: 'id', type: 'String', isId: true),
-          'title': FieldInfo(name: 'title', columnName: 'title', type: 'String'),
-          'content': FieldInfo(name: 'content', columnName: 'content', type: 'String'),
+          'id': FieldInfo(
+              name: 'id', columnName: 'id', type: 'String', isId: true),
+          'title':
+              FieldInfo(name: 'title', columnName: 'title', type: 'String'),
+          'content':
+              FieldInfo(name: 'content', columnName: 'content', type: 'String'),
           'published': FieldInfo(
             name: 'published',
             columnName: 'published',
@@ -107,7 +111,8 @@ void main() {
         name: 'Tag',
         tableName: 'Tag',
         fields: {
-          'id': FieldInfo(name: 'id', columnName: 'id', type: 'String', isId: true),
+          'id': FieldInfo(
+              name: 'id', columnName: 'id', type: 'String', isId: true),
           'label': FieldInfo(
             name: 'label',
             columnName: 'label',
@@ -121,8 +126,10 @@ void main() {
         name: 'IntPost',
         tableName: 'IntPost',
         fields: {
-          'id': FieldInfo(name: 'id', columnName: 'id', type: 'Int', isId: true),
-          'title': FieldInfo(name: 'title', columnName: 'title', type: 'String'),
+          'id':
+              FieldInfo(name: 'id', columnName: 'id', type: 'Int', isId: true),
+          'title':
+              FieldInfo(name: 'title', columnName: 'title', type: 'String'),
         },
         relations: {
           'categories': RelationInfo(
@@ -142,7 +149,8 @@ void main() {
         name: 'IntCategory',
         tableName: 'IntCategory',
         fields: {
-          'id': FieldInfo(name: 'id', columnName: 'id', type: 'Int', isId: true),
+          'id':
+              FieldInfo(name: 'id', columnName: 'id', type: 'Int', isId: true),
           'name': FieldInfo(name: 'name', columnName: 'name', type: 'String'),
         },
       ));
@@ -172,9 +180,8 @@ void main() {
             : 'test_password';
         final host = uri.host.isNotEmpty ? uri.host : 'localhost';
         final port = uri.hasPort ? uri.port : 5432;
-        final database = uri.pathSegments.isNotEmpty
-            ? uri.pathSegments.first
-            : 'test_db';
+        final database =
+            uri.pathSegments.isNotEmpty ? uri.pathSegments.first : 'test_db';
 
         connection = await pg.Connection.open(
           pg.Endpoint(
@@ -281,7 +288,9 @@ DELETE FROM "User";
       await executor.dispose();
     });
 
-    test('should connect to PostgreSQL backend and execute scripts with embedded semicolons', () async {
+    test(
+        'should connect to PostgreSQL backend and execute scripts with embedded semicolons',
+        () async {
       expect(adapter.provider, equals('postgresql'));
       final statements = PostgresAdapter.splitSqlStatements('''
 INSERT INTO "Tag" ("id", "label") VALUES ('t-semi', 'semi;colon;label');
@@ -297,25 +306,21 @@ INSERT INTO "Tag" ("id", "label") VALUES ('t-semi', 'semi;colon;label');
         JsonQueryBuilder()
             .model('Tag')
             .action(QueryAction.findUnique)
-            .where({'id': 't-semi'})
-            .build(),
+            .where({'id': 't-semi'}).build(),
       );
       expect(tag, isNotNull);
       expect(tag!['label'], equals('semi;colon;label'));
     });
 
-    test('should create, findUnique, update, count, and delete a user', () async {
+    test('should create, findUnique, update, count, and delete a user',
+        () async {
       final created = await executor.executeMutationAsMap(
-        JsonQueryBuilder()
-            .model('User')
-            .action(QueryAction.create)
-            .data({
-              'id': 'u-1',
-              'email': 'alice@example.com',
-              'name': 'Alice',
-              'age': 30,
-            })
-            .build(),
+        JsonQueryBuilder().model('User').action(QueryAction.create).data({
+          'id': 'u-1',
+          'email': 'alice@example.com',
+          'name': 'Alice',
+          'age': 30,
+        }).build(),
       );
       expect(created, isNotNull);
       expect(created!['id'], equals('u-1'));
@@ -325,19 +330,14 @@ INSERT INTO "Tag" ("id", "label") VALUES ('t-semi', 'semi;colon;label');
         JsonQueryBuilder()
             .model('User')
             .action(QueryAction.findUnique)
-            .where({'id': 'u-1'})
-            .build(),
+            .where({'id': 'u-1'}).build(),
       );
       expect(found, isNotNull);
       expect(found!['name'], equals('Alice'));
 
       final updatedRows = await executor.executeMutation(
-        JsonQueryBuilder()
-            .model('User')
-            .action(QueryAction.update)
-            .where({'id': 'u-1'})
-            .data({'name': 'Alice Smith', 'age': 31})
-            .build(),
+        JsonQueryBuilder().model('User').action(QueryAction.update).where(
+            {'id': 'u-1'}).data({'name': 'Alice Smith', 'age': 31}).build(),
       );
       expect(updatedRows, equals(1));
 
@@ -350,8 +350,7 @@ INSERT INTO "Tag" ("id", "label") VALUES ('t-semi', 'semi;colon;label');
         JsonQueryBuilder()
             .model('User')
             .action(QueryAction.delete)
-            .where({'id': 'u-1'})
-            .build(),
+            .where({'id': 'u-1'}).build(),
       );
       expect(deletedRows, equals(1));
 
@@ -361,11 +360,17 @@ INSERT INTO "Tag" ("id", "label") VALUES ('t-semi', 'semi;colon;label');
       expect(afterDelete, equals(0));
     });
 
-    test('should query with complex filters, ordering, take, and skip', () async {
+    test('should query with complex filters, ordering, take, and skip',
+        () async {
       for (final u in [
         {'id': 'u-1', 'email': 'alice@example.com', 'name': 'Alice', 'age': 25},
         {'id': 'u-2', 'email': 'bob@example.com', 'name': 'Bob', 'age': 35},
-        {'id': 'u-3', 'email': 'charlie@example.com', 'name': 'Charlie', 'age': 45},
+        {
+          'id': 'u-3',
+          'email': 'charlie@example.com',
+          'name': 'Charlie',
+          'age': 45
+        },
         {'id': 'u-4', 'email': 'diana@other.org', 'name': 'Diana', 'age': 20},
       ]) {
         await executor.executeMutation(
@@ -402,7 +407,8 @@ INSERT INTO "Tag" ("id", "label") VALUES ('t-semi', 'semi;colon;label');
       expect(filtered[1]['name'], equals('Charlie'));
     });
 
-    test('should round-trip JSON fields via jsonEncode and filter by JSON path', () async {
+    test('should round-trip JSON fields via jsonEncode and filter by JSON path',
+        () async {
       final metaPayload = {
         'role': 'admin',
         'preferences': {'theme': 'dark'},
@@ -410,29 +416,21 @@ INSERT INTO "Tag" ("id", "label") VALUES ('t-semi', 'semi;colon;label');
       };
 
       await executor.executeMutation(
-        JsonQueryBuilder()
-            .model('User')
-            .action(QueryAction.create)
-            .data({
-              'id': 'u-json',
-              'email': 'json@example.com',
-              'name': 'Json User',
-              'metadata': metaPayload,
-            })
-            .build(),
+        JsonQueryBuilder().model('User').action(QueryAction.create).data({
+          'id': 'u-json',
+          'email': 'json@example.com',
+          'name': 'Json User',
+          'metadata': metaPayload,
+        }).build(),
       );
 
       final matched = await executor.executeQueryAsMaps(
-        JsonQueryBuilder()
-            .model('User')
-            .action(QueryAction.findMany)
-            .where({
-              'metadata': {
-                'path': ['preferences', 'theme'],
-                'equals': 'dark',
-              },
-            })
-            .build(),
+        JsonQueryBuilder().model('User').action(QueryAction.findMany).where({
+          'metadata': {
+            'path': ['preferences', 'theme'],
+            'equals': 'dark',
+          },
+        }).build(),
       );
 
       expect(matched, hasLength(1));
@@ -442,33 +440,27 @@ INSERT INTO "Tag" ("id", "label") VALUES ('t-semi', 'semi;colon;label');
       expect((decodedMeta as Map)['role'], equals('admin'));
     });
 
-    test('should paginate parent records accurately when findMany combines 1:N include with take/skip', () async {
+    test(
+        'should paginate parent records accurately when findMany combines 1:N include with take/skip',
+        () async {
       // Create 3 users, each with 2 posts (6 joined rows total).
       for (var i = 1; i <= 3; i++) {
         await executor.executeMutation(
-          JsonQueryBuilder()
-              .model('User')
-              .action(QueryAction.create)
-              .data({
-                'id': 'u-$i',
-                'email': 'u$i@example.com',
-                'name': 'User $i',
-              })
-              .build(),
+          JsonQueryBuilder().model('User').action(QueryAction.create).data({
+            'id': 'u-$i',
+            'email': 'u$i@example.com',
+            'name': 'User $i',
+          }).build(),
         );
         for (var p = 1; p <= 2; p++) {
           await executor.executeMutation(
-            JsonQueryBuilder()
-                .model('Post')
-                .action(QueryAction.create)
-                .data({
-                  'id': 'p-$i-$p',
-                  'title': 'Post $p by User $i',
-                  'content': 'Body',
-                  'published': true,
-                  'authorId': 'u-$i',
-                })
-                .build(),
+            JsonQueryBuilder().model('Post').action(QueryAction.create).data({
+              'id': 'p-$i-$p',
+              'title': 'Post $p by User $i',
+              'content': 'Body',
+              'published': true,
+              'authorId': 'u-$i',
+            }).build(),
           );
         }
       }
@@ -493,47 +485,41 @@ INSERT INTO "Tag" ("id", "label") VALUES ('t-semi', 'semi;colon;label');
       expect(users[1]['posts'], hasLength(2));
     });
 
-    test('should handle M:N connect, disconnect, and set with UUID (String) primary keys', () async {
+    test(
+        'should handle M:N connect, disconnect, and set with UUID (String) primary keys',
+        () async {
       await executor.executeMutation(
         JsonQueryBuilder()
             .model('Tag')
             .action(QueryAction.create)
-            .data({'id': 'tag-1', 'label': 'Dart'})
-            .build(),
+            .data({'id': 'tag-1', 'label': 'Dart'}).build(),
       );
       await executor.executeMutation(
         JsonQueryBuilder()
             .model('Tag')
             .action(QueryAction.create)
-            .data({'id': 'tag-2', 'label': 'Flutter'})
-            .build(),
+            .data({'id': 'tag-2', 'label': 'Flutter'}).build(),
       );
 
       await executor.executeMutationWithRelationsAtomic(
-        JsonQueryBuilder()
-            .model('User')
-            .action(QueryAction.create)
-            .data({
-              'id': 'u-m2m',
-              'email': 'm2m@example.com',
-              'name': 'M2M User',
-              'tags': {
-                'connect': [
-                  {'id': 'tag-1'},
-                  {'id': 'tag-2'},
-                ],
-              },
-            })
-            .build(),
+        JsonQueryBuilder().model('User').action(QueryAction.create).data({
+          'id': 'u-m2m',
+          'email': 'm2m@example.com',
+          'name': 'M2M User',
+          'tags': {
+            'connect': [
+              {'id': 'tag-1'},
+              {'id': 'tag-2'},
+            ],
+          },
+        }).build(),
       );
 
       var fetched = await executor.executeQueryAsSingleMap(
         JsonQueryBuilder()
             .model('User')
             .action(QueryAction.findUnique)
-            .where({'id': 'u-m2m'})
-            .include({'tags': true})
-            .build(),
+            .where({'id': 'u-m2m'}).include({'tags': true}).build(),
       );
       expect(fetched, isNotNull);
       expect(fetched!['tags'], hasLength(2));
@@ -543,78 +529,67 @@ INSERT INTO "Tag" ("id", "label") VALUES ('t-semi', 'semi;colon;label');
         JsonQueryBuilder()
             .model('User')
             .action(QueryAction.update)
-            .where({'id': 'u-m2m'})
-            .data({
-              'name': 'M2M User Updated',
-              'tags': {
-                'disconnect': [
-                  {'id': 'tag-1'},
-                ],
-              },
-            })
-            .build(),
+            .where({'id': 'u-m2m'}).data({
+          'name': 'M2M User Updated',
+          'tags': {
+            'disconnect': [
+              {'id': 'tag-1'},
+            ],
+          },
+        }).build(),
       );
 
       fetched = await executor.executeQueryAsSingleMap(
         JsonQueryBuilder()
             .model('User')
             .action(QueryAction.findUnique)
-            .where({'id': 'u-m2m'})
-            .include({'tags': true})
-            .build(),
+            .where({'id': 'u-m2m'}).include({'tags': true}).build(),
       );
       expect(fetched!['tags'], hasLength(1));
       expect((fetched['tags'] as List).first['id'], equals('tag-2'));
     });
 
-    test('should handle M:N connect, disconnect, and set with Int primary keys (#50)', () async {
+    test(
+        'should handle M:N connect, disconnect, and set with Int primary keys (#50)',
+        () async {
       await executor.executeMutation(
         JsonQueryBuilder()
             .model('IntCategory')
             .action(QueryAction.create)
-            .data({'id': 1, 'name': 'Tech'})
-            .build(),
+            .data({'id': 1, 'name': 'Tech'}).build(),
       );
       await executor.executeMutation(
         JsonQueryBuilder()
             .model('IntCategory')
             .action(QueryAction.create)
-            .data({'id': 2, 'name': 'News'})
-            .build(),
+            .data({'id': 2, 'name': 'News'}).build(),
       );
       await executor.executeMutation(
         JsonQueryBuilder()
             .model('IntCategory')
             .action(QueryAction.create)
-            .data({'id': 3, 'name': 'Dart'})
-            .build(),
+            .data({'id': 3, 'name': 'Dart'}).build(),
       );
 
       // Create IntPost with M:N connect using integer PKs
       await executor.executeMutationWithRelationsAtomic(
-        JsonQueryBuilder()
-            .model('IntPost')
-            .action(QueryAction.create)
-            .data({
-              'id': 100,
-              'title': 'Integer M2M Post',
-              'categories': {
-                'connect': [
-                  {'id': 1},
-                  {'id': 2},
-                ],
-              },
-            })
-            .build(),
+        JsonQueryBuilder().model('IntPost').action(QueryAction.create).data({
+          'id': 100,
+          'title': 'Integer M2M Post',
+          'categories': {
+            'connect': [
+              {'id': 1},
+              {'id': 2},
+            ],
+          },
+        }).build(),
       );
 
       var post = await executor.executeQueryAsSingleMap(
         JsonQueryBuilder()
             .model('IntPost')
             .action(QueryAction.findUnique)
-            .where({'id': 100})
-            .include({'categories': true})
-            .build(),
+            .where({'id': 100}).include({'categories': true}).build(),
       );
       expect(post, isNotNull);
       expect(post!['categories'], hasLength(2));
@@ -624,56 +599,46 @@ INSERT INTO "Tag" ("id", "label") VALUES ('t-semi', 'semi;colon;label');
         JsonQueryBuilder()
             .model('IntPost')
             .action(QueryAction.update)
-            .where({'id': 100})
-            .data({
-              'title': 'Integer M2M Post Updated',
-              'categories': {
-                'set': [
-                  {'id': 3},
-                ],
-              },
-            })
-            .build(),
+            .where({'id': 100}).data({
+          'title': 'Integer M2M Post Updated',
+          'categories': {
+            'set': [
+              {'id': 3},
+            ],
+          },
+        }).build(),
       );
 
       post = await executor.executeQueryAsSingleMap(
         JsonQueryBuilder()
             .model('IntPost')
             .action(QueryAction.findUnique)
-            .where({'id': 100})
-            .include({'categories': true})
-            .build(),
+            .where({'id': 100}).include({'categories': true}).build(),
       );
       expect(post!['categories'], hasLength(1));
       expect((post['categories'] as List).first['id'], equals(3));
     });
 
-    test('should commit transactions, rollback on failure, and flatten nested runTransaction', () async {
+    test(
+        'should commit transactions, rollback on failure, and flatten nested runTransaction',
+        () async {
       // 1. Successful commit + nested runTransaction
       await executor.runTransaction((tx) async {
         await tx.executeMutation(
-          JsonQueryBuilder()
-              .model('User')
-              .action(QueryAction.create)
-              .data({
-                'id': 'u-tx-1',
-                'email': 'tx1@example.com',
-                'name': 'TX User 1',
-              })
-              .build(),
+          JsonQueryBuilder().model('User').action(QueryAction.create).data({
+            'id': 'u-tx-1',
+            'email': 'tx1@example.com',
+            'name': 'TX User 1',
+          }).build(),
         );
 
         await tx.runTransaction((nestedTx) async {
           await nestedTx.executeMutation(
-            JsonQueryBuilder()
-                .model('User')
-                .action(QueryAction.create)
-                .data({
-                  'id': 'u-tx-2',
-                  'email': 'tx2@example.com',
-                  'name': 'TX User 2',
-                })
-                .build(),
+            JsonQueryBuilder().model('User').action(QueryAction.create).data({
+              'id': 'u-tx-2',
+              'email': 'tx2@example.com',
+              'name': 'TX User 2',
+            }).build(),
           );
         });
       }, isolationLevel: IsolationLevel.serializable);
@@ -689,15 +654,11 @@ INSERT INTO "Tag" ("id", "label") VALUES ('t-semi', 'semi;colon;label');
       await expectLater(
         () => executor.executeInTransaction((tx) async {
           await tx.executeMutation(
-            JsonQueryBuilder()
-                .model('User')
-                .action(QueryAction.create)
-                .data({
-                  'id': 'u-tx-rollback',
-                  'email': 'rollback@example.com',
-                  'name': 'Should Not Persist',
-                })
-                .build(),
+            JsonQueryBuilder().model('User').action(QueryAction.create).data({
+              'id': 'u-tx-rollback',
+              'email': 'rollback@example.com',
+              'name': 'Should Not Persist',
+            }).build(),
           );
           throw StateError('Simulated failure forcing rollback');
         }),
@@ -708,37 +669,30 @@ INSERT INTO "Tag" ("id", "label") VALUES ('t-semi', 'semi;colon;label');
         JsonQueryBuilder()
             .model('User')
             .action(QueryAction.findUnique)
-            .where({'id': 'u-tx-rollback'})
-            .build(),
+            .where({'id': 'u-tx-rollback'}).build(),
       );
       expect(rolledBackUser, isNull);
     });
 
-    test('should map PostgreSQL constraint and serialization errors to typed PrismaExceptions', () async {
+    test(
+        'should map PostgreSQL constraint and serialization errors to typed PrismaExceptions',
+        () async {
       await executor.executeMutation(
-        JsonQueryBuilder()
-            .model('User')
-            .action(QueryAction.create)
-            .data({
-              'id': 'u-err-1',
-              'email': 'unique@example.com',
-              'name': 'Unique User',
-            })
-            .build(),
+        JsonQueryBuilder().model('User').action(QueryAction.create).data({
+          'id': 'u-err-1',
+          'email': 'unique@example.com',
+          'name': 'Unique User',
+        }).build(),
       );
 
       // 1. Unique constraint violation (23505 -> UniqueConstraintException)
       await expectLater(
         () => executor.executeMutation(
-          JsonQueryBuilder()
-              .model('User')
-              .action(QueryAction.create)
-              .data({
-                'id': 'u-err-2',
-                'email': 'unique@example.com',
-                'name': 'Duplicate Email',
-              })
-              .build(),
+          JsonQueryBuilder().model('User').action(QueryAction.create).data({
+            'id': 'u-err-2',
+            'email': 'unique@example.com',
+            'name': 'Duplicate Email',
+          }).build(),
         ),
         throwsA(isA<UniqueConstraintException>()),
       );
@@ -746,17 +700,13 @@ INSERT INTO "Tag" ("id", "label") VALUES ('t-semi', 'semi;colon;label');
       // 2. Foreign key constraint violation (23503 -> ForeignKeyException / ForeignKeyConstraintException)
       await expectLater(
         () => executor.executeMutation(
-          JsonQueryBuilder()
-              .model('Post')
-              .action(QueryAction.create)
-              .data({
-                'id': 'p-bad-fk',
-                'title': 'Orphan Post',
-                'content': 'No Author',
-                'published': false,
-                'authorId': 'non-existent-user',
-              })
-              .build(),
+          JsonQueryBuilder().model('Post').action(QueryAction.create).data({
+            'id': 'p-bad-fk',
+            'title': 'Orphan Post',
+            'content': 'No Author',
+            'published': false,
+            'authorId': 'non-existent-user',
+          }).build(),
         ),
         throwsA(isA<ForeignKeyConstraintException>()),
       );
@@ -767,9 +717,7 @@ INSERT INTO "Tag" ("id", "label") VALUES ('t-semi', 'semi;colon;label');
           JsonQueryBuilder()
               .model('User')
               .action(QueryAction.update)
-              .where({'id': 'u-err-1'})
-              .data({'email': null})
-              .build(),
+              .where({'id': 'u-err-1'}).data({'email': null}).build(),
         ),
         throwsA(
           isA<ConstraintException>()
@@ -884,9 +832,8 @@ class _InMemoryPostgresConnection implements pg.Connection {
   ) {
     return {
       for (final entry in src.entries)
-        entry.key: entry.value
-            .map((row) => Map<String, Object?>.from(row))
-            .toList(),
+        entry.key:
+            entry.value.map((row) => Map<String, Object?>.from(row)).toList(),
     };
   }
 
@@ -899,8 +846,7 @@ class _InMemoryPostgresConnection implements pg.Connection {
     Duration? timeout,
   }) async {
     final sql = query.toString().trim();
-    final params =
-        parameters is List ? parameters : const <Object?>[];
+    final params = parameters is List ? parameters : const <Object?>[];
 
     if (sql == 'BEGIN') {
       _txSnapshot = _cloneTables(_tables);
@@ -1071,14 +1017,17 @@ class _InMemoryPostgresConnection implements pg.Connection {
   }
 
   pg.Result _handleUpdate(String sql, List<Object?> params) {
-    final tableMatch = RegExp(r'^UPDATE "([^"]+)" SET (.+?) WHERE "([^"]+)" = \$(\d+)').firstMatch(sql);
+    final tableMatch =
+        RegExp(r'^UPDATE "([^"]+)" SET (.+?) WHERE "([^"]+)" = \$(\d+)')
+            .firstMatch(sql);
     final table = tableMatch!.group(1)!;
     final setClause = tableMatch.group(2)!;
     final whereCol = tableMatch.group(3)!;
     final whereParamIdx = int.parse(tableMatch.group(4)!) - 1;
     final whereVal = params[whereParamIdx];
 
-    final setAssignments = setClause.split(',').map((part) => part.trim()).toList();
+    final setAssignments =
+        setClause.split(',').map((part) => part.trim()).toList();
     final rows = _tables[table]!;
     final updated = <Map<String, Object?>>[];
 
@@ -1175,8 +1124,7 @@ class _InMemoryPostgresConnection implements pg.Connection {
           }));
         } else {
           for (final l in links) {
-            final tag =
-                _tables['Tag']!.firstWhere((t) => t['id'] == l['B']);
+            final tag = _tables['Tag']!.firstWhere((t) => t['id'] == l['B']);
             joinedRows.add(_FakeResultRow({
               ...u,
               'tags__id': tag['id'],
@@ -1189,15 +1137,15 @@ class _InMemoryPostgresConnection implements pg.Connection {
     }
 
     // M:N include on IntPost -> IntCategory
-    if (sql.contains('FROM "IntPost"') &&
-        sql.contains('"_CategoryToPost"')) {
+    if (sql.contains('FROM "IntPost"') && sql.contains('"_CategoryToPost"')) {
       final postId = params[0];
       final posts =
           _tables['IntPost']!.where((p) => p['id'] == postId).toList();
       final joinedRows = <pg.ResultRow>[];
       for (final p in posts) {
-        final links =
-            _tables['_CategoryToPost']!.where((l) => l['B'] == p['id']).toList();
+        final links = _tables['_CategoryToPost']!
+            .where((l) => l['B'] == p['id'])
+            .toList();
         if (links.isEmpty) {
           joinedRows.add(_FakeResultRow({
             ...p,
@@ -1206,8 +1154,8 @@ class _InMemoryPostgresConnection implements pg.Connection {
           }));
         } else {
           for (final l in links) {
-            final cat = _tables['IntCategory']!
-                .firstWhere((c) => c['id'] == l['A']);
+            final cat =
+                _tables['IntCategory']!.firstWhere((c) => c['id'] == l['A']);
             joinedRows.add(_FakeResultRow({
               ...p,
               'categories__id': cat['id'],

@@ -135,11 +135,13 @@ class _RecordingQueryLogger implements QueryLogger {
 
 void main() {
   group('PostgresAdapter & QueryExecutor Error Mapping', () {
-    test('maps SQLSTATE 23505 to UniqueConstraintException in executeMutation', () async {
+    test('maps SQLSTATE 23505 to UniqueConstraintException in executeMutation',
+        () async {
       final conn = _FakePgConnection(
         errorToThrow: _FakeServerException(
           code: '23505',
-          message: 'duplicate key value violates unique constraint "users_email_key"',
+          message:
+              'duplicate key value violates unique constraint "users_email_key"',
           constraintName: 'users_email_key',
         ),
       );
@@ -150,26 +152,29 @@ void main() {
       final query = JsonQueryBuilder()
           .model('User')
           .action(QueryAction.create)
-          .data({'email': 'dup@example.com'})
-          .build();
+          .data({'email': 'dup@example.com'}).build();
 
       await expectLater(
         () => executor.executeMutation(query),
         throwsA(
           isA<UniqueConstraintException>()
               .having((e) => e.code, 'code', 'P2002')
-              .having((e) => e.constraintName, 'constraintName', 'users_email_key'),
+              .having(
+                  (e) => e.constraintName, 'constraintName', 'users_email_key'),
         ),
       );
       expect(logger.starts, hasLength(1));
       expect(logger.errors, hasLength(1));
     });
 
-    test('maps SQLSTATE 23503 to ForeignKeyException / ForeignKeyConstraintException', () async {
+    test(
+        'maps SQLSTATE 23503 to ForeignKeyException / ForeignKeyConstraintException',
+        () async {
       final conn = _FakePgConnection(
         errorToThrow: _FakeServerException(
           code: '23503',
-          message: 'insert or update on table "posts" violates foreign key constraint "posts_author_id_fkey"',
+          message:
+              'insert or update on table "posts" violates foreign key constraint "posts_author_id_fkey"',
           constraintName: 'posts_author_id_fkey',
         ),
       );
@@ -179,16 +184,15 @@ void main() {
       final query = JsonQueryBuilder()
           .model('Post')
           .action(QueryAction.update)
-          .where({'id': 'p1'})
-          .data({'authorId': 'missing-user'})
-          .build();
+          .where({'id': 'p1'}).data({'authorId': 'missing-user'}).build();
 
       await expectLater(
         () => executor.executeMutationAsMap(query),
         throwsA(
           isA<ForeignKeyConstraintException>()
               .having((e) => e.code, 'code', 'P2003')
-              .having((e) => e.constraintName, 'constraintName', 'posts_author_id_fkey'),
+              .having((e) => e.constraintName, 'constraintName',
+                  'posts_author_id_fkey'),
         ),
       );
     });
@@ -206,9 +210,7 @@ void main() {
       final query = JsonQueryBuilder()
           .model('User')
           .action(QueryAction.update)
-          .where({'id': 'u1'})
-          .data({'email': null})
-          .build();
+          .where({'id': 'u1'}).data({'email': null}).build();
 
       await expectLater(
         () => executor.executeMutation(query),
@@ -220,7 +222,8 @@ void main() {
       );
     });
 
-    test('maps SQLSTATE 40001 (serialization failure) to TransactionException', () async {
+    test('maps SQLSTATE 40001 (serialization failure) to TransactionException',
+        () async {
       final conn = _FakePgConnection(
         errorToThrow: _FakeServerException(
           code: '40001',
@@ -235,9 +238,7 @@ void main() {
           final q = JsonQueryBuilder()
               .model('User')
               .action(QueryAction.update)
-              .where({'id': 'u1'})
-              .data({'name': 'Concurrent'})
-              .build();
+              .where({'id': 'u1'}).data({'name': 'Concurrent'}).build();
           await tx.executeMutation(q);
         }),
         throwsA(
@@ -246,11 +247,13 @@ void main() {
       );
     });
 
-    test('maps SQLSTATE 40001 on transaction commit to TransactionException', () async {
+    test('maps SQLSTATE 40001 on transaction commit to TransactionException',
+        () async {
       final conn = _FakePgConnection(
         commitErrorToThrow: _FakeServerException(
           code: '40001',
-          message: 'could not serialize access due to read/write dependencies among transactions',
+          message:
+              'could not serialize access due to read/write dependencies among transactions',
         ),
       );
       final adapter = PostgresAdapter(conn);
@@ -270,7 +273,9 @@ void main() {
       );
     });
 
-    test('maps errors in TransactionExecutor.executeMutationAsMap and executeRaw', () async {
+    test(
+        'maps errors in TransactionExecutor.executeMutationAsMap and executeRaw',
+        () async {
       final conn = _FakePgConnection(
         errorToThrow: _FakeServerException(
           code: '23505',
@@ -286,8 +291,7 @@ void main() {
           final q = JsonQueryBuilder()
               .model('User')
               .action(QueryAction.create)
-              .data({'email': 'tx@example.com'})
-              .build();
+              .data({'email': 'tx@example.com'}).build();
           await tx.executeMutationAsMap(q);
         }),
         throwsA(isA<UniqueConstraintException>()),
@@ -297,11 +301,17 @@ void main() {
   });
 
   group('PostgresAdapter Hardening', () {
-    test('encodes ArgType.json Map and List values via jsonEncode instead of toString', () async {
+    test(
+        'encodes ArgType.json Map and List values via jsonEncode instead of toString',
+        () async {
       final conn = _FakePgConnection();
       final adapter = PostgresAdapter(conn);
 
-      final payloadMap = {'theme': 'dark', 'count': 3, 'nested': ['a', 'b']};
+      final payloadMap = {
+        'theme': 'dark',
+        'count': 3,
+        'nested': ['a', 'b']
+      };
       final payloadList = [
         {'k': 'v'},
         42,
@@ -321,7 +331,8 @@ void main() {
       expect(jsonDecode(params[1] as String), equals(payloadList));
     });
 
-    test('_ensureConnected does not execute SELECT 1 when connection is open', () async {
+    test('_ensureConnected does not execute SELECT 1 when connection is open',
+        () async {
       final conn = _FakePgConnection(isOpen: true);
       var factoryCalls = 0;
       final adapter = PostgresAdapter(
@@ -348,7 +359,9 @@ void main() {
       expect(factoryCalls, equals(0));
     });
 
-    test('_ensureConnected reconnects via connectionFactory when connection is closed', () async {
+    test(
+        '_ensureConnected reconnects via connectionFactory when connection is closed',
+        () async {
       final deadConn = _FakePgConnection(isOpen: false);
       final freshConn = _FakePgConnection(isOpen: true);
       var factoryCalls = 0;
@@ -371,7 +384,9 @@ void main() {
       expect(freshConn.executedSql, equals(['SELECT * FROM "users"']));
     });
 
-    test('executeScript ignores semicolons inside single quotes and dollar-quoted blocks', () async {
+    test(
+        'executeScript ignores semicolons inside single quotes and dollar-quoted blocks',
+        () async {
       final conn = _FakePgConnection();
       final adapter = PostgresAdapter(conn);
 
@@ -399,20 +414,27 @@ SELECT 1;
       expect(conn.executedSql, hasLength(5));
       expect(
         conn.executedSql[0],
-        equals('INSERT INTO "notes" ("body") VALUES (\'first;part;still_string\')'),
+        equals(
+            'INSERT INTO "notes" ("body") VALUES (\'first;part;still_string\')'),
       );
       expect(
         conn.executedSql[1],
-        equals('INSERT INTO "notes" ("body") VALUES (\'escaped \'\'quote;inside\'\' literal\')'),
+        equals(
+            'INSERT INTO "notes" ("body") VALUES (\'escaped \'\'quote;inside\'\' literal\')'),
       );
-      expect(conn.executedSql[2], contains('PERFORM pg_notify(\'chan\', \'payload;with;semicolons\');'));
+      expect(
+          conn.executedSql[2],
+          contains(
+              'PERFORM pg_notify(\'chan\', \'payload;with;semicolons\');'));
       expect(conn.executedSql[2], endsWith(r'$$ LANGUAGE plpgsql'));
       expect(conn.executedSql[3], contains(r'$body$'));
       expect(conn.executedSql[3], endsWith(r'$body$ LANGUAGE plpgsql'));
       expect(conn.executedSql[4], equals('SELECT 1'));
     });
 
-    test('_ensureConnected serializes concurrent reconnects into a single factory call', () async {
+    test(
+        '_ensureConnected serializes concurrent reconnects into a single factory call',
+        () async {
       final deadConn = _FakePgConnection(isOpen: false);
       final freshConn = _FakePgConnection(isOpen: true);
       var factoryCalls = 0;
@@ -442,7 +464,9 @@ SELECT 1;
       expect(freshConn.executedSql, containsAll(['SELECT 1', 'SELECT 2']));
     });
 
-    test('splitSqlStatements handles E-escaped strings and dollar signs in identifiers', () {
+    test(
+        'splitSqlStatements handles E-escaped strings and dollar signs in identifiers',
+        () {
       const script = r"""
 INSERT INTO "notes" ("body") VALUES (E'backslash \'quote;inside\' literal');
 SELECT col$tag$1 FROM "tbl";
@@ -452,7 +476,8 @@ SELECT 'still;one;statement';
       expect(statements, hasLength(3));
       expect(
         statements[0],
-        equals(r'''INSERT INTO "notes" ("body") VALUES (E'backslash \'quote;inside\' literal')'''),
+        equals(
+            r'''INSERT INTO "notes" ("body") VALUES (E'backslash \'quote;inside\' literal')'''),
       );
       expect(statements[1], equals(r'SELECT col$tag$1 FROM "tbl"'));
       expect(statements[2], equals("SELECT 'still;one;statement'"));
